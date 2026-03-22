@@ -37,8 +37,6 @@ const IGNORED_FADE_DELAY_MS = 28
 const IGNORED_HIDE_SLIDE_DELAY_MS = 16
 const TOAST_WINDOW_ANCHOR = Astal.WindowAnchor.RIGHT | Astal.WindowAnchor.BOTTOM
 
-// Use a quiet bell by default and switch to the ringing bell only while unresolved notifications exist.
-// Both glyphs are from the classic MDI webfont range for compatibility with older font builds.
 const IDLE_NOTIFICATION_GLYPH = "󰂜"
 const ACTIVE_NOTIFICATION_GLYPH = "󰂟"
 const DND_LABEL = "DND"

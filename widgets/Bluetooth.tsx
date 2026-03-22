@@ -291,7 +291,7 @@ function ensureBluetoothAgent() {
         new GLib.Variant("(o)", [BLUEZ_AGENT_PATH]),
       )
     } catch {
-      // Not fatal. Pair/connect initiated by this same process should still use the agent.
+
     }
 
     bluetoothAgentState.lastHardError = null
