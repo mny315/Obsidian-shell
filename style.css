@@ -1,0 +1,2279 @@
+@define-color fg rgba(255, 255, 255, 1.00);
+@define-color glass_bg rgba(14, 18, 26, 0.58);
+@define-color wallpaper_glass_bg rgba(11, 15, 22, 0.78);
+@define-color glass_border rgba(255, 255, 255, 0.14);
+@define-color section_bg rgba(24, 29, 40, 0.42);
+@define-color section_border rgba(255, 255, 255, 0.08);
+@define-color panel_bg rgba(28, 34, 46, 0.52);
+@define-color panel_border rgba(255, 255, 255, 0.11);
+@define-color hover_bg rgba(255, 255, 255, 0.10);
+@define-color active_bg rgba(255, 255, 255, 0.15);
+@define-color glass_toggle_bg rgba(255, 255, 255, 0.08);
+@define-color glass_toggle_border rgba(255, 255, 255, 0.14);
+@define-color glass_toggle_on_bg rgba(210, 225, 255, 0.20);
+@define-color glass_toggle_on_border rgba(235, 243, 255, 0.26);
+@define-color danger_fg rgba(255, 120, 120, 1.00);
+
+* {
+    border: none;
+    font-family: "Lexend";
+    font-size: 15px;
+    font-weight: 400;
+    color: @fg;
+    box-shadow: none;
+    text-shadow: none;
+    outline: none;
+    background-image: none;
+}
+
+.module-icon,
+.power-action-icon,
+.network-row-icon,
+.network-row-status,
+.clock-icon,
+.player-main-icon,
+.player-transport-icon,
+.bluetooth-header-icon,
+.bluetooth-section-icon,
+.bluetooth-device-icon,
+.network-icon-button-label,
+.launcher-trigger-icon,
+.launcher-empty-icon,
+.wallpaper-trigger-icon,
+.wallpaper-header-icon,
+.wallpaper-refresh-icon,
+.wallpaper-card-status,
+.wallpaper-empty-icon,
+.wallpaper-timer-icon,
+.wallpaper-timeout-icon,
+.wallpaper-stepper-icon {
+    font-family: "Material Design Icons";
+    font-size: 15px;
+    font-style: normal;
+    font-weight: 400;
+    font-feature-settings: normal;
+    letter-spacing: 0;
+}
+
+.tray-item image {
+    font-family: "Material Design Icons";
+}
+
+window.bar-window {
+    background-color: transparent;
+}
+
+revealer.bar-revealer,
+revealer.inline-revealer,
+revealer.widget-popover-revealer,
+revealer.widget-popup-revealer,
+revealer.notification-ignored-revealer,
+revealer.notification-ignored-fade-revealer,
+.right-side-wrap,
+.controls-shell,
+.quick-control,
+.inline-control {
+    background-color: transparent;
+    background-image: none;
+    box-shadow: none;
+    border: none;
+}
+
+.bar-shell {
+    margin: 8px 12px 0 12px;
+    padding: 0 3px;
+    min-height: 40px;
+    background: @glass_bg;
+    color: @fg;
+    border: 1px solid @glass_border;
+    border-radius: 18px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.10),
+        inset 0 -1px 0 rgba(255, 255, 255, 0.03),
+        0 10px 30px rgba(0, 0, 0, 0.28);
+    transition: background-color 180ms ease, border-color 180ms ease, opacity 180ms ease;
+}
+
+@keyframes widget-popover-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+revealer.widget-popover-revealer > widget,
+revealer.widget-popover-revealer > box,
+revealer.widget-popover-revealer > contents,
+revealer.widget-popup-revealer > widget,
+revealer.widget-popup-revealer > box,
+revealer.widget-popup-revealer > contents,
+revealer.notification-ignored-revealer > widget,
+revealer.notification-ignored-revealer > box,
+revealer.notification-ignored-revealer > contents,
+revealer.notification-ignored-fade-revealer > widget,
+revealer.notification-ignored-fade-revealer > box,
+revealer.notification-ignored-fade-revealer > contents {
+    background: transparent;
+}
+
+.inline-revealer {
+    min-width: 0;
+}
+
+.section {
+    background: @section_bg;
+    color: @fg;
+    margin: 5px 3px;
+    padding: 0 6px;
+    border: 1px solid @section_border;
+    border-radius: 13px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.10),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.08),
+        0 4px 12px rgba(0, 0, 0, 0.10);
+}
+
+.module {
+    background: transparent;
+    color: @fg;
+    margin: 0 1px;
+    padding: 0 8px;
+}
+
+.left-side-wrap {
+    background: transparent;
+    margin-left: 0;
+}
+
+.left-module-shell {
+    min-width: 0;
+}
+
+.pinned-player-shell {
+    min-height: 30px;
+    min-width: 0;
+    margin-left: 3px;
+    padding: 0 6px;
+}
+
+.pinned-player-inline {
+    background: transparent;
+    min-width: 0;
+}
+
+.pinned-player-controls {
+    min-width: 0;
+    margin-right: 3px;
+}
+
+.pinned-player-meta {
+    min-width: 0;
+}
+
+.pinned-player-meta .player-main-button {
+    padding-left: 4px;
+    padding-right: 4px;
+}
+
+.pinned-player-meta .player-main-content,
+.pinned-player-meta .player-main-label,
+.pinned-player-meta .player-main-button {
+    min-width: 0;
+}
+
+
+.notification-player-toolbar {
+    min-height: 28px;
+    margin: 0 0 8px 0;
+}
+
+.notification-player-pin-button {
+    min-height: 26px;
+    padding: 0 10px;
+}
+
+.left-module-button,
+menubutton.left-module-button,
+menubutton.left-module-button > button.toggle,
+menubutton.left-module-button button.toggle {
+    min-height: 30px;
+    padding: 0 8px;
+    margin: 0;
+    border-radius: 10px;
+    border: none;
+    outline: none;
+    box-shadow: none;
+    background: transparent;
+    background-image: none;
+    border-color: transparent;
+    outline-color: transparent;
+}
+
+.left-module-content {
+    min-width: 0;
+    min-height: 30px;
+    margin: 0;
+    padding: 0;
+}
+
+.left-module-label,
+.clock {
+    font-size: 14px;
+}
+
+.clock-icon {
+    min-width: 16px;
+    font-size: 16px;
+}
+
+.clock {
+    min-height: 30px;
+    padding: 0;
+}
+
+.battery-indicator {
+    min-height: 30px;
+}
+
+.battery-icon {
+    min-width: 16px;
+    font-size: 16px;
+}
+
+.battery-percent {
+    min-width: 0;
+}
+
+
+
+
+.right-side-wrap {
+    margin-right: 0;
+}
+
+.tray-capsule {
+    padding: 0 4px;
+}
+
+.tray-item {
+    min-width: 30px;
+    min-height: 30px;
+    padding: 0 4px;
+    margin: 0;
+    border-radius: 10px;
+}
+
+.tray-item:hover {
+    background: @hover_bg;
+}
+
+.tray-item image {
+    -gtk-icon-size: 21px;
+}
+
+.controls-shell {
+    margin: 5px 2px;
+    padding: 0 1px;
+}
+
+.section-right-main {
+    padding-left: 1px;
+    padding-right: 1px;
+}
+
+.launcher-shell,
+.network-shell,
+.quick-control,
+.inline-control,
+.widget-popup-anchor {
+    margin: 0;
+    padding: 0;
+    min-height: 28px;
+    background: transparent;
+}
+
+.controls-shell .app-launcher-trigger,
+.controls-shell .bluetooth-trigger,
+.controls-shell .network-trigger,
+.controls-shell .quick-toggle,
+.controls-shell .power-toggle,
+.controls-shell .panel-icon-button {
+    min-width: 26px;
+    min-height: 26px;
+    padding: 0 3px;
+    border-radius: 9px;
+}
+
+.controls-shell .module-icon,
+.controls-shell .launcher-trigger-icon {
+    min-width: 18px;
+    min-height: 18px;
+    margin: -1px 0 0 0;
+    padding: 0;
+    font-size: 17px;
+}
+
+.quick-control {
+    margin: 0;
+}
+
+.inline-control {
+    min-height: 30px;
+}
+
+.inline-panel {
+    min-height: 30px;
+    padding: 0 7px;
+    border-radius: 12px;
+    background: @panel_bg;
+    border: 1px solid @panel_border;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.10),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.08),
+        0 6px 18px rgba(0, 0, 0, 0.14);
+    transition: background-color 180ms ease, border-color 180ms ease, opacity 180ms ease;
+}
+
+.slider-panel {
+    min-width: 210px;
+}
+
+.power-panel {
+    padding: 0 4px;
+}
+
+.module-icon {
+    min-width: 18px;
+    font-size: 16px;
+}
+
+button.quick-toggle .module-icon,
+menubutton.network-trigger > button.toggle .module-icon,
+menubutton.bluetooth-trigger > button.toggle .module-icon,
+button.panel-icon-button .module-icon,
+button.power-action .module-icon {
+    min-width: 20px;
+    font-size: 18px;
+}
+
+
+.controls-shell button.quick-toggle .brightness-icon {
+    font-size: 16px;
+}
+
+.inline-panel .brightness-icon {
+    font-size: 14px;
+}
+
+.controls-shell button.network-trigger .network-trigger-icon {
+    font-size: 16px;
+}
+
+.slider-value {
+    min-width: 44px;
+    font-size: 14px;
+}
+
+button.icon-button,
+button.panel-icon-button,
+button.quick-toggle,
+button.power-action,
+button.network-trigger,
+button.network-icon-button,
+button.network-row-button,
+button.network-password-action,
+button.bluetooth-trigger {
+    background-color: transparent;
+    background-image: none;
+    box-shadow: none;
+    outline: none;
+}
+
+button.icon-button:hover,
+button.panel-icon-button:hover,
+button.quick-toggle:hover,
+button.power-action:hover,
+button.network-trigger:hover,
+button.network-icon-button:hover,
+button.network-row-button:hover,
+button.network-password-action:hover,
+button.icon-button:active,
+button.panel-icon-button:active,
+button.quick-toggle:active,
+button.power-action:active,
+button.network-trigger:active,
+button.network-icon-button:active,
+button.network-row-button:active,
+button.network-password-action:active {
+    background-image: none;
+    box-shadow: none;
+}
+
+.icon-button {
+    padding: 0;
+    min-width: 16px;
+    min-height: 16px;
+}
+
+menubutton.network-trigger,
+menubutton.bluetooth-trigger {
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+menubutton.network-trigger > button.toggle,
+menubutton.bluetooth-trigger > button.toggle {
+    background-color: transparent;
+    background-image: none;
+    box-shadow: none;
+    outline: none;
+}
+
+
+.quick-toggle {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0 4px;
+    border-radius: 10px;
+    transition: background-color 160ms ease, opacity 160ms ease;
+}
+
+.quick-toggle:hover,
+.panel-icon-button:hover,
+.power-action:hover,
+button.bluetooth-trigger:hover,
+menubutton.bluetooth-trigger > button.toggle:hover {
+    background: @hover_bg;
+}
+
+.quick-toggle:active,
+.panel-icon-button:active,
+.power-action:active,
+button.bluetooth-trigger:active,
+menubutton.bluetooth-trigger > button.toggle:active,
+menubutton.bluetooth-trigger > button.toggle:checked {
+    background: @active_bg;
+}
+
+.panel-icon-button {
+    min-width: 24px;
+    min-height: 24px;
+    border-radius: 8px;
+    transition: background-color 160ms ease, opacity 160ms ease;
+}
+
+.placeholder-toggle {
+    opacity: 0.92;
+}
+
+scale.slider-control {
+    min-width: 120px;
+    background-color: transparent;
+}
+
+scale.slider-control trough {
+    min-height: 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+}
+
+scale.slider-control highlight,
+scale.slider-control fill {
+    min-height: 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.90);
+}
+
+scale.slider-control slider {
+    min-width: 14px;
+    min-height: 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.96);
+    border: 1px solid rgba(20, 24, 32, 0.45);
+}
+
+.power-toggle {
+    min-width: 32px;
+}
+
+.power-action {
+    min-height: 30px;
+    padding: 0 8px;
+    border-radius: 10px;
+}
+
+.power-action box {
+    margin: 0 1px;
+}
+
+.power-action-icon {
+    min-width: 16px;
+}
+
+.power-action-label {
+    font-size: 14px;
+}
+
+button.bluetooth-trigger,
+menubutton.bluetooth-trigger > button.toggle {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0 4px;
+    border-radius: 10px;
+    transition: background-color 160ms ease, opacity 160ms ease;
+}
+
+popover.bluetooth-popover-window contents,
+popover.network-popover-window contents,
+popover.launcher-popover-window contents,
+popover.wallpaper-popover-window contents,
+popover.tray-menu-popover-window contents {
+    background: @glass_bg;
+    border: 1px solid @glass_border;
+    border-radius: 18px;
+    padding: 12px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.10),
+        inset 0 -1px 0 rgba(255, 255, 255, 0.03),
+        0 10px 30px rgba(0, 0, 0, 0.28);
+    animation: none;
+}
+
+window.widget-popup-window,
+.widget-popup-root,
+.widget-popup-placement,
+.widget-popup-revealer {
+    background: transparent;
+    background-image: none;
+    box-shadow: none;
+    border: none;
+}
+
+box.widget-popup-frame,
+.widget-popup-frame,
+.network-popover-window,
+.bluetooth-popover-window,
+.launcher-popover-window,
+.wallpaper-popover-window {
+    padding: 12px;
+    background: @glass_bg;
+    color: @fg;
+    border: 1px solid @glass_border;
+    border-radius: 18px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.10),
+        inset 0 -1px 0 rgba(255, 255, 255, 0.03),
+        0 10px 30px rgba(0, 0, 0, 0.28);
+}
+
+window.widget-popup-window box.widget-popup-frame,
+window.widget-popup-window .widget-popup-frame {
+    background: @glass_bg;
+    border: 1px solid @glass_border;
+    border-radius: 18px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.10),
+        inset 0 -1px 0 rgba(255, 255, 255, 0.03),
+        0 10px 30px rgba(0, 0, 0, 0.28);
+}
+
+window.wallpaper-popup-window box.widget-popup-frame,
+window.wallpaper-popup-window .widget-popup-frame,
+box.widget-popup-frame.wallpaper-popover-window,
+.wallpaper-popover-window.widget-popup-frame,
+.wallpaper-popover-window {
+    background: rgba(11, 15, 22, 0.80);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: none;
+}
+
+.wallpaper-popover-window,
+.wallpaper-popover,
+.wallpaper-gallery-frame,
+.wallpaper-timer-row,
+.wallpaper-timer-value-box,
+.wallpaper-count,
+.wallpaper-notice-wrap,
+.wallpaper-notice-label,
+.wallpaper-path,
+.wallpaper-thumb-wrap,
+button.wallpaper-refresh-button,
+button.wallpaper-card,
+button.wallpaper-stepper-button,
+button.wallpaper-timer-apply,
+button.wallpaper-timeout-capsule {
+    transition: none;
+    background-image: none;
+}
+
+
+popover.network-popover-window > arrow,
+popover.bluetooth-popover-window > arrow,
+popover.launcher-popover-window > arrow,
+popover.wallpaper-popover-window > arrow,
+popover.tray-menu-popover-window > arrow {
+    min-width: 0;
+    min-height: 0;
+    opacity: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+popover.tray-menu-popover-window contents modelbutton,
+popover.tray-menu-popover-window contents button {
+    min-height: 30px;
+    margin: 2px 0;
+    padding: 0 10px;
+    border-radius: 10px;
+    background: transparent;
+    background-image: none;
+    box-shadow: none;
+}
+
+popover.tray-menu-popover-window contents modelbutton:hover,
+popover.tray-menu-popover-window contents button:hover,
+popover.tray-menu-popover-window contents modelbutton:active,
+popover.tray-menu-popover-window contents button:active,
+popover.tray-menu-popover-window contents modelbutton:checked,
+popover.tray-menu-popover-window contents button:checked {
+    background: @hover_bg;
+    background-image: none;
+    box-shadow: none;
+}
+
+.bluetooth-popover {
+    min-width: 350px;
+}
+
+.bluetooth-header {
+    padding-bottom: 10px;
+}
+
+.bluetooth-header-top {
+    min-height: 24px;
+}
+
+.bluetooth-header-icon {
+    min-width: 18px;
+    font-size: 16px;
+    opacity: 0.92;
+}
+
+.bluetooth-section-header {
+    min-height: 30px;
+    padding-top: 2px;
+}
+
+.bluetooth-section-icon {
+    min-width: 16px;
+    font-size: 14px;
+    opacity: 0.78;
+}
+
+.bluetooth-section-count {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(28, 34, 46, 0.50);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 12px;
+    opacity: 0.86;
+}
+
+.bluetooth-adapter-row,
+.bluetooth-device-row {
+    min-height: 52px;
+}
+
+.bluetooth-device-icon-wrap {
+    min-width: 34px;
+    min-height: 34px;
+    padding: 0 8px;
+    border-radius: 12px;
+    background: rgba(28, 34, 46, 0.52);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -1px 0 rgba(0, 0, 0, 0.06);
+    transition: background-color 160ms ease, border-color 160ms ease, opacity 160ms ease;
+}
+
+.bluetooth-device-icon {
+    min-width: 18px;
+    font-size: 17px;
+}
+
+.bluetooth-device-summary {
+    margin-right: 4px;
+}
+
+.bluetooth-device-actions {
+    margin-left: 6px;
+}
+
+button.bluetooth-chip {
+    min-height: 30px;
+    padding: 0 10px;
+    border-radius: 10px;
+    background: rgba(28, 34, 46, 0.52);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 -1px 0 rgba(0, 0, 0, 0.06);
+    transition: background-color 160ms ease, border-color 160ms ease, opacity 160ms ease;
+}
+
+button.bluetooth-chip:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+button.bluetooth-chip:active {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.bluetooth-chip-label {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+button.bluetooth-chip-primary {
+    background: rgba(34, 42, 58, 0.62);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+button.bluetooth-chip-primary:hover {
+    background: rgba(40, 48, 66, 0.72);
+}
+
+button.bluetooth-chip-primary:active {
+    background: rgba(46, 56, 76, 0.82);
+}
+
+button.bluetooth-chip-danger:hover {
+    background: rgba(255, 120, 120, 0.12);
+}
+
+button.bluetooth-chip-danger:active {
+    background: rgba(255, 120, 120, 0.18);
+}
+
+.bluetooth-chip-danger .bluetooth-chip-label {
+    color: @danger_fg;
+}
+
+.bluetooth-status {
+    padding: 8px 10px;
+    border-radius: 12px;
+    background: rgba(28, 34, 46, 0.52);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -1px 0 rgba(0, 0, 0, 0.06);
+    color: rgba(255, 255, 255, 0.90);
+}
+.network-shell {
+    margin: 0;
+    padding: 0;
+    min-height: 28px;
+}
+
+
+.network-trigger,
+menubutton.network-trigger > button.toggle {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0 4px;
+    border-radius: 10px;
+    transition: background-color 160ms ease, opacity 160ms ease;
+}
+
+.network-trigger:hover,
+menubutton.network-trigger > button.toggle:hover {
+    background: @hover_bg;
+}
+
+.network-trigger:active,
+menubutton.network-trigger > button.toggle:active,
+menubutton.network-trigger > button.toggle:checked {
+    background: @active_bg;
+}
+
+.network-trigger.widget-trigger-open,
+.bluetooth-trigger.widget-trigger-open,
+.app-launcher-trigger.widget-trigger-open,
+.wallpaper-widget-trigger.widget-trigger-open {
+    background: @active_bg;
+    background-image: none;
+    box-shadow: none;
+}
+
+
+.network-popover {
+    min-width: 350px;
+}
+
+.network-header {
+    min-height: 34px;
+    padding: 2px 2px 6px 2px;
+    margin-bottom: 8px;
+}
+
+.network-header-title {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.network-header-meta {
+    font-size: 13px;
+    opacity: 0.82;
+}
+
+switch.network-toggle,
+switch.bluetooth-device-switch {
+    min-width: 38px;
+    min-height: 20px;
+    padding: 2px;
+    border-radius: 999px;
+    background: @glass_toggle_bg;
+    border: 1px solid @glass_toggle_border;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.10);
+    transition: background-color 180ms ease, border-color 180ms ease, opacity 180ms ease;
+}
+
+switch.network-toggle:hover,
+switch.bluetooth-device-switch:hover {
+    background: rgba(255, 255, 255, 0.11);
+    border-color: rgba(255, 255, 255, 0.18);
+}
+
+switch.network-toggle slider,
+switch.bluetooth-device-switch slider {
+    min-width: 14px;
+    min-height: 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(18, 22, 30, 0.34);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.45),
+        0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+switch.network-toggle:checked,
+switch.bluetooth-device-switch:checked {
+    background: @glass_toggle_on_bg;
+    border-color: @glass_toggle_on_border;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.08),
+        0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+switch.network-toggle:checked slider,
+switch.bluetooth-device-switch:checked slider {
+    background: rgba(255, 255, 255, 0.98);
+    border-color: rgba(205, 220, 245, 0.42);
+}
+
+gtkswitch.network-toggle:disabled,
+gtkswitch.bluetooth-device-switch:disabled,
+switch.network-toggle:disabled,
+switch.bluetooth-device-switch:disabled {
+    opacity: 0.55;
+}
+
+.network-section-title {
+    padding-top: 2px;
+    font-size: 13px;
+    font-weight: 500;
+    opacity: 0.78;
+    margin: 8px 0 4px 4px;
+}
+
+.network-row-shell {
+    min-height: 42px;
+    padding: 0 10px;
+    margin: 2px 0;
+    border-radius: 12px;
+    background: @panel_bg;
+    border: 1px solid @panel_border;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10), inset 0 -1px 0 rgba(0, 0, 0, 0.08), 0 6px 18px rgba(0, 0, 0, 0.14);
+    transition: background-color 200ms ease, border-color 200ms ease, opacity 200ms ease;
+}
+
+.network-row-shell:hover {
+    background: @hover_bg;
+    border-color: @glass_border;
+}
+
+.network-row-current {
+    background: @panel_bg;
+    border: 1px solid @panel_border;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10), inset 0 -1px 0 rgba(0, 0, 0, 0.08), 0 6px 18px rgba(0, 0, 0, 0.14);
+}
+
+.network-row-body {
+    min-height: 42px;
+}
+
+.network-row-title {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.network-row-meta {
+    font-size: 12px;
+    opacity: 0.78;
+}
+
+.network-row-icon,
+.network-row-status,
+.network-icon-button-label {
+    font-size: 18px;
+}
+
+.network-empty {
+    padding: 8px 2px;
+    font-size: 13px;
+    opacity: 0.78;
+}
+
+button.network-icon-button {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0;
+    border-radius: 9px;
+}
+
+button.network-icon-button:hover {
+    background: @hover_bg;
+}
+
+button.network-icon-button:active {
+    background: @active_bg;
+}
+
+scrolledwindow {
+    margin: 4px 0;
+}
+
+scrollbar.vertical {
+    background: transparent;
+}
+
+scrollbar.vertical slider {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    min-width: 4px;
+}
+
+.network-password-box {
+    background: rgba(14, 18, 26, 0.50);
+    padding: 12px;
+    border-radius: 12px;
+    margin-bottom: 10px;
+}
+
+entry {
+    background: rgba(28, 34, 46, 0.56);
+    border: 1px solid @panel_border;
+    border-radius: 8px;
+    padding: 6px 10px;
+    color: @fg;
+    margin: 4px 0;
+}
+
+.network-notice {
+    margin: 2px 4px 0;
+    padding: 0;
+}
+
+
+
+.center-slot {
+    background: transparent;
+}
+
+.center-player-wrap {
+    background: transparent;
+    margin: 5px 0;
+}
+
+.section-center {
+    padding-left: 4px;
+    padding-right: 4px;
+}
+
+.section-player-meta {
+    min-width: 0;
+    padding-left: 6px;
+    padding-right: 6px;
+}
+
+.left-player-inline {
+    background: transparent;
+}
+
+.left-player-controls {
+    margin-left: 3px;
+}
+
+.left-player-meta {
+    margin-left: 3px;
+    min-width: 200px;
+}
+
+.section-player-controls,
+.section-player-balance {
+    min-width: 112px;
+    padding-left: 4px;
+    padding-right: 4px;
+}
+
+.player-main-button,
+.player-transport-button {
+    background-color: transparent;
+    background-image: none;
+    box-shadow: none;
+    outline: none;
+}
+
+.player-main-button:hover,
+.player-transport-button:hover {
+    background: @hover_bg;
+}
+
+.player-main-button:active,
+.player-transport-button:active {
+    background: @active_bg;
+}
+
+.player-main-button {
+    min-height: 30px;
+    min-width: 0;
+    padding: 0 8px;
+    border-radius: 10px;
+}
+
+.player-main-content {
+    min-width: 0;
+}
+
+.player-main-label {
+    font-size: 14px;
+}
+
+.left-player-meta,
+.section-player-meta,
+.player-main-button,
+.player-main-content {
+    min-width: 200px;
+}
+
+.player-main-icon {
+    min-width: 18px;
+    font-size: 16px;
+}
+
+.player-main-button,
+.player-main-content,
+.player-main-label {
+    min-width: 0;
+}
+
+.player-transport-button {
+    min-width: 30px;
+    min-height: 30px;
+    padding: 0 6px;
+    border-radius: 10px;
+}
+
+.player-transport-primary {
+    min-width: 34px;
+}
+
+.player-transport-icon {
+    min-width: 18px;
+    font-size: 16px;
+}
+
+.app-launcher-trigger,
+menubutton.app-launcher-trigger,
+menubutton.app-launcher-trigger > button.toggle,
+menubutton.app-launcher-trigger button.toggle {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0 4px;
+    border-radius: 10px;
+    border: none;
+    outline: none;
+    box-shadow: none;
+    transition: background-color 160ms ease, opacity 160ms ease;
+    background: transparent;
+    background-image: none;
+    border-color: transparent;
+    outline-color: transparent;
+}
+
+.app-launcher-trigger:hover,
+.app-launcher-trigger:active,
+menubutton.app-launcher-trigger:hover,
+menubutton.app-launcher-trigger:active,
+menubutton.app-launcher-trigger > button.toggle:hover,
+menubutton.app-launcher-trigger > button.toggle:active,
+menubutton.app-launcher-trigger > button.toggle:checked,
+menubutton.app-launcher-trigger button.toggle:hover,
+menubutton.app-launcher-trigger button.toggle:active,
+menubutton.app-launcher-trigger button.toggle:checked {
+    background: @hover_bg;
+    background-image: none;
+    border-color: transparent;
+    box-shadow: none;
+}
+
+.app-launcher-trigger:focus,
+.app-launcher-trigger:focus-visible,
+menubutton.app-launcher-trigger:focus,
+menubutton.app-launcher-trigger:focus-visible,
+menubutton.app-launcher-trigger > button.toggle:focus,
+menubutton.app-launcher-trigger > button.toggle:focus-visible,
+menubutton.app-launcher-trigger button.toggle:focus,
+menubutton.app-launcher-trigger button.toggle:focus-visible {
+    background: transparent;
+    background-image: none;
+    border-color: transparent;
+    outline: none;
+    box-shadow: none;
+}
+
+.launcher-popover {
+    min-width: 420px;
+}
+
+.launcher-search-shell {
+    min-height: 38px;
+    padding: 0 10px;
+    border-radius: 14px;
+    background: rgba(28, 34, 46, 0.58);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.06);
+}
+
+.launcher-material-icon,
+.launcher-search-icon,
+.launcher-app-fallback,
+.launcher-empty-icon,
+.launcher-trigger-icon {
+    font-family: "Material Design Icons";
+    font-style: normal;
+    font-weight: 400;
+    font-feature-settings: normal;
+    letter-spacing: 0;
+}
+
+.launcher-search-icon {
+    min-width: 16px;
+    font-size: 16px;
+    opacity: 0.92;
+}
+
+.launcher-trigger-icon {
+    min-width: 20px;
+    font-size: 18px;
+}
+
+entry.launcher-search {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    min-height: 34px;
+}
+
+entry.launcher-search > text {
+    background: transparent;
+}
+
+.launcher-header {
+    padding: 0 2px 0 2px;
+}
+
+.launcher-title {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.launcher-count {
+    min-width: 24px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: rgba(28, 34, 46, 0.50);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 12px;
+    opacity: 0.86;
+}
+
+.launcher-list-wrap {
+    background: transparent;
+}
+
+.launcher-app-button {
+    min-height: 56px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    background: @panel_bg;
+    border: 1px solid @panel_border;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.10),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.08),
+        0 6px 18px rgba(0, 0, 0, 0.12);
+}
+
+.launcher-app-button:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: @glass_border;
+}
+
+.launcher-app-button:active {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(220, 232, 255, 0.20);
+}
+
+.launcher-app-row {
+    min-height: 54px;
+    margin: 0;
+}
+
+.launcher-app-icon-wrap {
+    min-width: 44px;
+    min-height: 44px;
+    margin: 0 6px 0 0;
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.launcher-app-icon-center {
+    min-width: 44px;
+    min-height: 44px;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.launcher-app-icon-wrap image,
+.launcher-app-icon {
+    -gtk-icon-size: 40px;
+    margin: 0;
+    padding: 0;
+}
+
+.launcher-app-fallback {
+    min-width: 24px;
+    font-size: 24px;
+    opacity: 0.86;
+}
+
+.launcher-app-title {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.launcher-app-content {
+    min-height: 54px;
+    padding: 0;
+    margin: 10px 0 0 0;
+}
+
+.launcher-app-meta,
+.launcher-empty-meta,
+.launcher-notice {
+    font-size: 11px;
+    opacity: 0.78;
+}
+
+.launcher-empty {
+    min-height: 96px;
+    padding: 14px 10px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.launcher-empty-icon {
+    font-size: 20px;
+    opacity: 0.86;
+}
+
+.launcher-empty-title {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.launcher-notice {
+    padding: 7px 9px;
+    border-radius: 10px;
+    background: rgba(255, 120, 120, 0.10);
+    border: 1px solid rgba(255, 120, 120, 0.18);
+    color: @danger_fg;
+    opacity: 1;
+}
+
+
+
+.wallpaper-widget-trigger,
+menubutton.wallpaper-widget-trigger,
+menubutton.wallpaper-widget-trigger > button.toggle,
+menubutton.wallpaper-widget-trigger button.toggle {
+    min-width: 22px;
+    min-height: 22px;
+    padding: 0 2px;
+    margin: 0;
+    border-radius: 8px;
+    border: none;
+    outline: none;
+    box-shadow: none;
+    transition: background-color 160ms ease, opacity 160ms ease;
+    background: transparent;
+    background-image: none;
+    border-color: transparent;
+    outline-color: transparent;
+}
+
+.wallpaper-widget-trigger:hover,
+.wallpaper-widget-trigger:active,
+menubutton.wallpaper-widget-trigger:hover,
+menubutton.wallpaper-widget-trigger:active,
+menubutton.wallpaper-widget-trigger > button.toggle:hover,
+menubutton.wallpaper-widget-trigger > button.toggle:active,
+menubutton.wallpaper-widget-trigger > button.toggle:checked,
+menubutton.wallpaper-widget-trigger button.toggle:hover,
+menubutton.wallpaper-widget-trigger button.toggle:active,
+menubutton.wallpaper-widget-trigger button.toggle:checked {
+    background: rgba(255, 255, 255, 0.05);
+    background-image: none;
+    border-color: transparent;
+    box-shadow: none;
+}
+
+.wallpaper-trigger-icon,
+.wallpaper-header-icon,
+.wallpaper-refresh-icon,
+.wallpaper-card-status,
+.wallpaper-empty-icon {
+    font-family: "Material Design Icons";
+    font-style: normal;
+    font-weight: 400;
+    font-feature-settings: normal;
+    letter-spacing: 0;
+}
+
+.wallpaper-trigger-icon {
+    min-width: 14px;
+    font-size: 14px;
+}
+
+popover.wallpaper-popover-window {
+    min-width: 472px;
+}
+
+.wallpaper-popover {
+    min-width: 472px;
+}
+
+.wallpaper-header {
+    min-height: 28px;
+}
+
+.wallpaper-header-top {
+    min-height: 24px;
+}
+
+.wallpaper-list-wrap viewport {
+    margin-right: 6px;
+}
+
+.wallpaper-list-wrap scrollbar.vertical {
+    margin-left: 16px;
+    margin-right: 2px;
+}
+
+.wallpaper-header-icon {
+    min-width: 18px;
+    font-size: 17px;
+    opacity: 0.9;
+}
+
+.wallpaper-title {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.wallpaper-count {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(28, 34, 46, 0.50);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 12px;
+    opacity: 0.86;
+}
+
+.wallpaper-path,
+.wallpaper-empty-meta,
+.wallpaper-notice-label {
+    font-size: 12px;
+    opacity: 0.76;
+}
+
+.wallpaper-path {
+    margin-top: 1px;
+}
+
+button.wallpaper-refresh-button {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0 5px;
+    border-radius: 10px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+button.wallpaper-refresh-button:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+button.wallpaper-refresh-button:active {
+    background: rgba(255, 255, 255, 0.09);
+}
+
+button.wallpaper-refresh-button:focus,
+button.wallpaper-refresh-button:focus-visible,
+button.wallpaper-refresh-button:checked {
+    background: rgba(255, 255, 255, 0.05);
+    box-shadow: none;
+    outline: none;
+}
+
+.wallpaper-refresh-icon {
+    min-width: 16px;
+    font-size: 16px;
+}
+
+.wallpaper-gallery-frame {
+    min-width: 448px;
+    padding: 10px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.wallpaper-list-wrap {
+    min-width: 448px;
+    min-height: 216px;
+}
+
+.wallpaper-grid {
+    min-width: 448px;
+    padding: 0;
+}
+
+.wallpaper-empty-wrap {
+    min-width: 448px;
+    min-height: 216px;
+}
+
+button.wallpaper-card {
+    min-width: 144px;
+    min-height: 84px;
+    border-spacing: 0;
+    padding: 0;
+    margin: 0;
+    border: none;
+    border-radius: 12px;
+    background: transparent;
+    box-shadow: none;
+    outline: none;
+}
+
+button.wallpaper-card:hover {
+    background: transparent;
+}
+
+button.wallpaper-card:active {
+    background: transparent;
+}
+
+button.wallpaper-card:focus,
+button.wallpaper-card:focus-visible,
+button.wallpaper-card:checked {
+    background: transparent;
+    box-shadow: none;
+    outline: none;
+}
+
+.wallpaper-card-inner {
+    min-width: 144px;
+    min-height: 84px;
+}
+
+.wallpaper-thumb-wrap {
+    min-width: 144px;
+    min-height: 84px;
+    padding: 0;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    transition: background-color 180ms ease, border-color 180ms ease, opacity 180ms ease;
+}
+.wallpaper-thumb-wrap-active {
+    background: rgba(210, 225, 255, 0.10);
+    border-color: rgba(235, 243, 255, 0.22);
+}
+
+.wallpaper-thumb {
+    min-width: 144px;
+    min-height: 84px;
+    border-radius: 12px;
+}
+
+.wallpaper-empty-title {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.wallpaper-empty {
+    min-height: 216px;
+}
+
+.wallpaper-empty-icon {
+    font-size: 28px;
+    opacity: 0.8;
+}
+
+button.wallpaper-refresh-button:disabled,
+button.wallpaper-card:disabled,
+button.wallpaper-timeout-capsule:disabled,
+button.wallpaper-stepper-button:disabled,
+button.wallpaper-timer-apply:disabled {
+    opacity: 1;
+    box-shadow: none;
+    background-image: none;
+}
+
+button.wallpaper-refresh-button:disabled {
+    background: transparent;
+    border: none;
+}
+
+button.wallpaper-card:disabled {
+    background: transparent;
+    border: none;
+}
+
+button.wallpaper-stepper-button:disabled {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+button.wallpaper-timer-apply:disabled {
+    background: rgba(28, 34, 46, 0.50);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+
+.wallpaper-timeout-shell {
+    min-width: 448px;
+    margin-top: 2px;
+    padding: 6px 12px 8px 12px;
+    border-radius: 18px;
+    background: rgba(21, 26, 36, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow: none;
+}
+
+.wallpaper-timeout-shell-open {
+    background: rgba(24, 30, 41, 0.70);
+    border-color: rgba(255, 255, 255, 0.13);
+}
+
+button.wallpaper-timeout-capsule {
+    min-height: 36px;
+    padding: 2px 0 0 0;
+    border-radius: 14px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+button.wallpaper-timeout-capsule:hover {
+    background: rgba(255, 255, 255, 0.035);
+}
+
+button.wallpaper-timeout-capsule:active,
+button.wallpaper-timeout-capsule:focus,
+button.wallpaper-timeout-capsule:focus-visible,
+button.wallpaper-timeout-capsule:checked {
+    background: rgba(255, 255, 255, 0.05);
+    box-shadow: none;
+    outline: none;
+}
+
+.wallpaper-timeout-summary {
+    min-height: 34px;
+}
+
+.wallpaper-timeout-icon,
+.wallpaper-stepper-icon {
+    font-family: "Material Design Icons";
+    font-style: normal;
+    font-weight: 400;
+    font-feature-settings: normal;
+    letter-spacing: 0;
+}
+
+.wallpaper-timeout-icon {
+    min-width: 18px;
+    font-size: 16px;
+    opacity: 0.9;
+}
+
+.wallpaper-timeout-title {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.wallpaper-timeout-subtitle {
+    font-size: 11px;
+    opacity: 0.72;
+}
+
+.wallpaper-timeout-chevron {
+    min-width: 12px;
+    font-size: 12px;
+    opacity: 0.72;
+}
+
+.wallpaper-timeout-revealer {
+    background: transparent;
+}
+
+.wallpaper-timeout-content {
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.wallpaper-timers {
+    min-width: 0;
+    margin-top: 0;
+}
+
+.wallpaper-timer-row {
+    min-width: 0;
+    min-height: 52px;
+    padding: 10px 0;
+    background: transparent;
+    border: none;
+}
+
+.wallpaper-timer-divider {
+    min-height: 1px;
+    margin: 0;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.wallpaper-timer-meta {
+    min-height: 32px;
+}
+
+.wallpaper-timer-icon,
+.wallpaper-timeout-icon,
+.wallpaper-stepper-icon {
+    font-family: "Material Design Icons";
+    font-style: normal;
+    font-weight: 400;
+    font-feature-settings: normal;
+    letter-spacing: 0;
+}
+
+.wallpaper-timer-icon {
+    min-width: 18px;
+    font-size: 16px;
+    opacity: 0.9;
+}
+
+.wallpaper-timer-title {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.wallpaper-timer-subtitle {
+    font-size: 10px;
+    opacity: 0.70;
+}
+
+.wallpaper-timer-controls {
+    min-height: 30px;
+}
+
+button.wallpaper-stepper-button {
+    min-width: 32px;
+    min-height: 28px;
+    padding: 0;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: none;
+}
+
+button.wallpaper-stepper-button:hover {
+    background: rgba(255, 255, 255, 0.07);
+}
+
+button.wallpaper-stepper-button:active,
+button.wallpaper-stepper-button:focus,
+button.wallpaper-stepper-button:focus-visible,
+button.wallpaper-stepper-button:checked {
+    background: rgba(255, 255, 255, 0.10);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow: none;
+    outline: none;
+}
+
+.wallpaper-stepper-icon {
+    min-width: 14px;
+    font-size: 13px;
+}
+
+.wallpaper-timer-value-box {
+    min-width: 72px;
+    min-height: 28px;
+    padding: 0 10px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.wallpaper-timer-value {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+button.wallpaper-timer-apply {
+    min-width: 60px;
+    min-height: 28px;
+    padding: 0 10px;
+    border-radius: 10px;
+    background: rgba(28, 34, 46, 0.50);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: none;
+}
+
+button.wallpaper-timer-apply:hover {
+    background: rgba(255, 255, 255, 0.09);
+}
+
+button.wallpaper-timer-apply:active,
+button.wallpaper-timer-apply:focus,
+button.wallpaper-timer-apply:focus-visible,
+button.wallpaper-timer-apply:checked {
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow: none;
+    outline: none;
+}
+
+.wallpaper-timer-apply-label {
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.wallpaper-notice-wrap {
+    min-width: 0;
+    min-height: 0;
+    padding: 4px 8px;
+    border-radius: 8px;
+    background: rgba(28, 34, 46, 0.42);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.wallpaper-notice-label {
+    min-width: 0;
+    min-height: 0;
+    font-size: 12px;
+    line-height: 1.1;
+}
+
+
+.center-slot {
+    min-width: 0;
+}
+
+.center-notification-shell {
+    padding: 0 4px;
+}
+
+.notification-center-shell {
+    min-height: 30px;
+    padding: 0;
+}
+
+.notification-center-trigger {
+    min-width: 30px;
+    min-height: 30px;
+    padding: 0;
+    margin: 0;
+    border-radius: 10px;
+    background: transparent;
+}
+
+.notification-center-trigger:hover,
+.notification-action-button:hover,
+.notification-clear-button:hover,
+.notification-dnd-button:hover {
+    background: @hover_bg;
+}
+
+.notification-center-trigger-content {
+    min-height: 18px;
+}
+
+.notification-center-glyph,
+.notification-glyph {
+    font-family: "Material Design Icons";
+    font-style: normal;
+    font-weight: 400;
+    font-feature-settings: normal;
+    letter-spacing: 0;
+}
+
+.notification-center-glyph,
+.notification-header-glyph,
+.notification-empty-glyph,
+.notification-action-glyph {
+    min-width: 18px;
+    min-height: 18px;
+}
+
+.notification-center-glyph {
+    min-width: 20px;
+    font-size: 18px;
+}
+
+.notification-header-glyph,
+.notification-action-glyph {
+    font-size: 18px;
+}
+
+.notification-empty-glyph {
+    font-size: 28px;
+    opacity: 0.8;
+}
+
+.notification-center-badge {
+    min-width: 14px;
+    min-height: 14px;
+    padding: 0 3px;
+    border-radius: 999px;
+    background: rgba(210, 225, 255, 0.22);
+    border: 1px solid rgba(235, 243, 255, 0.28);
+}
+
+.notification-center-badge-label {
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.notification-history-placement {
+    padding: 0 22px 22px 22px;
+}
+
+.notification-history-frame {
+    background: transparent;
+}
+
+.notification-history-shell {
+    background: transparent;
+}
+
+.notification-history-panel,
+.notification-player-shell,
+.notification-card,
+.notification-app-group,
+.notification-ignored-panel {
+    background: @glass_bg;
+    border: 1px solid @glass_border;
+    border-radius: 18px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.10),
+        inset 0 -1px 0 rgba(255, 255, 255, 0.03),
+        0 10px 30px rgba(0, 0, 0, 0.28);
+}
+
+.notification-history-panel,
+.notification-player-shell {
+    padding: 12px;
+}
+
+.notification-app-group,
+.notification-ignored-panel {
+    padding: 12px;
+}
+
+.notification-app-group-header,
+.notification-ignored-header,
+.notification-ignored-row {
+    min-height: 0;
+}
+
+.notification-group-icon {
+    margin-top: 0;
+}
+
+.notification-app-group-meta,
+.notification-app-group-title-row,
+.notification-group-items,
+.notification-ignored-list {
+    min-width: 0;
+}
+
+.notification-app-group-title,
+.notification-ignored-title,
+.notification-ignored-app {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.notification-app-group-time,
+.notification-app-group-count,
+.notification-ignored-count,
+.notification-ignored-empty {
+    font-size: 12px;
+    opacity: 0.82;
+}
+
+.notification-group-items {
+    margin-top: 2px;
+}
+
+.notification-group-item {
+    background: @section_bg;
+    border: 1px solid @section_border;
+    border-radius: 14px;
+    box-shadow: none;
+    padding: 9px 10px;
+}
+
+.notification-inline-manage-button {
+    min-height: 26px;
+    padding: 0 10px;
+}
+
+.notification-history-header {
+    min-height: 30px;
+    padding: 0 4px;
+}
+
+.notification-history-topbar {
+    margin-top: 2px;
+    margin-bottom: 0;
+}
+
+.notification-ignored-panel {
+    margin-top: 2px;
+    margin-bottom: 0;
+}
+
+
+.notification-history-empty-center {
+    min-width: 0;
+}
+
+.notification-history-title,
+.notification-empty-title,
+.notification-summary {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.notification-history-scroll,
+.notification-history-scroll > viewport,
+.notification-history-list {
+    background: transparent;
+}
+
+.notification-history-list {
+    padding: 2px;
+}
+
+.notification-history-content {
+    min-height: 480px;
+    min-width: 0;
+}
+
+.notification-history-empty {
+    min-height: 480px;
+    min-width: 0;
+    opacity: 0.8;
+}
+
+.notification-card {
+    padding: 10px;
+}
+
+.notification-history-card {
+    margin: 0;
+}
+
+.notification-toast-card {
+    background: rgba(18, 23, 32, 0.38);
+    border-color: rgba(255, 255, 255, 0.14);
+    padding: 14px 12px;
+    transition: background-color 180ms ease, border-color 180ms ease, opacity 180ms ease, transform 240ms ease;
+}
+
+.notification-content-row,
+.notification-summary-row {
+    min-height: 0;
+}
+
+.notification-text-stack,
+.notification-summary-row,
+.notification-toast-card .notification-text-stack,
+.notification-toast-card .notification-summary-row {
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+.notification-toast-card label,
+.notification-toast-card .notification-summary,
+.notification-toast-card .notification-app-name,
+.notification-toast-card .notification-time,
+.notification-toast-card .notification-body {
+    font-family: "Noto Sans", "Adwaita Sans", sans-serif;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding-top: 2px;
+    padding-bottom: 3px;
+}
+
+.notification-app-icon {
+    -gtk-icon-size: 18px;
+    margin-top: 3px;
+}
+
+.notification-summary {
+    min-width: 0;
+}
+
+.notification-summary,
+.notification-app-name,
+.notification-time,
+.notification-body {
+    font-family: "Noto Sans", "Adwaita Sans", sans-serif;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding-top: 2px;
+    padding-bottom: 3px;
+}
+
+.notification-toast-card .notification-summary {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.notification-app-name,
+.notification-time,
+.notification-body {
+    font-size: 12px;
+    opacity: 0.86;
+}
+
+.notification-history-card .notification-body {
+    margin-top: 5px;
+}
+
+.notification-toast-card .notification-app-name,
+.notification-toast-card .notification-time,
+.notification-toast-card .notification-body {
+    font-size: 13px;
+}
+
+.notification-time {
+    min-width: 44px;
+}
+
+.notification-body {
+    min-width: 0;
+}
+
+.notification-clear-button {
+    min-height: 28px;
+    min-width: 52px;
+    padding: 0 12px;
+    border-radius: 9px;
+    background: @section_bg;
+    border: 1px solid @section_border;
+}
+
+.notification-clear-button:disabled {
+    opacity: 0.45;
+}
+
+.notification-dnd-button {
+    min-height: 28px;
+    min-width: 50px;
+    padding: 0 12px;
+    border-radius: 9px;
+    background: @section_bg;
+    border: 1px solid @section_border;
+}
+
+.notification-dnd-button-active {
+    background: rgba(210, 225, 255, 0.22);
+    border-color: rgba(235, 243, 255, 0.28);
+}
+
+.notification-dnd-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+}
+
+.notification-clear-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.notification-actions {
+    margin-top: 2px;
+}
+
+.notification-action-button {
+    min-height: 26px;
+    padding: 0 10px;
+    border-radius: 9px;
+    background: @section_bg;
+    border: 1px solid @section_border;
+}
+
+.notification-player-shell {
+    min-width: 0;
+}
+
+.notification-player-dock {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+.notification-player-inline {
+    background: transparent;
+    min-width: 0;
+}
+
+.notification-player-controls {
+    margin-top: 0;
+    margin-bottom: 2px;
+}
+
+.notification-player-meta {
+    margin: 0;
+    min-width: 0;
+}
+
+.notification-player-meta,
+.notification-player-meta .player-main-button,
+.notification-player-meta .player-main-content,
+.notification-player-meta .player-main-label {
+    min-width: 0;
+}
+
+.notification-player-meta .player-main-button {
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.notification-player-meta .player-main-button:hover,
+.notification-player-meta .player-main-button:active {
+    background: transparent;
+}
+
+.notification-player-meta .player-main-content {
+    padding: 0;
+}
+
+.notification-player-meta .player-main-label {
+    font-size: 14px;
+}
+
+.player-main-content-centered {
+    min-width: 0;
+}
+
+.notification-toast-window,
+.notification-toast-root,
+.notification-toast-placement,
+.notification-toast-frame {
+    background: transparent;
+    background-image: none;
+    border: none;
+    box-shadow: none;
+}
+
+.notification-toast-frame {
+    padding: 0;
+}
+
+.layout-indicator {
+    min-height: 30px;
+}
+
+.layout-separator {
+    font-size: 12px;
+    opacity: 0.55;
+    margin-top: -1px;
+}
+
+.layout-label {
+    min-width: 22px;
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+}
+
+.notification-history-card .notification-summary,
+.notification-group-item .notification-summary {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.notification-history-card .notification-app-name,
+.notification-history-card .notification-time,
+.notification-history-card .notification-body,
+.notification-group-item .notification-app-name,
+.notification-group-item .notification-time,
+.notification-group-item .notification-body {
+    font-size: 13px;
+}
+
+
+.module-percent {
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 32px;
+}
+
+.volume-percent,
+.brightness-percent {
+  min-width: 34px;
+}
