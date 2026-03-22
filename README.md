@@ -4,13 +4,18 @@ A compact **AGS v2 / GTK4 / Astal shell** for **Hyprland** and **Niri**, built a
 
 ## Screenshots
 
-![Bar](./assets/screenshots/bar.png)
-![Launcher](./assets/screenshots/launcher.png)
-![Notification](./assets/screenshots/notification.png)
-![Brightness](./assets/screenshots/brightness.png)
-![Network](./assets/screenshots/network.png)
-![Bluetooth](./assets/screenshots/bluetooth.png)
-![Wallpapers](./assets/screenshots/wallpapers.png)
+<details>
+<summary>Screenshots</summary>
+
+![Bar](./screenshots/bar.png)
+![Launcher](./screenshots/launcher.png)
+![Notification](./screenshots/notification.png)
+![Brightness](./screenshots/brightness.png)
+![Network](./screenshots/network.png)
+![Bluetooth](./screenshots/bluetooth.png)
+![Wallpapers](./screenshots/wallpapers.png)
+
+</details>
 
 ## Features
 - multi-monitor bar
