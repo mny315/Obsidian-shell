@@ -2,9 +2,15 @@
 
 A compact **AGS v2 / GTK4 / Astal shell** for **Hyprland** and **Niri**, built around a **NixOS + Home Manager** setup.
 
+## Screenshots
 
-[Watch demo video](https://github.com/mny315/Obsidian-shell/releases/latest/download/demo.mp4)
-
+![Bar](./assets/screenshots/bar.png)
+![Launcher](./assets/screenshots/launcher.png)
+![Notification](./assets/screenshots/notification.png)
+![Brightness](./assets/screenshots/brightness.png)
+![Network](./assets/screenshots/network.png)
+![Bluetooth](./assets/screenshots/bluetooth.png)
+![Wallpapers](./assets/screenshots/wallpapers.png)
 
 ## Features
 - multi-monitor bar
