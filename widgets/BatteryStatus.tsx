@@ -10,8 +10,6 @@ type BatterySnapshot = {
   charging: boolean
 }
 
-const BATTERY_ICONS = ["󰂎", "󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"]
-
 function parseBatterySnapshot(raw: string): BatterySnapshot {
   const line = raw.trim()
   if (!line || line === "none") {
@@ -35,12 +33,6 @@ function parseBatterySnapshot(raw: string): BatterySnapshot {
   }
 }
 
-function iconForPercent(percent: number) {
-  const clamped = Math.max(0, Math.min(100, percent))
-  const index = Math.max(0, Math.min(BATTERY_ICONS.length - 1, Math.round(clamped / 10)))
-  return BATTERY_ICONS[index]
-}
-
 async function readBatterySnapshot() {
   const raw = await execAsync([
     "bash",
@@ -55,14 +47,13 @@ export function BatteryStatus() {
   const [visible, setVisible] = createState(false)
   const [percent, setPercent] = createState(0)
   const [tooltip, setTooltip] = createState("Battery")
-  const [icon, setIcon] = createState(iconForPercent(100))
 
   const percentLabel = percent((value) => `${value}%`)
 
   return (
     <box
-      class="battery-indicator"
-      spacing={4}
+      class="section section-center left-module-shell left-status-shell"
+      spacing={0}
       visible={visible}
       valign={Gtk.Align.CENTER}
       tooltipText={tooltip}
@@ -72,7 +63,6 @@ export function BatteryStatus() {
             const snapshot = await readBatterySnapshot()
             setVisible(snapshot.available)
             setPercent(snapshot.percent)
-            setIcon(iconForPercent(snapshot.percent))
             setTooltip(snapshot.charging ? `Battery ${snapshot.percent}% • Charging` : `Battery ${snapshot.percent}%`)
           } catch (error) {
             console.error(error)
@@ -92,8 +82,14 @@ export function BatteryStatus() {
         })
       }}
     >
-      <label class="battery-icon" label={icon} />
-      <label class="battery-percent left-module-label" label={percentLabel} />
+      <box
+        class="battery-indicator left-module-button left-module-content left-status-content"
+        spacing={0}
+        valign={Gtk.Align.CENTER}
+        halign={Gtk.Align.CENTER}
+      >
+        <label class="battery-percent left-module-label" label={percentLabel} />
+      </box>
     </box>
   )
 }

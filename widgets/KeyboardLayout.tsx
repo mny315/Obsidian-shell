@@ -23,8 +23,8 @@ function compactLayoutName(name: string | null | undefined) {
     [["russian", "ru"], "RU"],
     [["ukrainian", "ukraine", "ua"], "UA"],
     [["german", "deutsch", "de"], "DE"],
-    [["french", "fran\u00e7ais", "francais", "fr"], "FR"],
-    [["spanish", "espa\u00f1ol", "espanol", "es"], "ES"],
+    [["french", "français", "francais", "fr"], "FR"],
+    [["spanish", "español", "espanol", "es"], "ES"],
     [["italian", "italiano", "it"], "IT"],
     [["polish", "polski", "pl"], "PL"],
     [["czech", "cs", "cz"], "CZ"],
@@ -119,6 +119,10 @@ function parseNiriLayouts(payload: unknown): NiriKeyboardLayouts | null {
     }
   }
 
+  if ("KeyboardLayouts" in (payload as Record<string, unknown>)) {
+    return parseNiriLayouts((payload as { KeyboardLayouts?: unknown }).KeyboardLayouts)
+  }
+
   return null
 }
 
@@ -130,6 +134,32 @@ function pickNiriActiveLayout(layouts: NiriKeyboardLayouts | null) {
 
   if (idx >= 0 && idx < names.length) return names[idx] ?? null
   return names[0] ?? null
+}
+
+function encodeUtf8(value: string) {
+  return new TextEncoder().encode(value)
+}
+
+function connectSocketAsync(client: Gio.SocketClient, address: Gio.SocketConnectable) {
+  return new Promise<Gio.SocketConnection>((resolve, reject) => {
+    client.connect_async(address, null, (_source, result) => {
+      try {
+        resolve(client.connect_finish(result))
+      } catch (error) {
+        reject(error)
+      }
+    })
+  })
+}
+
+function closeNiriConnection(connection: Gio.SocketConnection | null, stream: Gio.DataInputStream | null) {
+  try {
+    stream?.close(null)
+  } catch {}
+
+  try {
+    connection?.close(null)
+  } catch {}
 }
 
 async function initializeHyprland(setLabel: (next: string | ((prev: string) => string)) => void) {
@@ -155,103 +185,151 @@ async function initializeHyprland(setLabel: (next: string | ((prev: string) => s
 }
 
 async function initializeNiri(setLabel: (next: string | ((prev: string) => string)) => void) {
-  let knownLayouts: string[] = []
+  const socketPath = GLib.getenv("NIRI_SOCKET")
+  if (!socketPath) return () => {}
 
-  try {
-    const raw = await execAsync(["niri", "msg", "--json", "keyboard-layouts"])
-    const layouts = parseNiriLayouts(JSON.parse(raw))
-    knownLayouts = Array.isArray(layouts?.names) ? layouts?.names ?? [] : []
+  let knownLayouts: string[] = []
+  let stopped = false
+  let reconnectId = 0
+  let connection: Gio.SocketConnection | null = null
+  let stream: Gio.DataInputStream | null = null
+
+  const applyLayouts = (payload: unknown) => {
+    const layouts = parseNiriLayouts(payload)
+    if (!layouts) return
+
+    if (Array.isArray(layouts.names)) knownLayouts = layouts.names
 
     const active = pickNiriActiveLayout(layouts)
     if (active) setLabel(compactLayoutName(active))
-  } catch (error) {
-    console.error(error)
   }
 
-  const process = Gio.Subprocess.new(
-    ["niri", "msg", "--json", "event-stream"],
-    Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENCE,
-  )
+  const handleEventLine = (line: string) => {
+    const event = JSON.parse(line)
 
-  const stdout = process.get_stdout_pipe()
-  if (!stdout) {
-    return () => {
-      try {
-        process.force_exit()
-      } catch {}
+    const layoutsChanged = (event as { KeyboardLayoutsChanged?: { keyboard_layouts?: unknown } }).KeyboardLayoutsChanged
+    if (layoutsChanged?.keyboard_layouts) {
+      applyLayouts(layoutsChanged.keyboard_layouts)
+      return
+    }
+
+    const switched = (event as { KeyboardLayoutSwitched?: { idx?: number } }).KeyboardLayoutSwitched
+    if (typeof switched?.idx === "number" && switched.idx >= 0 && switched.idx < knownLayouts.length) {
+      const active = knownLayouts[switched.idx]
+      if (active) setLabel(compactLayoutName(active))
     }
   }
 
-  const stream = new Gio.DataInputStream({
-    base_stream: stdout,
-    close_base_stream: true,
-  })
+  const scheduleReconnect = () => {
+    if (stopped || reconnectId) return
 
-  let stopped = false
-
-  const handleLine = (line: string) => {
-    try {
-      const event = JSON.parse(line)
-
-      const layoutsChanged = (event as { KeyboardLayoutsChanged?: { keyboard_layouts?: unknown } }).KeyboardLayoutsChanged
-      if (layoutsChanged?.keyboard_layouts) {
-        const layouts = parseNiriLayouts(layoutsChanged.keyboard_layouts)
-        if (layouts?.names) knownLayouts = layouts.names
-
-        const active = pickNiriActiveLayout(layouts)
-        if (active) setLabel(compactLayoutName(active))
-        return
-      }
-
-      const switched = (event as { KeyboardLayoutSwitched?: { idx?: number } }).KeyboardLayoutSwitched
-      if (typeof switched?.idx === "number" && switched.idx >= 0 && switched.idx < knownLayouts.length) {
-        const active = knownLayouts[switched.idx]
-        if (active) setLabel(compactLayoutName(active))
-      }
-    } catch (error) {
-      console.error(error)
-    }
+    reconnectId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1000, () => {
+      reconnectId = 0
+      void startStream()
+      return GLib.SOURCE_REMOVE
+    })
   }
 
   const readNext = () => {
-    if (stopped) return
+    if (stopped || !stream) return
 
     stream.read_line_async(GLib.PRIORITY_DEFAULT, null, (_source, result) => {
-      if (stopped) return
+      if (stopped || !stream) return
 
       try {
         const [line] = stream.read_line_finish_utf8(result)
 
-        if (line === null) return
+        if (line === null) {
+          closeNiriConnection(connection, stream)
+          connection = null
+          stream = null
+          scheduleReconnect()
+          return
+        }
 
-        if (line.trim().length > 0) handleLine(line)
+        if (line.trim().length > 0) handleEventLine(line)
         readNext()
       } catch (error) {
         console.error(error)
+        closeNiriConnection(connection, stream)
+        connection = null
+        stream = null
+        scheduleReconnect()
       }
     })
   }
 
-  readNext()
+  const startStream = async () => {
+    if (stopped) return
 
-  process.wait_async(null, (_source, result) => {
+    closeNiriConnection(connection, stream)
+    connection = null
+    stream = null
+
     try {
-      process.wait_finish(result)
+      const client = new Gio.SocketClient()
+      const address = Gio.UnixSocketAddress.new(socketPath)
+      connection = await connectSocketAsync(client, address)
+
+      const output = connection.get_output_stream()
+      const socket = connection.get_socket()
+      output.write_all(encodeUtf8(`${JSON.stringify("EventStream")}\n`), null)
+      output.flush(null)
+      socket?.shutdown(false, true)
+
+      stream = new Gio.DataInputStream({
+        base_stream: connection.get_input_stream(),
+        close_base_stream: true,
+      })
+
+      const replyLine = await new Promise<string | null>((resolve, reject) => {
+        stream?.read_line_async(GLib.PRIORITY_DEFAULT, null, (_source, result) => {
+          try {
+            if (!stream) {
+              resolve(null)
+              return
+            }
+
+            const [line] = stream.read_line_finish_utf8(result)
+            resolve(line)
+          } catch (error) {
+            reject(error)
+          }
+        })
+      })
+
+      if (replyLine === null) {
+        throw new Error("niri event stream closed before reply")
+      }
+
+      const reply = JSON.parse(replyLine)
+      if (reply && typeof reply === "object" && "Err" in (reply as Record<string, unknown>)) {
+        throw new Error(`niri event stream error: ${JSON.stringify((reply as { Err?: unknown }).Err)}`)
+      }
+
+      readNext()
     } catch (error) {
-      if (!stopped) console.error(error)
+      console.error(error)
+      closeNiriConnection(connection, stream)
+      connection = null
+      stream = null
+      scheduleReconnect()
     }
-  })
+  }
+
+  void startStream()
 
   return () => {
     stopped = true
 
-    try {
-      stream.close(null)
-    } catch {}
+    if (reconnectId) {
+      GLib.source_remove(reconnectId)
+      reconnectId = 0
+    }
 
-    try {
-      process.force_exit()
-    } catch {}
+    closeNiriConnection(connection, stream)
+    connection = null
+    stream = null
   }
 }
 
@@ -261,8 +339,8 @@ export function KeyboardLayout() {
 
   return (
     <box
-      class="layout-indicator"
-      spacing={6}
+      class="section section-center left-module-shell left-status-shell"
+      spacing={0}
       visible={visible}
       valign={Gtk.Align.CENTER}
       $={(self) => {
@@ -297,8 +375,14 @@ export function KeyboardLayout() {
         })
       }}
     >
-      <label class="layout-separator" label="•" />
-      <label class="layout-label left-module-label" label={label} />
+      <box
+        class="layout-indicator left-module-button left-module-content left-status-content"
+        spacing={0}
+        valign={Gtk.Align.CENTER}
+        halign={Gtk.Align.CENTER}
+      >
+        <label class="layout-label left-module-label" label={label} />
+      </box>
     </box>
   )
 }

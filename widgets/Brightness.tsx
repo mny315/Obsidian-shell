@@ -5,6 +5,7 @@ import { createComputed, createState } from "ags"
 import { execAsync } from "ags/process"
 
 import { BRIGHTNESS_MIN, BRIGHTNESS_STEP, clamp } from "../config"
+import { suppressBrightnessOsd } from "./Osd"
 
 function parseBrightness(out: string) {
   return clamp(Number.parseFloat(out.trim()) || BRIGHTNESS_MIN, BRIGHTNESS_MIN, 1)
@@ -54,6 +55,7 @@ export function BrightnessControl({
 
   const setBrightness = (nextValue: number) => {
     const next = clamp(nextValue, BRIGHTNESS_MIN, 1)
+    suppressBrightnessOsd()
     setCurrent(next)
 
     void execAsync([
@@ -67,6 +69,7 @@ export function BrightnessControl({
     setCurrent((prev) => {
       const next = clamp(prev + delta, BRIGHTNESS_MIN, 1)
 
+      suppressBrightnessOsd()
       void execAsync([
         "bash",
         "-lc",

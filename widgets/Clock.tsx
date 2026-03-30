@@ -3,8 +3,6 @@ import { createPoll } from "ags/time"
 
 import { fallback } from "../config"
 import { WallpaperWidgetButton } from "./WallpaperWidget"
-import { BatteryStatus } from "./BatteryStatus"
-import { KeyboardLayout } from "./KeyboardLayout"
 
 export function Clock({ monitor }: { monitor: number }) {
   const time = createPoll(
@@ -18,8 +16,6 @@ export function Clock({ monitor }: { monitor: number }) {
       <WallpaperWidgetButton monitor={monitor} />
       <label class="clock-icon" label={"󰅐"} />
       <label class="clock left-module-label" label={time} />
-      <BatteryStatus />
-      <KeyboardLayout />
     </box>
   )
 }

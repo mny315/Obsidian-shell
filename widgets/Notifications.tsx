@@ -1,14 +1,16 @@
 import GLib from "gi://GLib"
+import Gio from "gi://Gio"
 import Gtk from "gi://Gtk?version=4.0"
 import Pango from "gi://Pango"
 import Notifd from "gi://AstalNotifd"
 
-import { For, With, createState } from "ags"
+import { For, With, createComputed, createState } from "ags"
 import { idle } from "ags/time"
 import { Astal } from "ags/gtk4"
 
 import { WIDGET_AUTO_CLOSE_DELAY_MS } from "../config"
 import { PlayerDock } from "./PlayerInline"
+import { attachEscapeKey } from "./EscapeKey"
 import {
   FLOATING_POPUP_ANCHOR,
   POPUP_SCREEN_RIGHT,
@@ -21,10 +23,7 @@ const notifd = Notifd.get_default()
 const HISTORY_WIDTH = 520
 const HISTORY_MIN_HEIGHT = 480
 const HISTORY_MAX_HEIGHT = 1280
-const HISTORY_REVEAL_DURATION_MS = 260
-const HISTORY_FADE_DURATION_MS = 170
-const HISTORY_FADE_DELAY_MS = 36
-const HISTORY_HIDE_SLIDE_DELAY_MS = 24
+const HISTORY_REVEAL_DURATION_MS = 220
 
 const TOAST_WIDTH = 414
 const TOAST_GAP = 10
@@ -35,6 +34,7 @@ const IGNORED_SLIDE_DURATION_MS = 220
 const IGNORED_FADE_DURATION_MS = 160
 const IGNORED_FADE_DELAY_MS = 28
 const IGNORED_HIDE_SLIDE_DELAY_MS = 16
+const IGNORED_MANAGER_AUTO_CLOSE_MS = 5000
 const TOAST_WINDOW_ANCHOR = Astal.WindowAnchor.RIGHT | Astal.WindowAnchor.BOTTOM
 
 const IDLE_NOTIFICATION_GLYPH = "󰂜"
@@ -43,6 +43,7 @@ const DND_LABEL = "DND"
 const IGNORED_APPS_LABEL = "Ignored"
 
 let notifdInitialized = false
+let ignoredManagerCloseRequest: (() => void) | null = null
 const popupTimeouts = new Map<number, number>()
 const popupHideAnimationTimeouts = new Map<number, number>()
 
@@ -66,6 +67,9 @@ export type NotificationSnapshot = {
   summary: string
   body: string
   appName: string
+  appLabel: string
+  appKey: string
+  canIgnore: boolean
   appIcon: string
   time: number
   actions: NotificationActionSnapshot[]
@@ -78,7 +82,9 @@ type IgnoredAppSnapshot = {
 
 type NotificationGroupSnapshot = {
   key: string
+  appKey: string
   label: string
+  canIgnore: boolean
   icon: string
   latestTime: number
   items: NotificationSnapshot[]
@@ -158,13 +164,230 @@ function isDismissedId(id: number) {
   return dismissedIds.has(id)
 }
 
-function normalizeAppKey(appName: string) {
-  return appName.trim().replace(/\s+/g, " ").toLowerCase()
+const UNKNOWN_APP_LABEL = "Unknown app"
+const UNKNOWN_APP_KEYS = new Set(["unknown", "unknown app"])
+
+type AppCatalogEntry = {
+  id: string
+  label: string
+}
+
+type NotificationAppIdentity = {
+  key: string
+  label: string
+  canIgnore: boolean
+}
+
+let appCatalogLoaded = false
+const appCatalogById = new Map<string, AppCatalogEntry>()
+const appCatalogByName = new Map<string, AppCatalogEntry>()
+
+function normalizeAppKey(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase()
 }
 
 function displayAppName(appName: string) {
   const value = appName.trim().replace(/\s+/g, " ")
-  return value.length > 0 ? value : "Unknown app"
+  return value.length > 0 ? value : UNKNOWN_APP_LABEL
+}
+
+function isUnknownAppName(appName: string) {
+  const key = normalizeAppKey(appName)
+  return key.length === 0 || UNKNOWN_APP_KEYS.has(key)
+}
+
+function basename(value: string) {
+  return value.split(/[\\/]/).filter(Boolean).at(-1) ?? value
+}
+
+function compactWhitespace(value: string) {
+  return value.trim().replace(/\s+/g, " ")
+}
+
+function unpackValue(value: unknown): unknown {
+  try {
+    if (value && typeof value === "object" && typeof (value as any).deepUnpack === "function")
+      return (value as any).deepUnpack()
+  } catch {}
+
+  try {
+    if (value && typeof value === "object" && typeof (value as any).unpack === "function")
+      return (value as any).unpack()
+  } catch {}
+
+  return value
+}
+
+function safeStringish(value: unknown, fallback = "") {
+  const unpacked = unpackValue(value)
+  if (typeof unpacked === "string") return unpacked
+  if (typeof unpacked === "number" || typeof unpacked === "boolean") return String(unpacked)
+  return fallback
+}
+
+function desktopIdCandidates(value: string) {
+  const base = basename(compactWhitespace(value))
+  if (!base) return []
+
+  const candidates = [base, `${base}.desktop`]
+  return [...new Set(candidates.map((entry) => compactWhitespace(entry)).filter(Boolean))]
+}
+
+function rememberAppAlias(map: Map<string, AppCatalogEntry>, alias: string, entry: AppCatalogEntry) {
+  const key = normalizeAppKey(alias)
+  if (!key || map.has(key)) return
+  map.set(key, entry)
+}
+
+function ensureAppCatalogLoaded() {
+  if (appCatalogLoaded) return
+  appCatalogLoaded = true
+
+  try {
+    const apps = Gio.AppInfo.get_all?.() ?? []
+
+    for (const appInfo of apps as any[]) {
+      const id = compactWhitespace(safeString(appInfo?.get_id?.() ?? getProp(appInfo, "id")))
+      const displayName = compactWhitespace(safeString(appInfo?.get_display_name?.() ?? getProp(appInfo, "display_name", "displayName")))
+      const name = compactWhitespace(safeString(appInfo?.get_name?.() ?? getProp(appInfo, "name")))
+      const executable = compactWhitespace(safeString(appInfo?.get_executable?.() ?? getProp(appInfo, "executable")))
+      const label = displayAppName(displayName || name || id)
+
+      if (!id && !displayName && !name) continue
+
+      const entry: AppCatalogEntry = {
+        id,
+        label,
+      }
+
+      if (id) {
+        rememberAppAlias(appCatalogById, id, entry)
+        if (id.endsWith(".desktop")) rememberAppAlias(appCatalogById, id.slice(0, -".desktop".length), entry)
+      }
+
+      rememberAppAlias(appCatalogByName, label, entry)
+      rememberAppAlias(appCatalogByName, name, entry)
+      rememberAppAlias(appCatalogByName, displayName, entry)
+      rememberAppAlias(appCatalogByName, executable, entry)
+    }
+  } catch {}
+}
+
+function lookupAppCatalogEntry(desktopEntry: string, appId: string, appName: string) {
+  ensureAppCatalogLoaded()
+
+  for (const value of [desktopEntry, appId]) {
+    for (const candidate of desktopIdCandidates(value)) {
+      const entry = appCatalogById.get(normalizeAppKey(candidate))
+      if (entry) return entry
+    }
+  }
+
+  if (!isUnknownAppName(appName)) {
+    const normalizedName = normalizeAppKey(displayAppName(appName))
+    const entry = appCatalogByName.get(normalizedName)
+    if (entry) return entry
+  }
+
+  return null
+}
+
+function getNestedProp(container: any, ...keys: string[]) {
+  const value = unpackValue(container)
+  if (!value) return undefined
+
+  for (const key of keys) {
+    try {
+      if (value instanceof Map && value.has(key)) return value.get(key)
+    } catch {}
+
+    try {
+      if (typeof value === "object" && value !== null && (value as any)[key] !== undefined && (value as any)[key] !== null)
+        return (value as any)[key]
+    } catch {}
+
+    try {
+      const lookupValue = (value as any)?.lookup_value?.(key, null)
+      if (lookupValue !== undefined && lookupValue !== null) return lookupValue
+    } catch {}
+
+    try {
+      const lookup = (value as any)?.lookup?.(key)
+      if (lookup !== undefined && lookup !== null) return lookup
+    } catch {}
+  }
+
+  return undefined
+}
+
+function getNotificationHint(notification: any, ...keys: string[]) {
+  const direct = getProp(notification, ...keys)
+  if (direct !== undefined) return direct
+
+  const hints = getProp(notification, "hints", "Hints")
+  if (hints === undefined) return undefined
+
+  return getNestedProp(hints, ...keys)
+}
+
+function normalizeIgnoredAppKey(rawKey: string, label: string) {
+  const key = compactWhitespace(rawKey)
+  if (!key) return ""
+  if (key.includes(":")) return key
+  if (isUnknownAppName(label) || isUnknownAppName(key)) return ""
+  return `name:${normalizeAppKey(key)}`
+}
+
+function resolveNotificationAppIdentity(notification: any, appName: string): NotificationAppIdentity {
+  const desktopEntry = compactWhitespace(safeStringish(
+    getNotificationHint(notification, "desktopEntry", "desktop_entry", "desktop-entry"),
+  ))
+
+  const appId = compactWhitespace(safeStringish(
+    getNotificationHint(notification, "appId", "app_id", "app-id", "applicationId", "application_id", "application-id"),
+  ))
+
+  const appInfo = lookupAppCatalogEntry(desktopEntry, appId, appName)
+
+  if (appInfo?.id) {
+    return {
+      key: `id:${normalizeAppKey(appInfo.id)}`,
+      label: appInfo.label,
+      canIgnore: true,
+    }
+  }
+
+  if (desktopEntry) {
+    const preferred = desktopIdCandidates(desktopEntry)[0] ?? desktopEntry
+    return {
+      key: `desktop:${normalizeAppKey(preferred)}`,
+      label: isUnknownAppName(appName) ? preferred : displayAppName(appName),
+      canIgnore: true,
+    }
+  }
+
+  if (appId) {
+    const preferred = desktopIdCandidates(appId)[0] ?? appId
+    return {
+      key: `app:${normalizeAppKey(preferred)}`,
+      label: isUnknownAppName(appName) ? preferred : displayAppName(appName),
+      canIgnore: true,
+    }
+  }
+
+  if (!isUnknownAppName(appName)) {
+    return {
+      key: `name:${normalizeAppKey(displayAppName(appName))}`,
+      label: displayAppName(appName),
+      canIgnore: true,
+    }
+  }
+
+  return {
+    key: "",
+    label: UNKNOWN_APP_LABEL,
+    canIgnore: false,
+  }
 }
 
 function syncIgnoredAppsState() {
@@ -192,19 +415,31 @@ function ensureIgnoredAppsLoaded() {
       return
     }
 
+    let changed = false
+
     for (const value of parsed) {
       if (typeof value === "string") {
         const label = displayAppName(value)
-        const key = normalizeAppKey(label)
+        const key = normalizeIgnoredAppKey(label, label)
         if (key) ignoredApps.set(key, label)
+        else changed = true
         continue
       }
 
       if (value && typeof value === "object") {
         const label = displayAppName(String((value as any).label ?? (value as any).key ?? ""))
-        const key = normalizeAppKey(String((value as any).key ?? label))
+        const key = normalizeIgnoredAppKey(String((value as any).key ?? label), label)
         if (key) ignoredApps.set(key, label)
+        else changed = true
       }
+    }
+
+    if (changed) {
+      GLib.mkdir_with_parents(CACHE_DIR, 0o755)
+      GLib.file_set_contents(
+        IGNORED_NOTIFICATION_APPS_PATH,
+        JSON.stringify([...ignoredApps.entries()].map(([key, label]) => ({ key, label }))),
+      )
     }
   } catch {}
 
@@ -225,15 +460,14 @@ function saveIgnoredApps() {
   syncIgnoredAppsState()
 }
 
-function isIgnoredAppName(appName: string) {
+function isIgnoredAppKey(appKey: string) {
   ensureIgnoredAppsLoaded()
-  const key = normalizeAppKey(displayAppName(appName))
-  return key.length > 0 && ignoredApps.has(key)
+  return appKey.length > 0 && ignoredApps.has(appKey)
 }
 
 function removeNotificationsForAppKey(appKey: string) {
   const matchingIds = history()
-    .filter((entry) => normalizeAppKey(displayAppName(entry.appName)) === appKey)
+    .filter((entry) => entry.appKey === appKey)
     .map((entry) => entry.id)
 
   if (matchingIds.length > 0) {
@@ -250,22 +484,20 @@ function removeNotificationsForAppKey(appKey: string) {
 
     for (const notification of liveNotifications) {
       const snapshot = snapshotNotification(notification)
-      if (normalizeAppKey(displayAppName(snapshot.appName)) !== appKey) continue
+      if (snapshot.appKey !== appKey) continue
       dismissNotification(snapshot.id)
     }
   } catch {}
 }
 
-function ignoreApp(appName: string) {
+function ignoreApp(appKey: string, label: string) {
   ensureIgnoredAppsLoaded()
 
-  const label = displayAppName(appName)
-  const key = normalizeAppKey(label)
-  if (!key) return
+  if (!appKey || isUnknownAppName(label)) return
 
-  ignoredApps.set(key, label)
+  ignoredApps.set(appKey, displayAppName(label))
   saveIgnoredApps()
-  removeNotificationsForAppKey(key)
+  removeNotificationsForAppKey(appKey)
 }
 
 function unignoreApp(appKey: string) {
@@ -328,11 +560,17 @@ function getActions(notification: any): NotificationActionSnapshot[] {
 }
 
 function snapshotNotification(notification: any): NotificationSnapshot {
+  const appName = safeString(getProp(notification, "appName", "app_name", "app-name"))
+  const appIdentity = resolveNotificationAppIdentity(notification, appName)
+
   return {
     id: safeNumber(getProp(notification, "id")),
     summary: safeString(getProp(notification, "summary")),
     body: safeString(getProp(notification, "body")),
-    appName: safeString(getProp(notification, "appName", "app_name", "app-name")),
+    appName,
+    appLabel: appIdentity.label,
+    appKey: appIdentity.key,
+    canIgnore: appIdentity.canIgnore,
     appIcon: safeString(getProp(notification, "appIcon", "app_icon", "app-icon")),
     time: safeNumber(getProp(notification, "time"), Date.now()),
     actions: getActions(notification),
@@ -340,12 +578,24 @@ function snapshotNotification(notification: any): NotificationSnapshot {
 }
 
 function updateHistoryEntry(next: NotificationSnapshot) {
-  if (isIgnoredAppName(next.appName)) return
+  if (isIgnoredAppKey(next.appKey)) return
 
   setHistory((prev) => {
     const filtered = prev.filter((entry) => entry.id !== next.id)
     return [next, ...filtered].slice(0, 80)
   })
+}
+
+function removeNotificationIds(ids: number[]) {
+  const uniqueIds = [...new Set(ids.filter((id) => Number.isFinite(id) && id > 0))]
+  if (uniqueIds.length === 0) return
+
+  const removed = new Set(uniqueIds)
+
+  markDismissedIds(uniqueIds)
+  for (const id of uniqueIds) dismissNotification(id)
+  for (const id of uniqueIds) dropPopup(id)
+  setHistory((prev) => prev.filter((entry) => !removed.has(entry.id)))
 }
 
 function clearPopupTimeout(id: number) {
@@ -404,7 +654,7 @@ function schedulePopupHide(id: number, timeout = WIDGET_AUTO_CLOSE_DELAY_MS) {
 
 function showPopup(id: number) {
   const snapshot = history().find((entry) => entry.id === id)
-  if (snapshot && isIgnoredAppName(snapshot.appName)) return
+  if (snapshot && isIgnoredAppKey(snapshot.appKey)) return
 
   clearPopupHideAnimationTimeout(id)
 
@@ -449,7 +699,7 @@ function setupNotifd() {
       for (const notification of liveNotifications) {
         const snapshot = snapshotNotification(notification)
         if (isDismissedId(snapshot.id)) continue
-        if (isIgnoredAppName(snapshot.appName)) {
+        if (isIgnoredAppKey(snapshot.appKey)) {
           dismissNotification(snapshot.id)
           continue
         }
@@ -465,7 +715,7 @@ function setupNotifd() {
     if (!notification) return
 
     const snapshot = snapshotNotification(notification)
-    if (isIgnoredAppName(snapshot.appName)) {
+    if (isIgnoredAppKey(snapshot.appKey)) {
       dismissNotification(id)
       return
     }
@@ -479,6 +729,7 @@ function setupNotifd() {
   notifd.connect("resolved", (_self: any, id: number) => {
     hidePopup(id)
     unmarkDismissedId(id)
+    ignoredManagerCloseRequest?.()
 
     const notification = notifd.get_notification(id)
     if (notification) updateHistoryEntry(snapshotNotification(notification))
@@ -592,14 +843,16 @@ function groupNotifications(items: NotificationSnapshot[]) {
   const ordered: NotificationGroupSnapshot[] = []
 
   for (const item of items) {
-    const label = displayAppName(item.appName)
-    const key = normalizeAppKey(label)
+    const key = item.appKey || `notification:${item.id}`
+    const label = item.appLabel
     let group = groups.get(key)
 
     if (!group) {
       group = {
         key,
+        appKey: item.appKey,
         label,
+        canIgnore: item.canIgnore && item.appKey.length > 0,
         icon: iconNameFromNotification(item),
         latestTime: item.time,
         items: [],
@@ -622,11 +875,13 @@ function NotificationCard({
   compact = false,
   grouped = false,
   showAppName = true,
+  onDismiss,
 }: {
   snapshot: NotificationSnapshot
   compact?: boolean
   grouped?: boolean
   showAppName?: boolean
+  onDismiss?: () => void
 }) {
   const actions = snapshot.actions
   const hasBody = snapshot.body.trim().length > 0
@@ -653,7 +908,7 @@ function NotificationCard({
         />
 
         <box class="notification-text-stack" orientation={Gtk.Orientation.VERTICAL} spacing={5} hexpand>
-          <box class="notification-summary-row" spacing={8} hexpand>
+          <box class="notification-summary-row" spacing={8} hexpand valign={Gtk.Align.START}>
             <label
               class="notification-summary"
               hexpand
@@ -673,12 +928,21 @@ function NotificationCard({
                 xalign: 1,
               })}
             />
+            <button
+              class="notification-icon-button notification-dismiss-button"
+              visible={!compact}
+              tooltipText="Dismiss notification"
+              valign={Gtk.Align.START}
+              onClicked={() => onDismiss?.()}
+            >
+              <label class="notification-dismiss-glyph" label="✕" />
+            </button>
           </box>
 
           <label
             class="notification-app-name"
-            visible={showAppName && snapshot.appName.trim().length > 0}
-            $={(self) => configureNotificationLabel(self, displayAppName(snapshot.appName), {
+            visible={showAppName && snapshot.appLabel.trim().length > 0}
+            $={(self) => configureNotificationLabel(self, snapshot.appLabel, {
               compact,
               singleLine: true,
               maxWidthChars: compact ? 36 : 0,
@@ -714,43 +978,134 @@ function NotificationCard({
   )
 }
 
-function NotificationGroup({ group }: { group: NotificationGroupSnapshot }) {
-  return (
-    <box class="notification-app-group" orientation={Gtk.Orientation.VERTICAL} spacing={8}>
-      <box class="notification-app-group-header" spacing={10} valign={Gtk.Align.CENTER}>
-        <image
-          class="notification-app-icon notification-group-icon"
-          iconName={group.icon}
-          pixelSize={18}
-          valign={Gtk.Align.CENTER}
-        />
+function NotificationGroup({
+  group,
+  onToggle,
+  onDismissGroup,
+  onDismissItem,
+  onSlideRevealer,
+  onFadeRevealer,
+}: {
+  group: NotificationGroupSnapshot
+  onToggle: () => void
+  onDismissGroup: () => void
+  onDismissItem: (id: number) => void
+  onSlideRevealer: (revealer: Gtk.Revealer | null) => void
+  onFadeRevealer: (revealer: Gtk.Revealer | null) => void
+}) {
+  let groupContainer: Gtk.Widget | null = null
 
-        <box class="notification-app-group-meta" orientation={Gtk.Orientation.VERTICAL} spacing={2} hexpand>
-          <box class="notification-app-group-title-row" spacing={8} valign={Gtk.Align.CENTER}>
-            <label class="notification-app-group-title" xalign={0} hexpand label={group.label} />
-            <label class="notification-app-group-time" label={formatTime(group.latestTime)} />
-          </box>
-          <label
-            class="notification-app-group-count"
-            xalign={0}
-            label={group.items.length === 1 ? "1 notification" : `${group.items.length} notifications`}
+  const shouldSkipToggle = (target: Gtk.Widget | null) => {
+    let current = target
+
+    while (current) {
+      if (
+        current.has_css_class?.("notification-inline-manage-button") ||
+        current.has_css_class?.("notification-dismiss-button") ||
+        current.has_css_class?.("notification-group-item") ||
+        current.has_css_class?.("notification-action-button")
+      ) {
+        return true
+      }
+
+      if (current === groupContainer) break
+      current = current.get_parent?.() as Gtk.Widget | null
+    }
+
+    return false
+  }
+
+  return (
+    <box
+      class="notification-app-group"
+      orientation={Gtk.Orientation.VERTICAL}
+      spacing={8}
+      $={(self) => (groupContainer = self)}
+    >
+      <Gtk.GestureClick
+        button={1}
+        propagationPhase={Gtk.PropagationPhase.CAPTURE}
+        onPressed={(_, _nPress, x, y) => {
+          const target = groupContainer?.pick?.(x, y, Gtk.PickFlags.DEFAULT) as Gtk.Widget | null
+          if (shouldSkipToggle(target)) return
+          onToggle()
+        }}
+      />
+
+      <box class="notification-app-group-header" spacing={8} valign={Gtk.Align.CENTER}>
+        <box class="notification-app-group-header-content" spacing={10} valign={Gtk.Align.CENTER} hexpand>
+          <image
+            class="notification-app-icon notification-group-icon"
+            iconName={group.icon}
+            pixelSize={18}
+            valign={Gtk.Align.CENTER}
           />
+
+          <box class="notification-app-group-meta" orientation={Gtk.Orientation.VERTICAL} spacing={2} hexpand>
+            <box class="notification-app-group-title-row" spacing={8} valign={Gtk.Align.CENTER}>
+              <label class="notification-app-group-title" xalign={0} hexpand label={group.label} />
+              <label class="notification-app-group-time" label={formatTime(group.latestTime)} />
+            </box>
+            <label
+              class="notification-app-group-count"
+              xalign={0}
+              label={group.items.length === 1 ? "1 notification" : `${group.items.length} notifications`}
+            />
+          </box>
         </box>
 
         <button
           class="notification-action-button notification-inline-manage-button"
+          visible={group.canIgnore}
           tooltipText={`Ignore ${group.label}`}
-          onClicked={() => ignoreApp(group.label)}
+          onClicked={() => ignoreApp(group.appKey, group.label)}
         >
           <label label="Ignore" />
         </button>
+
+        <button
+          class="notification-icon-button notification-dismiss-button"
+          tooltipText={`Dismiss ${group.items.length === 1 ? "notification" : "group"}`}
+          onClicked={onDismissGroup}
+        >
+          <label class="notification-dismiss-glyph" label="✕" />
+        </button>
       </box>
 
-      <box class="notification-group-items" orientation={Gtk.Orientation.VERTICAL} spacing={6}>
-        <For each={() => group.items}>
-          {(item) => <NotificationCard snapshot={item} grouped showAppName={false} />}
-        </For>
-      </box>
+      <revealer
+        class="notification-group-revealer notification-group-slide-revealer"
+        revealChild={false}
+        transitionType={Gtk.RevealerTransitionType.SLIDE_DOWN}
+        transitionDuration={IGNORED_SLIDE_DURATION_MS}
+        $={(self) => {
+          onSlideRevealer(self)
+          self.connect("destroy", () => onSlideRevealer(null))
+        }}
+      >
+        <revealer
+          class="notification-group-revealer notification-group-fade-revealer"
+          revealChild={false}
+          transitionType={Gtk.RevealerTransitionType.CROSSFADE}
+          transitionDuration={IGNORED_FADE_DURATION_MS}
+          $={(self) => {
+            onFadeRevealer(self)
+            self.connect("destroy", () => onFadeRevealer(null))
+          }}
+        >
+          <box class="notification-group-items" orientation={Gtk.Orientation.VERTICAL} spacing={6}>
+            <For each={() => group.items}>
+              {(item) => (
+                <NotificationCard
+                  snapshot={item}
+                  grouped
+                  showAppName={false}
+                  onDismiss={() => onDismissItem(item.id)}
+                />
+              )}
+            </For>
+          </box>
+        </revealer>
+      </revealer>
     </box>
   )
 }
@@ -765,6 +1120,12 @@ function NotificationToastWindow({ monitor }: { monitor: number }) {
       exclusivity={Astal.Exclusivity.IGNORE}
       keymode={Astal.Keymode.NONE}
       anchor={TOAST_WINDOW_ANCHOR}
+      $={(self) => {
+        self.connect("destroy", () => {
+          for (const id of [...popupTimeouts.keys()]) clearPopupTimeout(id)
+          for (const id of [...popupHideAnimationTimeouts.keys()]) clearPopupHideAnimationTimeout(id)
+        })
+      }}
     >
       <box
         class="notification-toast-placement"
@@ -808,18 +1169,23 @@ export function Notifications({ monitor }: { monitor: number }) {
   let trigger: Gtk.Button | null = null
   let popupPlacement: Gtk.Box | null = null
   let popupSlideRevealer: Gtk.Revealer | null = null
-  let popupFadeRevealer: Gtk.Revealer | null = null
   let popupFrame: Gtk.Box | null = null
+  let popupRoot: Gtk.Box | null = null
   let closeTimeoutId = 0
-  let popupFadeTimeoutId = 0
-  let popupSlideTimeoutId = 0
   let ignoredSlideRevealer: Gtk.Revealer | null = null
   let ignoredFadeRevealer: Gtk.Revealer | null = null
   let ignoredFadeTimeoutId = 0
   let ignoredSlideTimeoutId = 0
+  let ignoredAutoCloseTimeoutId = 0
   let closingPopup = false
+  let disposed = false
 
   const [windowVisible, setWindowVisible] = createState(false)
+  const [expandedGroups, setExpandedGroups] = createState<string[]>([])
+  const groupSlideRevealers = new Map<string, Gtk.Revealer>()
+  const groupFadeRevealers = new Map<string, Gtk.Revealer>()
+  const groupFadeAnimationTimeouts = new Map<string, number>()
+  const groupSlideAnimationTimeouts = new Map<string, number>()
 
   const clearSource = (sourceId: number) => {
     if (sourceId === 0) return 0
@@ -835,27 +1201,121 @@ export function Notifications({ monitor }: { monitor: number }) {
     closeTimeoutId = clearSource(closeTimeoutId)
   }
 
-  const clearPopupAnimationTimeouts = () => {
-    popupFadeTimeoutId = clearSource(popupFadeTimeoutId)
-    popupSlideTimeoutId = clearSource(popupSlideTimeoutId)
-  }
+  const clearPopupAnimationTimeouts = () => {}
 
   const clearIgnoredAnimationTimeouts = () => {
     ignoredFadeTimeoutId = clearSource(ignoredFadeTimeoutId)
     ignoredSlideTimeoutId = clearSource(ignoredSlideTimeoutId)
   }
 
+  const clearIgnoredAutoCloseTimeout = () => {
+    ignoredAutoCloseTimeoutId = clearSource(ignoredAutoCloseTimeoutId)
+  }
+
+  const clearGroupFadeTimeout = (key: string) => {
+    const timeoutId = groupFadeAnimationTimeouts.get(key) ?? 0
+    if (timeoutId) clearSource(timeoutId)
+    groupFadeAnimationTimeouts.delete(key)
+  }
+
+  const clearGroupSlideTimeout = (key: string) => {
+    const timeoutId = groupSlideAnimationTimeouts.get(key) ?? 0
+    if (timeoutId) clearSource(timeoutId)
+    groupSlideAnimationTimeouts.delete(key)
+  }
+
+  const clearGroupAnimationTimeouts = (key?: string) => {
+    if (key !== undefined) {
+      clearGroupFadeTimeout(key)
+      clearGroupSlideTimeout(key)
+      return
+    }
+
+    for (const entryKey of [...groupFadeAnimationTimeouts.keys()]) clearGroupFadeTimeout(entryKey)
+    for (const entryKey of [...groupSlideAnimationTimeouts.keys()]) clearGroupSlideTimeout(entryKey)
+  }
+
+  const addExpandedKey = (keys: string[], key: string) => (keys.includes(key) ? keys : [...keys, key])
+  const removeExpandedKey = (keys: string[], key: string) => keys.filter((entry) => entry !== key)
+
+  const setGroupExpanded = (key: string, open: boolean) => {
+    clearGroupAnimationTimeouts(key)
+
+    const slideRevealer = groupSlideRevealers.get(key) ?? null
+    const fadeRevealer = groupFadeRevealers.get(key) ?? null
+
+    if (open) {
+      setExpandedGroups((prev) => addExpandedKey(prev, key))
+      if (fadeRevealer) fadeRevealer.revealChild = false
+
+      GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+        if (disposed) return GLib.SOURCE_REMOVE
+
+        const nextSlideRevealer = groupSlideRevealers.get(key) ?? slideRevealer
+        if (nextSlideRevealer) nextSlideRevealer.revealChild = true
+
+        const fadeTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, IGNORED_FADE_DELAY_MS, () => {
+          groupFadeAnimationTimeouts.delete(key)
+          if (disposed) return GLib.SOURCE_REMOVE
+
+          const nextFadeRevealer = groupFadeRevealers.get(key) ?? fadeRevealer
+          if (nextFadeRevealer) nextFadeRevealer.revealChild = true
+          return GLib.SOURCE_REMOVE
+        })
+
+        groupFadeAnimationTimeouts.set(key, fadeTimeoutId)
+        return GLib.SOURCE_REMOVE
+      })
+      return
+    }
+
+    setExpandedGroups((prev) => removeExpandedKey(prev, key))
+    if (fadeRevealer) fadeRevealer.revealChild = false
+
+    const slideTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, IGNORED_HIDE_SLIDE_DELAY_MS, () => {
+      groupSlideAnimationTimeouts.delete(key)
+      if (disposed) return GLib.SOURCE_REMOVE
+
+      const nextSlideRevealer = groupSlideRevealers.get(key) ?? slideRevealer
+      if (nextSlideRevealer) nextSlideRevealer.revealChild = false
+      return GLib.SOURCE_REMOVE
+    })
+
+    groupSlideAnimationTimeouts.set(key, slideTimeoutId)
+  }
+
+  const toggleGroupExpanded = (key: string) => setGroupExpanded(key, !expandedGroups().includes(key))
+  const collapseGroup = (key: string) => setGroupExpanded(key, false)
+  const clearAllGroupAnimationState = () => {
+    clearGroupAnimationTimeouts()
+    for (const revealer of groupFadeRevealers.values()) revealer.revealChild = false
+    for (const revealer of groupSlideRevealers.values()) revealer.revealChild = false
+    setExpandedGroups([])
+  }
+
   const setTriggerOpen = (open: boolean) => {
-    if (!trigger) return
+    if (disposed || !trigger) return
     if (open) trigger.add_css_class("widget-trigger-open")
     else trigger.remove_css_class("widget-trigger-open")
+  }
+
+  const safeSetWindowVisible = (open: boolean) => {
+    if (disposed) return
+    setWindowVisible(open)
+  }
+
+  const safeSetIgnoredManagerOpen = (open: boolean) => {
+    if (disposed) return
+    setIgnoredManagerOpen(open)
   }
 
   const finishClosePopup = () => {
     clearCloseTimeout()
     clearPopupAnimationTimeouts()
+    clearIgnoredAutoCloseTimeout()
+    setIgnoredOpen(false)
     closingPopup = false
-    setWindowVisible(false)
+    safeSetWindowVisible(false)
     setTriggerOpen(false)
   }
 
@@ -863,29 +1323,16 @@ export function Notifications({ monitor }: { monitor: number }) {
     clearPopupAnimationTimeouts()
 
     if (open) {
-      if (popupFadeRevealer) popupFadeRevealer.revealChild = false
-
       GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+        if (disposed) return GLib.SOURCE_REMOVE
         if (popupSlideRevealer) popupSlideRevealer.revealChild = true
-
-        popupFadeTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, HISTORY_FADE_DELAY_MS, () => {
-          popupFadeTimeoutId = 0
-          if (popupFadeRevealer) popupFadeRevealer.revealChild = true
-          return GLib.SOURCE_REMOVE
-        })
-
+      popupRoot?.grab_focus()
         return GLib.SOURCE_REMOVE
       })
       return
     }
 
-    if (popupFadeRevealer) popupFadeRevealer.revealChild = false
-
-    popupSlideTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, HISTORY_HIDE_SLIDE_DELAY_MS, () => {
-      popupSlideTimeoutId = 0
-      if (popupSlideRevealer) popupSlideRevealer.revealChild = false
-      return GLib.SOURCE_REMOVE
-    })
+    if (popupSlideRevealer) popupSlideRevealer.revealChild = false
   }
 
   const closePopup = () => {
@@ -896,7 +1343,8 @@ export function Notifications({ monitor }: { monitor: number }) {
     if (popupSlideRevealer?.get_reveal_child()) {
       setPopupOpen(false)
       closeTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, HISTORY_REVEAL_DURATION_MS, () => {
-        finishClosePopup()
+        if (!disposed) finishClosePopup()
+        else closeTimeoutId = 0
         return GLib.SOURCE_REMOVE
       })
       return
@@ -911,23 +1359,37 @@ export function Notifications({ monitor }: { monitor: number }) {
     clearCloseTimeout()
     clearPopupAnimationTimeouts()
     closingPopup = false
-    setWindowVisible(true)
+    safeSetWindowVisible(true)
     setTriggerOpen(true)
     setPopupOpen(true)
   }
 
+  const scheduleIgnoredAutoClose = () => {
+    clearIgnoredAutoCloseTimeout()
+
+    ignoredAutoCloseTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, IGNORED_MANAGER_AUTO_CLOSE_MS, () => {
+      ignoredAutoCloseTimeoutId = 0
+      if (!disposed) setIgnoredOpen(false)
+      return GLib.SOURCE_REMOVE
+    })
+  }
+
   const setIgnoredOpen = (open: boolean) => {
     clearIgnoredAnimationTimeouts()
-    setIgnoredManagerOpen(open)
+    clearIgnoredAutoCloseTimeout()
+    safeSetIgnoredManagerOpen(open)
 
     if (open) {
+      scheduleIgnoredAutoClose()
       if (ignoredFadeRevealer) ignoredFadeRevealer.revealChild = false
 
       GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+        if (disposed) return GLib.SOURCE_REMOVE
         if (ignoredSlideRevealer) ignoredSlideRevealer.revealChild = true
 
         ignoredFadeTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, IGNORED_FADE_DELAY_MS, () => {
           ignoredFadeTimeoutId = 0
+          if (disposed) return GLib.SOURCE_REMOVE
           if (ignoredFadeRevealer) ignoredFadeRevealer.revealChild = true
           return GLib.SOURCE_REMOVE
         })
@@ -941,10 +1403,13 @@ export function Notifications({ monitor }: { monitor: number }) {
 
     ignoredSlideTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, IGNORED_HIDE_SLIDE_DELAY_MS, () => {
       ignoredSlideTimeoutId = 0
+      if (disposed) return GLib.SOURCE_REMOVE
       if (ignoredSlideRevealer) ignoredSlideRevealer.revealChild = false
       return GLib.SOURCE_REMOVE
     })
   }
+
+  ignoredManagerCloseRequest = () => { if (!disposed) setIgnoredOpen(false) }
 
   const togglePopup = () => {
     if (windowVisible()) closePopup()
@@ -955,6 +1420,8 @@ export function Notifications({ monitor }: { monitor: number }) {
   const bellTooltip = unresolvedCount((count) => (count > 0 ? `Notifications (${count})` : "Notifications"))
   const bellGlyph = unresolvedCount((count) => (count > 0 ? ACTIVE_NOTIFICATION_GLYPH : IDLE_NOTIFICATION_GLYPH))
   const hasItems = history((items) => items.length > 0)
+
+  const groupedHistory = createComputed(() => groupNotifications(history()))
 
   const popupContent = (
     <box class="notification-history-shell" orientation={Gtk.Orientation.VERTICAL} spacing={8} hexpand>
@@ -967,8 +1434,6 @@ export function Notifications({ monitor }: { monitor: number }) {
         >
           <With value={history}>
             {(items) => {
-              const groups = groupNotifications(items)
-
               return (
                 items.length === 0 ? (
                   <box
@@ -1005,7 +1470,40 @@ export function Notifications({ monitor }: { monitor: number }) {
                     vexpand
                   >
                     <box class="notification-history-list" orientation={Gtk.Orientation.VERTICAL} spacing={8}>
-                      <For each={() => groups}>{(group) => <NotificationGroup group={group} />}</For>
+                      <For each={groupedHistory}>
+                        {(group) => (
+                          <NotificationGroup
+                            group={group}
+                            onToggle={() => toggleGroupExpanded(group.key)}
+                            onDismissGroup={() => {
+                              collapseGroup(group.key)
+                              removeNotificationIds(group.items.map((item) => item.id))
+                            }}
+                            onDismissItem={(id) => {
+                              if (group.items.length <= 1) collapseGroup(group.key)
+                              removeNotificationIds([id])
+                            }}
+                            onSlideRevealer={(revealer) => {
+                              if (revealer) {
+                                groupSlideRevealers.set(group.key, revealer)
+                                revealer.revealChild = expandedGroups().includes(group.key)
+                                return
+                              }
+
+                              groupSlideRevealers.delete(group.key)
+                            }}
+                            onFadeRevealer={(revealer) => {
+                              if (revealer) {
+                                groupFadeRevealers.set(group.key, revealer)
+                                revealer.revealChild = expandedGroups().includes(group.key)
+                                return
+                              }
+
+                              groupFadeRevealers.delete(group.key)
+                            }}
+                          />
+                        )}
+                      </For>
                     </box>
                   </Gtk.ScrolledWindow>
                 )
@@ -1045,10 +1543,8 @@ export function Notifications({ monitor }: { monitor: number }) {
               const ids = history().map((entry) => entry.id)
               if (ids.length === 0) return
 
-              markDismissedIds(ids)
-              for (const id of ids) dismissNotification(id)
-              for (const id of ids) dropPopup(id)
-              setHistory([])
+              clearAllGroupAnimationState()
+              removeNotificationIds(ids)
             }}
           >
             <label class="notification-clear-label" label="Clear" />
@@ -1128,10 +1624,22 @@ export function Notifications({ monitor }: { monitor: number }) {
       namespace="obsidian-shell"
       class="widget-popup-window notification-history-window"
       exclusivity={Astal.Exclusivity.IGNORE}
-      keymode={Astal.Keymode.ON_DEMAND}
+      keymode={Astal.Keymode.EXCLUSIVE}
       anchor={FLOATING_POPUP_ANCHOR}
+      $={(self) => {
+        self.connect("destroy", () => {
+          popupPlacement = null
+          popupSlideRevealer = null
+          popupFrame = null
+          popupRoot = null
+        })
+      }}
     >
-      <box class="widget-popup-root" hexpand vexpand>
+      <box class="widget-popup-root" hexpand vexpand $={(self) => {
+        popupRoot = self
+        self.set_focusable(true)
+        attachEscapeKey(self, closePopup)
+      }}>
         <Gtk.GestureClick
           button={0}
           propagationPhase={Gtk.PropagationPhase.CAPTURE}
@@ -1158,21 +1666,13 @@ export function Notifications({ monitor }: { monitor: number }) {
             transitionDuration={HISTORY_REVEAL_DURATION_MS}
             $={(self) => (popupSlideRevealer = self)}
           >
-            <revealer
-              class="notification-history-fade-revealer"
-              revealChild={false}
-              transitionType={Gtk.RevealerTransitionType.CROSSFADE}
-              transitionDuration={HISTORY_FADE_DURATION_MS}
-              $={(self) => (popupFadeRevealer = self)}
+            <box
+              class="widget-popup-frame notification-history-frame"
+              widthRequest={HISTORY_WIDTH}
+              $={(self) => (popupFrame = self)}
             >
-              <box
-                class="widget-popup-frame notification-history-frame"
-                widthRequest={HISTORY_WIDTH}
-                $={(self) => (popupFrame = self)}
-              >
-                {popupContent}
-              </box>
-            </revealer>
+              {popupContent}
+            </box>
           </revealer>
         </box>
       </box>
@@ -1198,8 +1698,11 @@ export function Notifications({ monitor }: { monitor: number }) {
             clearCloseTimeout()
             clearPopupAnimationTimeouts()
             clearIgnoredAnimationTimeouts()
+            clearIgnoredAutoCloseTimeout()
+            clearAllGroupAnimationState()
+            ignoredManagerCloseRequest = null
             closingPopup = false
-            setWindowVisible(false)
+            safeSetWindowVisible(false)
             setTriggerOpen(false)
           })
         }}

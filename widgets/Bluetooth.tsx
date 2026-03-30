@@ -6,6 +6,8 @@ import Bluetooth from "gi://AstalBluetooth"
 import { Astal } from "ags/gtk4"
 import { For, With, createBinding, createComputed, createState } from "ags"
 import { timeout } from "ags/time"
+import { sendShellNotification } from "./ShellNotifications"
+import { attachEscapeKey } from "./EscapeKey"
 import { FLOATING_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, TOP_BAR_POPUP_MARGIN_TOP, isPointInsideWidget } from "./FloatingPopup"
 
 const bluetooth = Bluetooth.get_default()
@@ -13,6 +15,7 @@ const bluetooth = Bluetooth.get_default()
 const BLUEZ_SERVICE = "org.bluez"
 const BLUEZ_AGENT_MANAGER_PATH = "/org/bluez"
 const BLUEZ_AGENT_MANAGER_IFACE = "org.bluez.AgentManager1"
+const BLUEZ_DEVICE_IFACE = "org.bluez.Device1"
 const BLUEZ_AGENT_PATH = "/io/astal/BluetoothAgent"
 const BLUEZ_AGENT_CAPABILITY = "NoInputNoOutput"
 
@@ -64,15 +67,19 @@ type ExportedDbusObject = Gio.DBusExportedObject & {
 
 type BluetoothAgentState = {
   connection: Gio.DBusConnection | null
+  connectionPromise: Promise<Gio.DBusConnection> | null
   exported: ExportedDbusObject | null
   registered: boolean
+  registering: Promise<null> | null
   lastHardError: string | null
 }
 
 const bluetoothAgentState: BluetoothAgentState = {
   connection: null,
+  connectionPromise: null,
   exported: null,
   registered: false,
+  registering: null,
   lastHardError: null,
 }
 
@@ -86,9 +93,6 @@ function promisifyIfPresent(proto: object, method: string, finish: string) {
 
 promisifyIfPresent(Bluetooth.Device.prototype, "connect_device", "connect_device_finish")
 promisifyIfPresent(Bluetooth.Device.prototype, "disconnect_device", "disconnect_device_finish")
-promisifyIfPresent(Bluetooth.Device.prototype, "pair", "pair_finish")
-promisifyIfPresent(Bluetooth.Device.prototype, "pair_device", "pair_device_finish")
-promisifyIfPresent(Bluetooth.Device.prototype, "cancel_pairing", "cancel_pairing_finish")
 
 function triggerGlyph(powered: boolean, connected: boolean) {
   if (!powered) return "󰂲"
@@ -169,6 +173,17 @@ function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+async function waitForConnectionState(device: Bluetooth.Device, expected: boolean, timeoutMs = 4000, intervalMs = 100) {
+  const deadline = Date.now() + timeoutMs
+
+  while (Date.now() < deadline) {
+    if (Boolean(device.connected) === expected) return true
+    await sleep(intervalMs)
+  }
+
+  return Boolean(device.connected) === expected
+}
+
 function deviceSortScore(device: Bluetooth.Device) {
   if (device.connected) return 0
   if (isKnownDevice(device)) return 1
@@ -186,6 +201,13 @@ function readAdapters() {
 }
 
 type Notice = { text: string }
+
+type NoticeOptions = {
+  desktop?: boolean
+  durationMs?: number
+  urgency?: "low" | "normal" | "critical"
+  summary?: string
+}
 
 type PairableDevice = Bluetooth.Device & {
   pair?: () => Promise<void> | void
@@ -219,13 +241,27 @@ class EmbeddedBluetoothAgent {
   Cancel() {}
 }
 
-function getSystemBusConnection() {
+function getSystemBusConnectionAsync() {
   if (bluetoothAgentState.connection && !bluetoothAgentState.connection.is_closed()) {
-    return bluetoothAgentState.connection
+    return Promise.resolve(bluetoothAgentState.connection)
   }
 
-  bluetoothAgentState.connection = Gio.bus_get_sync(Gio.BusType.SYSTEM, null)
-  return bluetoothAgentState.connection
+  if (bluetoothAgentState.connectionPromise) return bluetoothAgentState.connectionPromise
+
+  bluetoothAgentState.connectionPromise = new Promise<Gio.DBusConnection>((resolve, reject) => {
+    Gio.bus_get(Gio.BusType.SYSTEM, null, (_source, result) => {
+      try {
+        bluetoothAgentState.connection = Gio.bus_get_finish(result)
+        bluetoothAgentState.connectionPromise = null
+        resolve(bluetoothAgentState.connection)
+      } catch (error) {
+        bluetoothAgentState.connectionPromise = null
+        reject(error)
+      }
+    })
+  })
+
+  return bluetoothAgentState.connectionPromise
 }
 
 function exportBluetoothAgent(connection: Gio.DBusConnection) {
@@ -241,19 +277,29 @@ function exportBluetoothAgent(connection: Gio.DBusConnection) {
   return exported
 }
 
-function callBluezAgentManager(method: string, parameters: GLib.Variant) {
-  const connection = getSystemBusConnection()
-  return connection.call_sync(
-    BLUEZ_SERVICE,
-    BLUEZ_AGENT_MANAGER_PATH,
-    BLUEZ_AGENT_MANAGER_IFACE,
-    method,
-    parameters,
-    null,
-    Gio.DBusCallFlags.NONE,
-    -1,
-    null,
-  )
+async function callBluezAgentManager(method: string, parameters: GLib.Variant) {
+  const connection = await getSystemBusConnectionAsync()
+
+  return new Promise<GLib.Variant | null>((resolve, reject) => {
+    connection.call(
+      BLUEZ_SERVICE,
+      BLUEZ_AGENT_MANAGER_PATH,
+      BLUEZ_AGENT_MANAGER_IFACE,
+      method,
+      parameters,
+      null,
+      Gio.DBusCallFlags.NONE,
+      -1,
+      null,
+      (_connection, result) => {
+        try {
+          resolve(connection.call_finish(result))
+        } catch (error) {
+          reject(error)
+        }
+      },
+    )
+  })
 }
 
 function isAlreadyExistsError(error: unknown) {
@@ -264,66 +310,109 @@ function isAlreadyExistsError(error: unknown) {
   return message.includes("AlreadyExists") || message.includes("already exists")
 }
 
-function ensureBluetoothAgent() {
-  try {
-    if (bluetoothAgentState.registered) return null
+async function ensureBluetoothAgent() {
+  if (bluetoothAgentState.registered) return null
+  if (bluetoothAgentState.registering) return bluetoothAgentState.registering
 
-    const connection = getSystemBusConnection()
-    exportBluetoothAgent(connection)
-
+  bluetoothAgentState.registering = (async () => {
     try {
-      callBluezAgentManager(
-        "RegisterAgent",
-        new GLib.Variant("(os)", [BLUEZ_AGENT_PATH, BLUEZ_AGENT_CAPABILITY]),
-      )
-      bluetoothAgentState.registered = true
-    } catch (error) {
-      if (isAlreadyExistsError(error)) {
+      const connection = await getSystemBusConnectionAsync()
+      exportBluetoothAgent(connection)
+
+      try {
+        await callBluezAgentManager(
+          "RegisterAgent",
+          new GLib.Variant("(os)", [BLUEZ_AGENT_PATH, BLUEZ_AGENT_CAPABILITY]),
+        )
         bluetoothAgentState.registered = true
-      } else {
-        throw error
+      } catch (error) {
+        if (isAlreadyExistsError(error)) {
+          bluetoothAgentState.registered = true
+        } else {
+          throw error
+        }
       }
+
+      try {
+        await callBluezAgentManager(
+          "RequestDefaultAgent",
+          new GLib.Variant("(o)", [BLUEZ_AGENT_PATH]),
+        )
+      } catch {
+
+      }
+
+      bluetoothAgentState.lastHardError = null
+      return null
+    } catch (error) {
+      const remoteName = getDbusRemoteErrorName(error)
+      const readable = getReadableDbusErrorMessage(error)
+      const message = remoteName ? `Bluetooth agent error: ${remoteName}: ${readable}` : `Bluetooth agent error: ${readable}`
+      bluetoothAgentState.lastHardError = message
+      console.warn(message)
+      return null
+    } finally {
+      bluetoothAgentState.registering = null
     }
+  })()
 
-    try {
-      callBluezAgentManager(
-        "RequestDefaultAgent",
-        new GLib.Variant("(o)", [BLUEZ_AGENT_PATH]),
-      )
-    } catch {
-
-    }
-
-    bluetoothAgentState.lastHardError = null
-    return null
-  } catch (error) {
-    const remoteName = getDbusRemoteErrorName(error)
-    const readable = getReadableDbusErrorMessage(error)
-    const message = remoteName ? `Bluetooth agent error: ${remoteName}: ${readable}` : `Bluetooth agent error: ${readable}`
-    bluetoothAgentState.lastHardError = message
-    console.warn(message)
-    return null
-  }
+  return bluetoothAgentState.registering
 }
 
 async function runMaybePromise(value: Promise<void> | void) {
   await value
 }
 
+function deviceObjectPath(device: Bluetooth.Device) {
+  const adapterPath = `${device.adapter ?? ""}`.trim()
+  const address = `${device.address ?? ""}`.trim().replace(/:/g, "_")
+  if (!adapterPath || !address) return null
+  return `${adapterPath}/dev_${address}`
+}
+
+function callBluezDeviceMethod(device: Bluetooth.Device, method: string, parameters: GLib.Variant | null = null) {
+  const objectPath = deviceObjectPath(device)
+  if (!objectPath) return Promise.reject(new Error(`Could not resolve BlueZ object path for ${deviceName(device)}`))
+
+  return getSystemBusConnectionAsync().then((connection) => new Promise<GLib.Variant | null>((resolve, reject) => {
+    connection.call(
+      BLUEZ_SERVICE,
+      objectPath,
+      BLUEZ_DEVICE_IFACE,
+      method,
+      parameters,
+      null,
+      Gio.DBusCallFlags.NONE,
+      -1,
+      null,
+      (_connection, result) => {
+        try {
+          resolve(connection.call_finish(result))
+        } catch (error) {
+          reject(error)
+        }
+      },
+    )
+  }))
+}
+
+async function connectDeviceAsync(device: Bluetooth.Device) {
+  await callBluezDeviceMethod(device, "Connect")
+}
+
+async function disconnectDeviceAsync(device: Bluetooth.Device) {
+  await callBluezDeviceMethod(device, "Disconnect")
+}
+
 async function pairDevice(device: Bluetooth.Device) {
   const d = device as PairableDevice
-
-  if (typeof d.pair === "function") {
-    await runMaybePromise(d.pair())
-    return
-  }
 
   if (typeof d.pair_device === "function") {
     await runMaybePromise(d.pair_device())
     return
   }
 
-  throw new Error("No pairing method exposed by AstalBluetooth on this system")
+  await callBluezDeviceMethod(device, "Pair")
 }
 
 function BluetoothDeviceRow({
@@ -334,7 +423,7 @@ function BluetoothDeviceRow({
 }: {
   device: Bluetooth.Device
   getAdapter: () => Bluetooth.Adapter | null
-  setNotice: (v: Notice | null) => void
+  setNotice: (v: Notice | null, options?: NoticeOptions) => void
   requestDeviceRefresh: (delay?: number) => void
 }) {
   const alias = createBinding(device, "alias")
@@ -345,17 +434,19 @@ function BluetoothDeviceRow({
   const trusted = createBinding(device, "trusted")
   const battery = createBinding(device, "battery-percentage")
   const [pairing, setPairing] = createState(false)
+  const [pendingConnected, setPendingConnected] = createState<boolean | null>(null)
 
   const title = createComputed(() => alias() || device.name || device.address || "Bluetooth device")
   const glyph = createComputed(() => deviceGlyph(icon() || "", title()))
-  const busy = createComputed(() => pairing() || connecting())
+  const busy = createComputed(() => pairing() || connecting() || pendingConnected() !== null)
   const removable = createComputed(() => Boolean(device.address))
   const known = createComputed(() => Boolean(connected() || paired() || trusted() || isBonded(device)))
   const canConnect = createComputed(() => canConnectWithoutPair(device))
 
   const meta = createComputed(() => {
     if (pairing()) return "Pairing…"
-    if (connecting()) return canConnect() ? "Connecting…" : "Pairing…"
+    if (pendingConnected() === false && connected()) return "Disconnecting…"
+    if ((connecting() || (pendingConnected() === true && !connected()))) return canConnect() ? "Connecting…" : "Pairing…"
 
     const parts = [
       connected()
@@ -372,15 +463,25 @@ function BluetoothDeviceRow({
     return parts.join(" • ")
   })
 
-  const toggleConnection = async () => {
+  const toggleConnection = async (targetConnected = !connected(), onSettled?: () => void) => {
     try {
-      if (connected()) {
-        await device.disconnect_device()
+      if (targetConnected === connected()) return
+
+      setPendingConnected(targetConnected)
+
+      if (!targetConnected) {
+        await disconnectDeviceAsync(device)
         requestDeviceRefresh(120)
+
+        const disconnected = await waitForConnectionState(device, false, 2500)
+        if (!disconnected) {
+          setNotice({ text: `${deviceName(device)} did not disconnect` }, { desktop: true, urgency: "normal", summary: "Bluetooth disconnect failed" })
+          requestDeviceRefresh()
+        }
         return
       }
 
-      ensureBluetoothAgent()
+      await ensureBluetoothAgent()
 
       const needsPair = !canConnectWithoutPair(device)
 
@@ -396,16 +497,37 @@ function BluetoothDeviceRow({
       }
 
       if (!device.connected) {
-        await device.connect_device()
+        await connectDeviceAsync(device)
       }
 
       requestDeviceRefresh(120)
+
+      const didConnect = await waitForConnectionState(device, true, 3000)
+      if (!didConnect) {
+        setNotice({ text: `${deviceName(device)} did not connect` }, { desktop: true, urgency: "normal", summary: "Bluetooth connect failed" })
+        requestDeviceRefresh()
+      }
     } catch (e) {
-      setNotice({ text: formatError(e) })
+      setNotice({ text: formatError(e) }, { desktop: true, urgency: "critical", summary: "Bluetooth error" })
       requestDeviceRefresh()
     } finally {
       setPairing(false)
+      setPendingConnected(null)
+
+      if (onSettled) {
+        GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+          onSettled()
+          return GLib.SOURCE_REMOVE
+        })
+      }
     }
+  }
+
+  const runDetachedConnection = (targetConnected: boolean, onSettled?: () => void) => {
+    GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+      void toggleConnection(targetConnected, onSettled)
+      return GLib.SOURCE_REMOVE
+    })
   }
 
   return (
@@ -418,30 +540,55 @@ function BluetoothDeviceRow({
       <box spacing={6} valign={Gtk.Align.CENTER}>
         <Gtk.Switch
           class="network-toggle bluetooth-device-switch"
-          active={connected}
-          state={connected}
           sensitive={busy((v) => !v)}
-          $={(self) => self.connect("state-set", () => {
-            if (self.active !== connected()) {
-              toggleConnection().catch(e => setNotice({ text: formatError(e) }))
+          $={(self) => {
+            const syncSwitch = () => {
+              const displayConnected = pendingConnected() ?? Boolean(device.connected)
+              self.set_active(displayConnected)
+              self.set_state(displayConnected)
             }
-            return true
-          })}
+
+            syncSwitch()
+
+            const connectedId = device.connect("notify::connected", syncSwitch)
+
+            self.connect("state-set", (_switch, state) => {
+              const targetConnected = Boolean(state)
+              if (busy()) {
+                syncSwitch()
+                return true
+              }
+
+              setPendingConnected(targetConnected)
+              self.set_active(targetConnected)
+              self.set_state(targetConnected)
+
+              runDetachedConnection(targetConnected, syncSwitch)
+              return true
+            })
+
+            self.connect("destroy", () => {
+              device.disconnect(connectedId)
+            })
+          }}
         />
         <button
           class="flat network-icon-button"
           visible={removable}
           sensitive={busy((v) => !v)}
           onClicked={() => {
-            try {
-              const adapter = getAdapter()
-              if (!adapter) return
-              adapter.remove_device(device)
-              requestDeviceRefresh(120)
-            } catch (e) {
-              setNotice({ text: formatError(e) })
-              requestDeviceRefresh()
-            }
+            const adapter = getAdapter()
+            if (!adapter) return
+            GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+              try {
+                adapter.remove_device(device)
+                requestDeviceRefresh(120)
+              } catch (e) {
+                setNotice({ text: formatError(e) }, { desktop: true, urgency: "critical", summary: "Bluetooth error" })
+                requestDeviceRefresh()
+              }
+              return GLib.SOURCE_REMOVE
+            })
           }}
         >
           <label class="network-icon-button-label" label={"󰅖"} />
@@ -464,6 +611,7 @@ export function BluetoothControl({
   let popupPlacement: Gtk.Box | null = null
   let popupRevealer: Gtk.Revealer | null = null
   let popupFrame: Gtk.Box | null = null
+  let popupRoot: Gtk.Box | null = null
   let closeTimeoutId = 0
   let closingPopup = false
   const [windowVisible, setWindowVisible] = createState(false)
@@ -473,7 +621,41 @@ export function BluetoothControl({
   const powered = createBinding(bluetooth, "is-powered")
   const connected = createBinding(bluetooth, "is-connected")
   const [notice, setNotice] = createState<Notice | null>(null)
+  let noticeTimer: { cancel: () => void } | null = null
   const [deviceList, setDeviceList] = createState<Bluetooth.Device[]>(readDevices())
+
+  const clearNoticeTimer = () => {
+    noticeTimer?.cancel()
+    noticeTimer = null
+  }
+
+  const presentNotice = (value: Notice | null, options: NoticeOptions = {}) => {
+    clearNoticeTimer()
+    setNotice(value)
+
+    if (!value || value.text.trim().length === 0) return
+
+    if (options.desktop ?? true) {
+      void sendShellNotification({
+        appName: "AGS Bluetooth",
+        summary: options.summary ?? "Bluetooth",
+        body: value.text,
+        iconName: "bluetooth-active-symbolic",
+        urgency: options.urgency ?? "normal",
+        expireTimeoutMs: options.durationMs ?? 4200,
+        replaceKey: "bluetooth-status",
+        category: "device",
+      }).catch((error) => {
+        console.warn(`Bluetooth desktop notification failed: ${formatError(error)}`)
+      })
+    }
+
+    const durationMs = options.durationMs ?? 4200
+    noticeTimer = timeout(durationMs, () => {
+      noticeTimer = null
+      setNotice((current) => current?.text === value.text ? null : current)
+    })
+  }
   const [adapterList, setAdapterList] = createState<Bluetooth.Adapter[]>(readAdapters())
 
   const syncDevices = () => setDeviceList(readDevices())
@@ -514,7 +696,7 @@ export function BluetoothControl({
           requestDeviceRefresh(200)
         }
       } catch (e) {
-        setNotice({ text: formatError(e) })
+        presentNotice({ text: formatError(e) }, { desktop: true, urgency: "critical" })
         requestAdapterRefresh()
       }
     })
@@ -555,6 +737,15 @@ export function BluetoothControl({
 
   void bindBarHoverWatcher
 
+  const deferAction = (fn: () => void | Promise<void>) => {
+    GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+      Promise.resolve(fn()).catch((error) => {
+        console.warn(`Bluetooth action failed: ${formatError(error)}`)
+      })
+      return GLib.SOURCE_REMOVE
+    })
+  }
+
   const setTriggerOpen = (open: boolean) => {
     if (!trigger) return
     if (open) trigger.add_css_class("widget-trigger-open")
@@ -593,12 +784,14 @@ export function BluetoothControl({
     closingPopup = false
     setWindowVisible(true)
     setTriggerOpen(true)
-    ensureBluetoothAgent()
+    void ensureBluetoothAgent()
+    presentNotice(null)
     requestDeviceRefresh(0)
     requestAdapterRefresh(0)
     scheduleDiscoveryTimeout(readAdapters()[0] ?? null)
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
       if (popupRevealer) popupRevealer.revealChild = true
+      popupRoot?.grab_focus()
       return GLib.SOURCE_REMOVE
     })
   }
@@ -618,26 +811,62 @@ export function BluetoothControl({
               <label class="network-header-meta" xalign={0} label={createBinding(adapter, "discovering")((d) => d ? "Scanning…" : "Visible")} />
             </box>
             <button class="flat network-icon-button" onClicked={() => {
-              try {
-                if (adapter.discovering) {
-                  clearDiscoveryTimeout()
-                  adapter.stop_discovery()
-                } else {
-                  adapter.start_discovery()
-                  scheduleDiscoveryTimeout(adapter)
+              deferAction(() => {
+                try {
+                  if (adapter.discovering) {
+                    clearDiscoveryTimeout()
+                    adapter.stop_discovery()
+                  } else {
+                    adapter.start_discovery()
+                    scheduleDiscoveryTimeout(adapter)
+                  }
+                  requestAdapterRefresh(0)
+                } catch (e) {
+                  presentNotice({ text: formatError(e) }, { desktop: true, urgency: "critical" })
+                  requestAdapterRefresh()
                 }
-                requestAdapterRefresh(0)
-              } catch (e) {
-                setNotice({ text: formatError(e) })
-                requestAdapterRefresh()
-              }
+              })
             }}>
               <label class="network-icon-button-label" label={"󰑐"} />
             </button>
-            <Gtk.Switch class="network-toggle bluetooth-toggle" active={createBinding(adapter, "powered")} $={(self) => self.connect("state-set", () => {
-              adapter.powered = !adapter.powered
-              return true
-            })} />
+            <Gtk.Switch class="network-toggle bluetooth-toggle" $={(self) => {
+              let pendingPowered: boolean | null = null
+
+              const syncSwitch = () => {
+                const isPowered = pendingPowered ?? Boolean(adapter.powered)
+                self.set_active(isPowered)
+                self.set_state(isPowered)
+              }
+
+              syncSwitch()
+
+              const poweredId = adapter.connect("notify::powered", () => {
+                pendingPowered = null
+                syncSwitch()
+              })
+
+              self.connect("state-set", (_switch, state) => {
+                pendingPowered = Boolean(state)
+                syncSwitch()
+                deferAction(async () => {
+                  try {
+                    adapter.powered = Boolean(state)
+                    requestAdapterRefresh(120)
+                  } finally {
+                    pendingPowered = null
+                    GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+                      syncSwitch()
+                      return GLib.SOURCE_REMOVE
+                    })
+                  }
+                })
+                return true
+              })
+
+              self.connect("destroy", () => {
+                adapter.disconnect(poweredId)
+              })
+            }} />
           </box>
         )}
       </With>
@@ -652,7 +881,7 @@ export function BluetoothControl({
                   <BluetoothDeviceRow
                     device={device}
                     getAdapter={() => adapterList()[0] ?? null}
-                    setNotice={setNotice}
+                    setNotice={presentNotice}
                     requestDeviceRefresh={requestDeviceRefresh}
                   />
                 )}
@@ -664,7 +893,7 @@ export function BluetoothControl({
 
       <With value={notice}>
         {(value) => value && (
-          <label class="network-section-title" xalign={0} wrap label={value.text} />
+          <label class="network-section-title network-notice" xalign={0} tooltipText={value.text} ellipsize={Pango.EllipsizeMode.END} maxWidthChars={42} lines={1} wrap={false} label={value.text} />
         )}
       </With>
     </box>
@@ -677,13 +906,26 @@ export function BluetoothControl({
       namespace="obsidian-shell"
       class="widget-popup-window bluetooth-popup-window"
       exclusivity={Astal.Exclusivity.IGNORE}
-      keymode={Astal.Keymode.ON_DEMAND}
+      keymode={Astal.Keymode.EXCLUSIVE}
       anchor={FLOATING_POPUP_ANCHOR}
+      $={(self) => {
+        self.connect("destroy", () => {
+          popupPlacement = null
+          popupRevealer = null
+          popupFrame = null
+          popupRoot = null
+        })
+      }}
     >
-      <box class="widget-popup-root" hexpand vexpand>
+      <box class="widget-popup-root" hexpand vexpand $={(self) => {
+        popupRoot = self
+        self.set_focusable(true)
+        attachEscapeKey(self, closePopup)
+      }}>
         <Gtk.GestureClick
           button={0}
-          onPressed={(_, _nPress, x, y) => {
+          propagationPhase={Gtk.PropagationPhase.CAPTURE}
+          onReleased={(_, _nPress, x, y) => {
             const root = popupPlacement?.get_parent?.() as Gtk.Widget | null
             if (isPointInsideWidget(popupFrame, root, x, y)) return
             closePopup()
@@ -723,7 +965,7 @@ export function BluetoothControl({
       <button class="bluetooth-trigger" valign={Gtk.Align.CENTER} tooltipText={triggerTooltip} onClicked={togglePopup} $={(self) => {
         trigger = self
 
-        ensureBluetoothAgent()
+        void ensureBluetoothAgent()
 
         syncDevices()
         syncAdapters()
@@ -785,6 +1027,7 @@ export function BluetoothControl({
           adapterNotifyIds.clear()
           deviceRefreshTimer?.cancel()
           adapterRefreshTimer?.cancel()
+          clearNoticeTimer()
           clearDiscoveryTimeout()
           clearCloseTimeout()
           closingPopup = false

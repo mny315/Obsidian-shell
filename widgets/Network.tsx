@@ -7,6 +7,8 @@ import { Astal } from "ags/gtk4"
 import { createComputed, createState } from "ags"
 import { execAsync } from "ags/process"
 import { timeout } from "ags/time"
+import { sendShellNotification } from "./ShellNotifications"
+import { attachEscapeKey } from "./EscapeKey"
 import { FLOATING_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, TOP_BAR_POPUP_MARGIN_TOP, isPointInsideWidget } from "./FloatingPopup"
 
 const POPOVER_REVEAL_DURATION_MS = 165
@@ -38,6 +40,15 @@ type LabelOptions = {
   maxWidthChars?: number
   singleLine?: boolean
   wrap?: boolean
+}
+
+type NoticeOptions = {
+  desktop?: boolean
+  durationMs?: number
+  urgency?: "low" | "normal" | "critical"
+  summary?: string
+  iconName?: string
+  replaceKey?: string
 }
 
 const network = AstalNetwork.get_default()
@@ -357,7 +368,7 @@ function parseWireGuardImportResult(text: string) {
 
 function importWireGuard(
   refresh: () => Promise<void>,
-  setStatus: (text: string) => void,
+  presentStatus: (text: string, options?: NoticeOptions) => void,
 ) {
   const chooser = new Gtk.FileChooserNative({
     title: "Import WireGuard profile",
@@ -377,7 +388,13 @@ function importWireGuard(
       if (!path) return
       const result = await execResult(["nmcli", "connection", "import", "type", "wireguard", "file", path])
       if (!result.ok) {
-        setStatus(result.text || "Import failed")
+        presentStatus(result.text || "Import failed", {
+          desktop: true,
+          urgency: "normal",
+          summary: "WireGuard import failed",
+          iconName: "network-vpn-symbolic",
+          replaceKey: "network-status",
+        })
         await refresh()
         return
       }
@@ -387,7 +404,7 @@ function importWireGuard(
         const target = imported.uuid ? ["uuid", imported.uuid] : [imported.name]
         await execResult(["nmcli", "connection", "modify", ...target, "connection.id", desiredName])
       }
-      setStatus("")
+      presentStatus("")
       await refresh()
     } finally {
       chooser.destroy()
@@ -411,6 +428,7 @@ export function NetworkControl({
   let wgListBox: Gtk.Box | null = null
   let popupRevealer: Gtk.Revealer | null = null
   let popupFrame: Gtk.Box | null = null
+  let popupRoot: Gtk.Box | null = null
   let wifiSwitch: Gtk.Switch | null = null
   let passwordBox: Gtk.Box | null = null
   let passwordTitleLabel: Gtk.Label | null = null
@@ -425,6 +443,7 @@ export function NetworkControl({
   let syncingWifiSwitch = false
   let pendingSecureNetwork: WifiNetwork | null = null
   let refreshDebounce: { cancel: () => void } | null = null
+  let statusTimer: { cancel: () => void } | null = null
 
   const [icon, setIcon] = createState("󰖪")
   const [title, setTitle] = createState("Network")
@@ -439,6 +458,15 @@ export function NetworkControl({
   }
 
   void bindBarHoverWatcher
+
+  const deferAction = (fn: () => void | Promise<void>) => {
+    GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+      Promise.resolve(fn()).catch((error) => {
+        console.warn(`Network action failed: ${errorText(error)}`)
+      })
+      return GLib.SOURCE_REMOVE
+    })
+  }
 
   const setTriggerOpen = (open: boolean) => {
     if (!trigger) return
@@ -480,6 +508,7 @@ export function NetworkControl({
     setTriggerOpen(true)
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
       if (popupRevealer) popupRevealer.revealChild = true
+      popupRoot?.grab_focus()
       return GLib.SOURCE_REMOVE
     })
   }
@@ -489,10 +518,49 @@ export function NetworkControl({
     else openPopup()
   }
 
-  const setStatus = (text: string) => {
-    if (!statusLabel) return
-    statusLabel.set_label(text)
-    statusLabel.set_visible(Boolean(text.trim()))
+  const clearStatusTimer = () => {
+    statusTimer?.cancel()
+    statusTimer = null
+  }
+
+  const presentStatus = (text: string, options: NoticeOptions = {}) => {
+    const safeText = text.trim()
+    clearStatusTimer()
+
+    if (statusLabel) {
+      statusLabel.set_label(safeText)
+      statusLabel.set_tooltip_text(safeText)
+      statusLabel.set_visible(Boolean(safeText))
+    }
+
+    if (!safeText) return
+
+    if (options.desktop ?? false) {
+      void sendShellNotification({
+        appName: "AGS Network",
+        summary: options.summary ?? "Network",
+        body: safeText,
+        iconName: options.iconName ?? "network-wireless-symbolic",
+        urgency: options.urgency ?? "normal",
+        expireTimeoutMs: options.durationMs ?? 4200,
+        replaceKey: options.replaceKey ?? "network-status",
+        category: "network",
+      }).catch((error) => {
+        console.warn(`Network desktop notification failed: ${errorText(error)}`)
+      })
+    }
+
+    const durationMs = options.durationMs ?? 4200
+    if (durationMs <= 0) return
+
+    statusTimer = timeout(durationMs, () => {
+      statusTimer = null
+      if (statusLabel && statusLabel.get_label() === safeText) {
+        statusLabel.set_label("")
+        statusLabel.set_tooltip_text("")
+        statusLabel.set_visible(false)
+      }
+    })
   }
 
   const hidePasswordPrompt = () => {
@@ -534,8 +602,8 @@ export function NetworkControl({
       execText(["nmcli", "-t", "-e", "yes", "-f", "UUID,NAME,TYPE", "connection", "show"]),
       execText(["nmcli", "-t", "-e", "yes", "-f", "UUID,TYPE", "connection", "show", "--active"]),
     ])
-    const activeUuids = new Set(activeOut.split("\n").map(l => splitNmcliEscaped(l)).filter(([u, t]) => t === "wireguard").map(([u]) => u))
-    return allOut.split("\n").map(l => splitNmcliEscaped(l)).filter(([u, n, t]) => t === "wireguard").map(([u, n]) => ({
+    const activeUuids = new Set(activeOut.split("\n").map(l => splitNmcliEscaped(l)).filter(([, t]) => t === "wireguard").map(([u]) => u))
+    return allOut.split("\n").map(l => splitNmcliEscaped(l)).filter(([, , t]) => t === "wireguard").map(([u, n]) => ({
       uuid: u,
       name: n,
       active: activeUuids.has(u),
@@ -558,16 +626,16 @@ export function NetworkControl({
       const rowIcon = wifiSignalIcon(network.signal)
       if (network.inUse) {
         const row = network.saved 
-          ? makeRowWithAction(rowIcon, network.ssid, metaStr, [makeIconLabel("󰗠", "network-row-status")], null, "󰅖", "network-icon-button", `Forget ${network.ssid}`, () => void forgetWifi(network))
+          ? makeRowWithAction(rowIcon, network.ssid, metaStr, [makeIconLabel("󰗠", "network-row-status")], null, "󰅖", "network-icon-button", `Forget ${network.ssid}`, () => deferAction(() => forgetWifi(network)))
           : makeInfoRow(rowIcon, network.ssid, metaStr, [makeIconLabel("󰗠", "network-row-status")])
         row.add_css_class("network-row-current")
         wifiListBox.append(row)
       } else if (network.security === "secured" && !network.saved) {
         wifiListBox.append(makeRowButton(rowIcon, network.ssid, metaStr, [makeIconLabel("󰌾", "network-row-status")], () => showPasswordPrompt(network)))
       } else if (network.saved) {
-        wifiListBox.append(makeRowWithAction(rowIcon, network.ssid, metaStr, [], () => void connectToWifi(network), "󰅖", "network-icon-button", "Forget", () => void forgetWifi(network)))
+        wifiListBox.append(makeRowWithAction(rowIcon, network.ssid, metaStr, [], () => deferAction(() => connectToWifi(network)), "󰅖", "network-icon-button", "Forget", () => deferAction(() => forgetWifi(network))))
       } else {
-        wifiListBox.append(makeRowButton(rowIcon, network.ssid, metaStr, [], () => void connectToWifi(network)))
+        wifiListBox.append(makeRowButton(rowIcon, network.ssid, metaStr, [], () => deferAction(() => connectToWifi(network))))
       }
     }
   }
@@ -581,13 +649,21 @@ export function NetworkControl({
     }
     for (const profile of profiles) {
       const toggle = makeToggle(profile.active, "network-toggle", (active) => {
-        setStatus(active ? `Starting ${profile.name}…` : `Stopping…`)
-        void execResult(["nmcli", "connection", active ? "up" : "down", "uuid", profile.uuid]).then((result) => {
-          setStatus(result.ok ? "" : (result.text || "Failed"))
-          void refresh()
+        deferAction(async () => {
+          presentStatus(active ? `Starting ${profile.name}…` : `Stopping ${profile.name}…`, { desktop: false, durationMs: 0 })
+          const result = await execResult(["nmcli", "connection", active ? "up" : "down", "uuid", profile.uuid])
+          if (result.ok) presentStatus("")
+          else presentStatus(result.text || "Failed", {
+            desktop: true,
+            urgency: "normal",
+            summary: active ? "WireGuard start failed" : "WireGuard stop failed",
+            iconName: "network-vpn-symbolic",
+            replaceKey: "network-status",
+          })
+          await refresh()
         })
       })
-      wgListBox.append(makeRowWithAction("󰦝", profile.name, profile.active ? "active" : "inactive", [toggle], null, "󰅖", "network-icon-button", "Delete", () => void deleteWireGuard(profile)))
+      wgListBox.append(makeRowWithAction("󰦝", profile.name, profile.active ? "active" : "inactive", [toggle], null, "󰅖", "network-icon-button", "Delete", () => deferAction(() => deleteWireGuard(profile))))
     }
   }
 
@@ -631,35 +707,95 @@ export function NetworkControl({
     })
   }
 
+  const waitForWifiConnection = async (ssid: string, timeoutMs = 8000, intervalMs = 250) => {
+    const deadline = Date.now() + timeoutMs
+
+    while (Date.now() < deadline) {
+      const activeSsid = wifiDevice?.get_active_access_point?.()?.get_ssid?.() || ""
+      if (activeSsid === ssid) return true
+      await new Promise(resolve => setTimeout(resolve, intervalMs))
+    }
+
+    const activeSsid = wifiDevice?.get_active_access_point?.()?.get_ssid?.() || ""
+    return activeSsid === ssid
+  }
+
   const connectToWifi = async (network: WifiNetwork, password = "") => {
-    setStatus(`Connecting…`)
-    const cmd = ["nmcli", "--wait", "15", "dev", "wifi", "connect", network.ssid]
+    hidePasswordPrompt()
+    presentStatus(`Connecting to ${network.ssid}…`, { desktop: false, durationMs: 0 })
+    const cmd = ["nmcli", "--wait", "0", "dev", "wifi", "connect", network.ssid]
     if (password) cmd.push("password", password)
     const result = await execResult(cmd)
-    if (!result.ok) setStatus(result.text || "Failed")
-    else {
-      hidePasswordPrompt()
-      setStatus("")
+    if (!result.ok) {
+      presentStatus(result.text || "Failed", {
+        desktop: true,
+        urgency: "normal",
+        summary: "Wi‑Fi connection failed",
+        iconName: "network-wireless-symbolic",
+        replaceKey: "network-status",
+      })
       scheduleRefresh(100)
+      return
     }
+
+    scheduleRefresh(100)
+    const connected = await waitForWifiConnection(network.ssid)
+    if (connected) {
+      presentStatus("")
+      scheduleRefresh(100)
+      return
+    }
+
+    presentStatus(`Timed out while connecting to ${network.ssid}` , {
+      desktop: true,
+      urgency: "normal",
+      summary: "Wi‑Fi connection failed",
+      iconName: "network-wireless-symbolic",
+      replaceKey: "network-status",
+    })
+    scheduleRefresh(100)
   }
 
   const forgetWifi = async (network: WifiNetwork) => {
     const uuids = (await getSavedWifiConnections()).get(network.ssid) ?? []
-    for (const uuid of uuids) await execResult(["nmcli", "connection", "delete", "uuid", uuid])
+    for (const uuid of uuids) {
+      const result = await execResult(["nmcli", "connection", "delete", "uuid", uuid])
+      if (!result.ok) {
+        presentStatus(result.text || `Failed to forget ${network.ssid}`, {
+          desktop: true,
+          urgency: "normal",
+          summary: "Wi‑Fi forget failed",
+          iconName: "network-wireless-symbolic",
+          replaceKey: "network-status",
+        })
+        break
+      }
+    }
     scheduleRefresh(100)
   }
 
   const deleteWireGuard = async (profile: WireGuardProfile) => {
-    await execResult(["nmcli", "connection", "delete", "uuid", profile.uuid])
+    const result = await execResult(["nmcli", "connection", "delete", "uuid", profile.uuid])
+    if (!result.ok) {
+      presentStatus(result.text || `Failed to delete ${profile.name}`, {
+        desktop: true,
+        urgency: "normal",
+        summary: "WireGuard delete failed",
+        iconName: "network-vpn-symbolic",
+        replaceKey: "network-status",
+      })
+    }
     scheduleRefresh(100)
   }
 
+
   const rescanBtn = makeIconButton("󰑐", "network-icon-button", "Rescan", () => {
     if (wifiEnabled && wifiDevice) {
-      wifiDevice.scan()
-      setStatus("Scanning…")
-      timeout(1200, () => { setStatus(""); void refresh() })
+      deferAction(() => {
+        wifiDevice.scan()
+        presentStatus("Scanning…", { desktop: false, durationMs: 1200 })
+        timeout(1200, () => { presentStatus(""); void refresh() })
+      })
     }
   })
 
@@ -675,8 +811,10 @@ export function NetworkControl({
           wifiSwitch = self
           self.connect("notify::active", () => {
             if (!syncingWifiSwitch && wifiDevice) {
-              wifiDevice.set_enabled(self.get_active())
-              scheduleRefresh(100)
+              deferAction(() => {
+                wifiDevice.set_enabled(self.get_active())
+                scheduleRefresh(100)
+              })
             }
           })
         }} />
@@ -686,11 +824,11 @@ export function NetworkControl({
         <label class="network-row-title" xalign={0} $={(self) => passwordTitleLabel = self} />
         <Gtk.Entry visibility={false} placeholderText="Password" $={(self) => {
           passwordEntry = self
-          self.connect("activate", () => void connectToWifi(pendingSecureNetwork!, passwordEntry?.get_text()))
+          self.connect("activate", () => deferAction(() => connectToWifi(pendingSecureNetwork!, passwordEntry?.get_text())))
         }} />
         <box spacing={8} halign={Gtk.Align.END}>
           <button class="flat network-password-action" onClicked={hidePasswordPrompt} label="Cancel" />
-          <button class="flat network-password-action" onClicked={() => void connectToWifi(pendingSecureNetwork!, passwordEntry?.get_text())} label="Connect" />
+          <button class="flat network-password-action" onClicked={() => deferAction(() => connectToWifi(pendingSecureNetwork!, passwordEntry?.get_text()))} label="Connect" />
         </box>
       </box>
 
@@ -712,7 +850,7 @@ export function NetworkControl({
           <label class="network-section-title" hexpand label="WireGuard" xalign={0} />
           {makeIconButton("󰈠", "network-icon-button", "Import", () => {
             closePopup()
-            importWireGuard(refresh, setStatus)
+            importWireGuard(refresh, presentStatus)
           })}
         </box>
         <box class="network-list-capsule" orientation={Gtk.Orientation.VERTICAL}>
@@ -726,11 +864,10 @@ export function NetworkControl({
         visible={false}
         $={(self) => {
           statusLabel = self
-          self.set_single_line_mode(false)
-          self.set_wrap(true)
-          self.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+          self.set_single_line_mode(true)
+          self.set_wrap(false)
           self.set_max_width_chars(42)
-          self.set_lines(4)
+          self.set_lines(1)
           self.set_ellipsize(Pango.EllipsizeMode.END)
         }}
       />
@@ -744,13 +881,26 @@ export function NetworkControl({
       namespace="obsidian-shell"
       class="widget-popup-window network-popup-window"
       exclusivity={Astal.Exclusivity.IGNORE}
-      keymode={Astal.Keymode.ON_DEMAND}
+      keymode={Astal.Keymode.EXCLUSIVE}
       anchor={FLOATING_POPUP_ANCHOR}
+      $={(self) => {
+        self.connect("destroy", () => {
+          popupPlacement = null
+          popupRevealer = null
+          popupFrame = null
+          popupRoot = null
+        })
+      }}
     >
-      <box class="widget-popup-root" hexpand vexpand>
+      <box class="widget-popup-root" hexpand vexpand $={(self) => {
+        popupRoot = self
+        self.set_focusable(true)
+        attachEscapeKey(self, closePopup)
+      }}>
         <Gtk.GestureClick
           button={0}
-          onPressed={(_, _nPress, x, y) => {
+          propagationPhase={Gtk.PropagationPhase.CAPTURE}
+          onReleased={(_, _nPress, x, y) => {
             const root = popupPlacement?.get_parent?.() as Gtk.Widget | null
             if (isPointInsideWidget(popupFrame, root, x, y)) return
             closePopup()
@@ -797,6 +947,7 @@ export function NetworkControl({
 
         self.connect("destroy", () => {
           clearCloseTimeout()
+          clearStatusTimer()
           closingPopup = false
           setWindowVisible(false)
         })

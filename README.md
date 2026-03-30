@@ -33,7 +33,8 @@ Obsidian Shell already includes its own launcher, so you do not need **fuzzel** 
 Example bind:
 
 ```ini
-$mainMod, TAB, exec, ags request launcher toggle
+$mainMod, TAB, exec, obsidian-shell launcher toggle
+Mod+Tab { spawn "obsidian-shell" "launcher" "toggle"; } 
 ```
 
 ## Blur on Hyprland

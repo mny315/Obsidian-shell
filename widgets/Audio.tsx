@@ -5,6 +5,7 @@ import { createComputed, createState } from "ags"
 import { execAsync } from "ags/process"
 
 import { VOLUME_STEP, clamp } from "../config"
+import { suppressVolumeOsd } from "./Osd"
 
 function pickIcon(volume: number, muted: boolean) {
   if (muted) return "󰖁"
@@ -74,6 +75,8 @@ export function AudioControl({
   const setVolume = (nextValue: number) => {
     const next = clamp(nextValue)
 
+    suppressVolumeOsd()
+
     setCurrent(next)
     setMuted(false)
     setIcon(pickIcon(next, false))
@@ -89,6 +92,7 @@ export function AudioControl({
     setCurrent((prev) => {
       const next = clamp(prev + delta)
 
+      suppressVolumeOsd()
       setMuted(false)
       setIcon(pickIcon(next, false))
 
@@ -103,6 +107,8 @@ export function AudioControl({
   }
 
   const toggleMute = () => {
+    suppressVolumeOsd()
+
     void execAsync([
       "bash",
       "-lc",

@@ -10,6 +10,7 @@ import { NetworkControl } from "./Network"
 import { BrightnessControl } from "./Brightness"
 import { AudioControl } from "./Audio"
 import { PowerControl } from "./Power"
+import { attachEscapeKey } from "./EscapeKey"
 
 type HoverWatcher = (hovered: boolean) => void
 
@@ -25,6 +26,7 @@ export function RightModules({
   let powerRevealer: Gtk.Revealer | null = null
   let barHovered = false
   let hideTimeoutId = 0
+  let controlsShell: Gtk.Box | null = null
   const barHoverWatchers = new Set<HoverWatcher>()
 
   const allRevealers = () => [brightnessRevealer, audioRevealer, powerRevealer]
@@ -71,6 +73,10 @@ export function RightModules({
     })
   }
 
+  const focusControlsShell = () => {
+    controlsShell?.grab_focus()
+  }
+
   const toggleRevealer = (target: Gtk.Revealer | null) => {
     if (!target) return
 
@@ -81,7 +87,10 @@ export function RightModules({
       revealer.revealChild = shouldOpen && revealer === target
     }
 
-    if (shouldOpen) scheduleHideIfNeeded()
+    if (shouldOpen) {
+      focusControlsShell()
+      scheduleHideIfNeeded()
+    }
     else clearHideTimeout()
   }
 
@@ -110,6 +119,11 @@ export function RightModules({
       hexpand={false}
       halign={Gtk.Align.END}
       valign={Gtk.Align.CENTER}
+      $={(self) => {
+        controlsShell = self
+        self.set_focusable(true)
+        attachEscapeKey(self, closeAll)
+      }}
     >
       <AppLauncherControl monitor={monitor} bindBarHoverWatcher={(watcher) => barHoverWatchers.add(watcher)} />
       <BluetoothControl monitor={monitor} bindBarHoverWatcher={(watcher) => barHoverWatchers.add(watcher)} />

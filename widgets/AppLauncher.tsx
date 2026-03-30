@@ -8,6 +8,7 @@ import Pango from "gi://Pango"
 import { For, createComputed, createState } from "ags"
 import { execAsync } from "ags/process"
 
+import { attachEscapeKey } from "./EscapeKey"
 import { FLOATING_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, TOP_BAR_POPUP_MARGIN_TOP, isPointInsideWidget } from "./FloatingPopup"
 
 
@@ -150,6 +151,7 @@ export function AppLauncherControl({
   let popupPlacement: Gtk.Box | null = null
   let popupRevealer: Gtk.Revealer | null = null
   let popupFrame: Gtk.Box | null = null
+  let popupRoot: Gtk.Box | null = null
   let searchEntry: Gtk.SearchEntry | null = null
   let launcherScrollWindow: Gtk.ScrolledWindow | null = null
   let scrollAnimationId = 0
@@ -253,6 +255,7 @@ export function AppLauncherControl({
     if (searchEntry) searchEntry.set_text("")
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
       if (popupRevealer) popupRevealer.revealChild = true
+      popupRoot?.grab_focus()
       searchEntry?.grab_focus()
       return GLib.SOURCE_REMOVE
     })
@@ -416,10 +419,14 @@ export function AppLauncherControl({
       namespace="obsidian-shell"
       class="widget-popup-window launcher-popup-window"
       exclusivity={Astal.Exclusivity.IGNORE}
-      keymode={Astal.Keymode.ON_DEMAND}
+      keymode={Astal.Keymode.EXCLUSIVE}
       anchor={FLOATING_POPUP_ANCHOR}
     >
-      <box class="widget-popup-root" hexpand vexpand>
+      <box class="widget-popup-root" hexpand vexpand $={(self) => {
+        popupRoot = self
+        self.set_focusable(true)
+        attachEscapeKey(self, closePopup)
+      }}>
         <Gtk.GestureClick
           button={0}
           onPressed={(_, _nPress, x, y) => {

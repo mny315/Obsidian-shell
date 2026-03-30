@@ -9,6 +9,7 @@ import { Astal } from "ags/gtk4"
 
 import { For, createComputed, createState } from "ags"
 import { execAsync } from "ags/process"
+import { attachEscapeKey } from "./EscapeKey"
 import { FLOATING_POPUP_ANCHOR, isPointInsideWidget, placePopupFromTrigger } from "./FloatingPopup"
 
 type WallpaperItem = {
@@ -16,15 +17,7 @@ type WallpaperItem = {
   path: string
 }
 
-type TimerConfigState = {
-  lockMinutes: number
-  idleMinutes: number
-}
-
-type TimerKind = "lock" | "idle"
-
 const WALLPAPER_DIR = GLib.build_filenamev([GLib.get_home_dir(), "Pictures", "Wallpaper"])
-const HYPRIDLE_CONF = GLib.build_filenamev([GLib.get_home_dir(), ".config", "hypr", "hypridle.conf"])
 const WALLPAPER_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"])
 const GRID_COLUMNS = 3
 const CARD_WIDTH = 144
@@ -33,17 +26,12 @@ const PREVIEW_LOAD_WIDTH = CARD_WIDTH * 2
 const PREVIEW_LOAD_HEIGHT = CARD_HEIGHT * 2
 const GRID_GAP = 8
 const SCROLLER_WIDTH = GRID_COLUMNS * CARD_WIDTH + GRID_GAP * (GRID_COLUMNS - 1)
-const SCROLLER_HEIGHT = CARD_HEIGHT * 2 + GRID_GAP + 40
+const GRID_VISIBLE_ROWS = 4
+const SCROLLER_HEIGHT = CARD_HEIGHT * GRID_VISIBLE_ROWS + GRID_GAP * (GRID_VISIBLE_ROWS - 1) + 40
 const POPOVER_WIDTH = SCROLLER_WIDTH + 24
 const WALLPAPER_POPOVER_REVEAL_DURATION_MS = 220
 const WALLPAPER_POPOVER_OFFSET_Y = 20
 const WALLPAPER_PREWARM_COUNT = 9
-const TIMERS_REVEAL_DURATION_MS = 240
-const LOCK_MATCHERS = ["loginctl lock-session", "pidof hyprlock || hyprlock", "hyprlock"]
-const IDLE_MATCHERS = ["hyprctl dispatch dpms off", "niri msg action power-off-monitors"]
-const LOCK_FALLBACK_MINUTES = 5
-const IDLE_FALLBACK_MINUTES = 6
-
 const wallpaperTextureCache = new Map<string, Gdk.Texture | null>()
 
 function getWallpaperTexture(path: string) {
@@ -111,20 +99,6 @@ function formatError(error: unknown) {
   return "Action failed"
 }
 
-function readTextFile(path: string) {
-  try {
-    const [, bytes] = GLib.file_get_contents(path)
-    return new TextDecoder().decode(bytes as Uint8Array)
-  } catch (error) {
-    console.error(error)
-    return ""
-  }
-}
-
-function writeTextFile(path: string, text: string) {
-  GLib.file_set_contents(path, text)
-}
-
 function parseCurrentWallpaperPaths(output: string) {
   const paths = new Set<string>()
 
@@ -147,119 +121,6 @@ function parseCurrentWallpaperPaths(output: string) {
   }
 
   return paths
-}
-
-function findListenerTimeout(config: string, matchers: string[]) {
-  const listeners = config.match(/listener\s*\{[\s\S]*?\}/g) ?? []
-
-  for (const listener of listeners) {
-    if (!matchers.some((matcher) => listener.includes(matcher))) continue
-
-    const timeoutMatch = listener.match(/timeout\s*=\s*(\d+)/)
-    if (timeoutMatch) return Number(timeoutMatch[1])
-  }
-
-  return null
-}
-
-function replaceListenerTimeout(config: string, matchers: string[], seconds: number) {
-  let replaced = false
-
-  const nextConfig = config.replace(/listener\s*\{[\s\S]*?\}/g, (listener) => {
-    if (replaced) return listener
-    if (!matchers.some((matcher) => listener.includes(matcher))) return listener
-    if (!/timeout\s*=\s*\d+/.test(listener)) return listener
-
-    replaced = true
-    return listener.replace(/timeout\s*=\s*\d+/, `timeout = ${seconds}`)
-  })
-
-  return replaced ? nextConfig : null
-}
-
-function loadTimerConfig(): TimerConfigState {
-  const config = readTextFile(HYPRIDLE_CONF)
-  const lockSeconds = findListenerTimeout(config, LOCK_MATCHERS)
-  const idleSeconds = findListenerTimeout(config, IDLE_MATCHERS)
-
-  return {
-    lockMinutes: Math.max(1, Math.round((lockSeconds ?? LOCK_FALLBACK_MINUTES * 60) / 60)),
-    idleMinutes: Math.max(1, Math.round((idleSeconds ?? IDLE_FALLBACK_MINUTES * 60) / 60)),
-  }
-}
-
-async function restartHypridle() {
-  await execAsync([
-    "bash",
-    "-lc",
-    "systemctl --user restart hypridle.service >/dev/null 2>&1 || (pkill -x hypridle >/dev/null 2>&1 || true; nohup hypridle >/dev/null 2>&1 &)",
-  ])
-}
-
-function TimerRow({
-  icon,
-  title,
-  subtitle,
-  value,
-  onDecrease,
-  onIncrease,
-  onApply,
-  busy,
-}: {
-  icon: string
-  title: string
-  subtitle: string
-  value: () => number
-  onDecrease: () => void
-  onIncrease: () => void
-  onApply: () => void
-  busy: () => boolean
-}) {
-  return (
-    <box class="wallpaper-timer-row" spacing={10} valign={Gtk.Align.CENTER}>
-      <box class="wallpaper-timer-meta" spacing={8} valign={Gtk.Align.CENTER} hexpand>
-        <label class="wallpaper-timer-icon" label={icon} />
-        <box orientation={Gtk.Orientation.VERTICAL} spacing={2} hexpand>
-          <label class="wallpaper-timer-title" xalign={0} label={title} />
-          <label class="wallpaper-timer-subtitle" xalign={0} label={subtitle} />
-        </box>
-      </box>
-
-      <box class="wallpaper-timer-controls" spacing={8} valign={Gtk.Align.CENTER}>
-        <button
-          class="flat wallpaper-stepper-button"
-          sensitive={busy((value) => !value)}
-          onClicked={onDecrease}
-        >
-          <label class="wallpaper-stepper-icon" label={"󰍴"} />
-        </button>
-
-        <box class="wallpaper-timer-value-box" valign={Gtk.Align.CENTER}>
-          <label class="wallpaper-timer-value" label={value((minutes) => `${minutes} min`)} />
-        </box>
-
-        <button
-          class="flat wallpaper-stepper-button"
-          sensitive={busy((value) => !value)}
-          onClicked={onIncrease}
-        >
-          <label class="wallpaper-stepper-icon" label={"󰐕"} />
-        </button>
-
-        <button
-          class="flat wallpaper-timer-apply"
-          sensitive={busy((value) => !value)}
-          onClicked={onApply}
-        >
-          <label class="wallpaper-timer-apply-label" label="Apply" />
-        </button>
-      </box>
-    </box>
-  )
-}
-
-function TimerDivider() {
-  return <box class="wallpaper-timer-divider" />
 }
 
 function WallpaperPreview({
@@ -328,21 +189,13 @@ function WallpaperPreview({
 }
 
 export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
-  const initialTimers = loadTimerConfig()
-
   const [wallpapers, setWallpapers] = createState<WallpaperItem[]>(listWallpapers())
   const [notice, setNotice] = createState<string | null>(null)
   const [refreshing, setRefreshing] = createState(false)
   const [applying, setApplying] = createState(false)
-  const [savingTimerKind, setSavingTimerKind] = createState<TimerKind | null>(null)
   const [activePath, setActivePath] = createState("")
-  const [lockMinutes, setLockMinutes] = createState(initialTimers.lockMinutes)
-  const [idleMinutes, setIdleMinutes] = createState(initialTimers.idleMinutes)
-  const [timersExpanded, setTimersExpanded] = createState(false)
 
   const countLabel = createComputed(() => `${wallpapers().length}`)
-  const timersSummary = createComputed(() => `Lock ${lockMinutes()} min · Idle ${idleMinutes()} min`)
-  const timersChevronLabel = createComputed(() => timersExpanded() ? "▴" : "▾")
   let previewWarmupSourceId = 0
 
   const cancelPreviewWarmup = () => {
@@ -368,12 +221,6 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       getWallpaperTexture(next.path)
       return GLib.SOURCE_CONTINUE
     })
-  }
-
-  const reloadTimerValues = () => {
-    const nextTimers = loadTimerConfig()
-    setLockMinutes(nextTimers.lockMinutes)
-    setIdleMinutes(nextTimers.idleMinutes)
   }
 
   const settleUiFrame = () => new Promise<void>((resolve) => {
@@ -455,7 +302,6 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       const items = listWallpapers()
       setWallpapers(items)
       schedulePreviewWarmup(items)
-      reloadTimerValues()
       setNotice(`Reloaded ${items.length}`)
     } catch (error) {
       setNotice(formatError(error))
@@ -491,42 +337,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
     }
   }
 
-  const saveTimer = async (kind: TimerKind) => {
-    if (savingTimerKind() || applying() || refreshing()) return
-
-    await settleUiFrame()
-    setSavingTimerKind(kind)
-
-    const targetLabel = kind === "lock" ? "Lock" : "Display idle"
-    const matchers = kind === "lock" ? LOCK_MATCHERS : IDLE_MATCHERS
-    const minutes = kind === "lock" ? lockMinutes() : idleMinutes()
-
-    try {
-      const config = readTextFile(HYPRIDLE_CONF)
-      if (!config.trim()) {
-        setNotice(`Missing ${HYPRIDLE_CONF}`)
-        return
-      }
-
-      const updatedConfig = replaceListenerTimeout(config, matchers, minutes * 60)
-      if (!updatedConfig) {
-        setNotice(`${targetLabel} listener not found`)
-        return
-      }
-
-      writeTextFile(HYPRIDLE_CONF, updatedConfig)
-      await restartHypridle()
-      setNotice(`${targetLabel} timer: ${minutes} min`)
-    } catch (error) {
-      setNotice(formatError(error))
-    } finally {
-      setSavingTimerKind(null)
-    }
-  }
-
   const refreshBusy = createComputed(() => refreshing() || applying())
-  const lockTimerBusy = createComputed(() => savingTimerKind() === "lock" || refreshing() || applying())
-  const idleTimerBusy = createComputed(() => savingTimerKind() === "idle" || refreshing() || applying())
   const noticeVisible = createComputed(() => (notice() ?? "").trim().length > 0)
 
   const popoverContent = (
@@ -625,67 +436,6 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       </box>
 
       <box
-        class={timersExpanded((open) => open
-          ? "wallpaper-timeout-shell wallpaper-timeout-shell-open"
-          : "wallpaper-timeout-shell")}
-        orientation={Gtk.Orientation.VERTICAL}
-        spacing={0}
-        widthRequest={SCROLLER_WIDTH}
-      >
-        <button
-          class="flat wallpaper-timeout-capsule"
-          tooltipText={timersExpanded((open) => open ? "Collapse timeout controls" : "Expand timeout controls")}
-          onClicked={() => setTimersExpanded((open) => !open)}
-        >
-          <box class="wallpaper-timeout-summary" spacing={10} hexpand valign={Gtk.Align.CENTER}>
-            <label class="wallpaper-timeout-icon" label={"󰒲"} />
-
-            <box orientation={Gtk.Orientation.VERTICAL} spacing={2} hexpand>
-              <label class="wallpaper-timeout-title" xalign={0} label="Timeouts" />
-              <label class="wallpaper-timeout-subtitle" xalign={0} label={timersSummary} />
-            </box>
-
-            <label class="wallpaper-timeout-chevron" label={timersChevronLabel} />
-          </box>
-        </button>
-
-        <revealer
-          class="wallpaper-timeout-revealer"
-          revealChild={timersExpanded}
-          transitionType={Gtk.RevealerTransitionType.SLIDE_DOWN}
-          transitionDuration={TIMERS_REVEAL_DURATION_MS}
-        >
-          <box class="wallpaper-timeout-content" orientation={Gtk.Orientation.VERTICAL} spacing={0}>
-            <box class="wallpaper-timers" orientation={Gtk.Orientation.VERTICAL} spacing={0} hexpand>
-              <TimerRow
-                icon={"󰌾"}
-                title="Lock timer"
-                subtitle="Lock timeout"
-                value={lockMinutes}
-                busy={lockTimerBusy}
-                onDecrease={() => setLockMinutes((value) => Math.max(1, value - 1))}
-                onIncrease={() => setLockMinutes((value) => Math.min(240, value + 1))}
-                onApply={() => void saveTimer("lock")}
-              />
-
-              <TimerDivider />
-
-              <TimerRow
-                icon={"󰒲"}
-                title="Display timer"
-                subtitle="Display off timeout"
-                value={idleMinutes}
-                busy={idleTimerBusy}
-                onDecrease={() => setIdleMinutes((value) => Math.max(1, value - 1))}
-                onIncrease={() => setIdleMinutes((value) => Math.min(240, value + 1))}
-                onApply={() => void saveTimer("idle")}
-              />
-            </box>
-          </box>
-        </revealer>
-      </box>
-
-      <box
         class="wallpaper-notice-wrap"
         hexpand
         halign={Gtk.Align.FILL}
@@ -703,10 +453,10 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   )
 
   let trigger: Gtk.Button | null = null
-  let popupAnchor: Gtk.Box | null = null
   let popupPlacement: Gtk.Box | null = null
   let popupRevealer: Gtk.Revealer | null = null
   let popupFrame: Gtk.Box | null = null
+  let popupRoot: Gtk.Box | null = null
   let closeTimeoutId = 0
   let applyingCleanupTimeoutId = 0
   let closingPopup = false
@@ -777,6 +527,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
       syncPopupPosition()
       if (popupRevealer) popupRevealer.revealChild = true
+      popupRoot?.grab_focus()
       return GLib.SOURCE_REMOVE
     })
   }
@@ -793,10 +544,14 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       namespace="obsidian-shell"
       class="widget-popup-window wallpaper-popup-window"
       exclusivity={Astal.Exclusivity.IGNORE}
-      keymode={Astal.Keymode.ON_DEMAND}
+      keymode={Astal.Keymode.EXCLUSIVE}
       anchor={FLOATING_POPUP_ANCHOR}
     >
-      <box class="widget-popup-root" hexpand vexpand>
+      <box class="widget-popup-root" hexpand vexpand $={(self) => {
+        popupRoot = self
+        self.set_focusable(true)
+        attachEscapeKey(self, closePopup)
+      }}>
         <Gtk.GestureClick
           button={0}
           onPressed={(_, _nPress, x, y) => {

@@ -1,6 +1,8 @@
 @define-color fg rgba(255, 255, 255, 1.00);
 @define-color glass_bg rgba(14, 18, 26, 0.58);
-@define-color wallpaper_glass_bg rgba(11, 15, 22, 0.78);
+@define-color wallpaper_glass_bg rgba(11, 15, 22, 0.80);
+@define-color popup_surface_bg rgba(11, 15, 22, 0.80);
+@define-color popup_surface_border rgba(255, 255, 255, 0.12);
 @define-color glass_border rgba(255, 255, 255, 0.14);
 @define-color section_bg rgba(24, 29, 40, 0.42);
 @define-color section_border rgba(255, 255, 255, 0.08);
@@ -115,7 +117,13 @@ revealer.notification-ignored-revealer > box,
 revealer.notification-ignored-revealer > contents,
 revealer.notification-ignored-fade-revealer > widget,
 revealer.notification-ignored-fade-revealer > box,
-revealer.notification-ignored-fade-revealer > contents {
+revealer.notification-ignored-fade-revealer > contents,
+revealer.notification-group-slide-revealer > widget,
+revealer.notification-group-slide-revealer > box,
+revealer.notification-group-slide-revealer > contents,
+revealer.notification-group-fade-revealer > widget,
+revealer.notification-group-fade-revealer > box,
+revealer.notification-group-fade-revealer > contents {
     background: transparent;
 }
 
@@ -247,7 +255,15 @@ menubutton.left-module-button button.toggle {
     min-width: 0;
 }
 
+.left-status-shell {
+    min-width: 0;
+}
 
+.left-status-content {
+    min-width: 0;
+    min-height: 30px;
+    padding: 0 8px;
+}
 
 
 .right-side-wrap {
@@ -472,29 +488,62 @@ menubutton.bluetooth-trigger > button.toggle:checked {
 }
 
 scale.slider-control {
-    min-width: 120px;
+    min-width: 128px;
+    min-height: 20px;
+    padding: 4px 0;
+    margin: 0;
     background-color: transparent;
+    background-image: none;
+    box-shadow: none;
 }
 
-scale.slider-control trough {
-    min-height: 6px;
+scale.slider-control trough,
+scale.slider-control > trough {
+    min-height: 8px;
+    padding: 0;
+    margin: 0;
+    border: none;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.16);
+    background-image: none;
+    box-shadow: none;
 }
 
 scale.slider-control highlight,
-scale.slider-control fill {
-    min-height: 6px;
+scale.slider-control fill,
+scale.slider-control > trough > highlight,
+scale.slider-control > trough > fill {
+    min-height: 8px;
+    padding: 0;
+    margin: 0;
+    border: none;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.90);
+    background: rgba(255, 255, 255, 0.92);
+    background-image: none;
+    box-shadow: none;
 }
 
-scale.slider-control slider {
-    min-width: 14px;
-    min-height: 14px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.96);
-    border: 1px solid rgba(20, 24, 32, 0.45);
+scale.slider-control slider,
+scale.slider-control > trough > slider {
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    background-image: none;
+    box-shadow: none;
+    opacity: 0;
+}
+
+scale.slider-control:hover slider,
+scale.slider-control:hover > trough > slider,
+scale.slider-control:active slider,
+scale.slider-control:active > trough > slider {
+    background: transparent;
+    box-shadow: none;
+    opacity: 0;
 }
 
 .power-toggle {
@@ -533,14 +582,12 @@ popover.network-popover-window contents,
 popover.launcher-popover-window contents,
 popover.wallpaper-popover-window contents,
 popover.tray-menu-popover-window contents {
-    background: @glass_bg;
-    border: 1px solid @glass_border;
+    background: @popup_surface_bg;
+    border: 1px solid @popup_surface_border;
     border-radius: 18px;
+    background-clip: padding-box;
     padding: 12px;
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.10),
-        inset 0 -1px 0 rgba(255, 255, 255, 0.03),
-        0 10px 30px rgba(0, 0, 0, 0.28);
+    box-shadow: none;
     animation: none;
 }
 
@@ -561,25 +608,21 @@ box.widget-popup-frame,
 .launcher-popover-window,
 .wallpaper-popover-window {
     padding: 12px;
-    background: @glass_bg;
+    background: @popup_surface_bg;
     color: @fg;
-    border: 1px solid @glass_border;
+    border: 1px solid @popup_surface_border;
     border-radius: 18px;
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.10),
-        inset 0 -1px 0 rgba(255, 255, 255, 0.03),
-        0 10px 30px rgba(0, 0, 0, 0.28);
+    background-clip: padding-box;
+    box-shadow: none;
 }
 
 window.widget-popup-window box.widget-popup-frame,
 window.widget-popup-window .widget-popup-frame {
-    background: @glass_bg;
-    border: 1px solid @glass_border;
+    background: @popup_surface_bg;
+    border: 1px solid @popup_surface_border;
     border-radius: 18px;
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.10),
-        inset 0 -1px 0 rgba(255, 255, 255, 0.03),
-        0 10px 30px rgba(0, 0, 0, 0.28);
+    background-clip: padding-box;
+    box-shadow: none;
 }
 
 window.wallpaper-popup-window box.widget-popup-frame,
@@ -587,10 +630,13 @@ window.wallpaper-popup-window .widget-popup-frame,
 box.widget-popup-frame.wallpaper-popover-window,
 .wallpaper-popover-window.widget-popup-frame,
 .wallpaper-popover-window {
-    background: rgba(11, 15, 22, 0.80);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: @popup_surface_bg;
+    border: 1px solid @popup_surface_border;
+    background-clip: padding-box;
     box-shadow: none;
 }
+
+/* Shared popup surface tuned to match the wallpaper widget. */
 
 .wallpaper-popover-window,
 .wallpaper-popover,
@@ -1895,7 +1941,11 @@ button.wallpaper-timer-apply:checked {
 }
 
 .notification-history-frame {
-    background: transparent;
+    background: @popup_surface_bg;
+    border: 1px solid @popup_surface_border;
+    border-radius: 18px;
+    background-clip: padding-box;
+    box-shadow: none;
 }
 
 .notification-history-shell {
@@ -1907,13 +1957,11 @@ button.wallpaper-timer-apply:checked {
 .notification-card,
 .notification-app-group,
 .notification-ignored-panel {
-    background: @glass_bg;
-    border: 1px solid @glass_border;
+    background: @popup_surface_bg;
+    border: 1px solid @popup_surface_border;
     border-radius: 18px;
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.10),
-        inset 0 -1px 0 rgba(255, 255, 255, 0.03),
-        0 10px 30px rgba(0, 0, 0, 0.28);
+    background-clip: padding-box;
+    box-shadow: none;
 }
 
 .notification-history-panel,
@@ -1959,15 +2007,45 @@ button.wallpaper-timer-apply:checked {
 }
 
 .notification-group-items {
-    margin-top: 2px;
+    margin-top: 8px;
 }
 
-.notification-group-item {
+.notification-group-revealer,
+.notification-group-slide-revealer,
+.notification-group-fade-revealer,
+.notification-group-revealer>* {
+    transition: none;
+}
+
+.notification-app-group,
+.notification-app-group:hover,
+.notification-app-group:active,
+.notification-app-group:focus,
+.notification-app-group:focus-within {
+    background: @popup_surface_bg;
+    border: 1px solid @popup_surface_border;
+    background-clip: padding-box;
+    box-shadow: none;
+    transition: none;
+}
+
+.notification-app-group-header-content {
+    min-width: 0;
+}
+
+.notification-group-item,
+.notification-group-item:hover,
+.notification-group-item:active,
+.notification-group-item:focus,
+.notification-group-item:focus-within {
     background: @section_bg;
     border: 1px solid @section_border;
     border-radius: 14px;
     box-shadow: none;
     padding: 9px 10px;
+    min-height: 0;
+    min-width: 0;
+    transition: none;
 }
 
 .notification-inline-manage-button {
@@ -2023,8 +2101,21 @@ button.wallpaper-timer-apply:checked {
     opacity: 0.8;
 }
 
-.notification-card {
+.notification-card,
+.notification-card:hover,
+.notification-card:active,
+.notification-card:focus,
+.notification-card:focus-within,
+.notification-history-card,
+.notification-history-card:hover,
+.notification-history-card:active,
+.notification-history-card:focus,
+.notification-history-card:focus-within {
     padding: 10px;
+    min-height: 0;
+    min-width: 0;
+    box-shadow: none;
+    transition: none;
 }
 
 .notification-history-card {
@@ -2032,15 +2123,60 @@ button.wallpaper-timer-apply:checked {
 }
 
 .notification-toast-card {
-    background: rgba(18, 23, 32, 0.38);
-    border-color: rgba(255, 255, 255, 0.14);
+    background: @popup_surface_bg;
+    border-color: @popup_surface_border;
+    background-clip: padding-box;
     padding: 14px 12px;
+    box-shadow: none;
     transition: background-color 180ms ease, border-color 180ms ease, opacity 180ms ease, transform 240ms ease;
 }
 
 .notification-content-row,
-.notification-summary-row {
+.notification-summary-row,
+.notification-text-stack,
+.notification-summary,
+.notification-app-name,
+.notification-time,
+.notification-body {
     min-height: 0;
+    min-width: 0;
+}
+
+.notification-icon-button,
+.notification-icon-button:hover,
+.notification-icon-button:active,
+.notification-icon-button:focus,
+.notification-icon-button:focus-visible,
+.notification-icon-button:checked {
+    min-height: 24px;
+    min-width: 24px;
+    padding: 0;
+    margin: 0;
+    border-radius: 999px;
+    background-image: none;
+    box-shadow: none;
+    outline: none;
+    border: 1px solid transparent;
+    transition: background-color 160ms ease, border-color 160ms ease, opacity 160ms ease;
+}
+
+.notification-icon-button {
+    background: transparent;
+}
+
+.notification-icon-button:hover,
+.notification-icon-button:active,
+.notification-icon-button:focus,
+.notification-icon-button:focus-visible,
+.notification-icon-button:checked {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.10);
+}
+
+.notification-dismiss-glyph {
+    font-size: 11px;
+    font-weight: 700;
+    opacity: 0.82;
 }
 
 .notification-text-stack,
@@ -2156,12 +2292,42 @@ button.wallpaper-timer-apply:checked {
     margin-top: 2px;
 }
 
-.notification-action-button {
+.notification-icon-button > label,
+.notification-action-button > label,
+.notification-inline-manage-button > label,
+.notification-clear-button > label,
+.notification-dnd-button > label {
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    min-width: 0;
+}
+
+.notification-action-button,
+.notification-action-button:hover,
+.notification-action-button:active,
+.notification-action-button:focus,
+.notification-action-button:focus-visible,
+.notification-action-button:checked,
+.notification-inline-manage-button,
+.notification-inline-manage-button:hover,
+.notification-inline-manage-button:active,
+.notification-inline-manage-button:focus,
+.notification-inline-manage-button:focus-visible {
     min-height: 26px;
     padding: 0 10px;
+    margin: 0;
     border-radius: 9px;
-    background: @section_bg;
+    background-image: none;
+    box-shadow: none;
+    outline: none;
     border: 1px solid @section_border;
+    transition: background-color 160ms ease, border-color 160ms ease, opacity 160ms ease;
+}
+
+.notification-action-button,
+.notification-inline-manage-button {
+    background: @section_bg;
 }
 
 .notification-player-shell {
@@ -2276,4 +2442,92 @@ button.wallpaper-timer-apply:checked {
 .volume-percent,
 .brightness-percent {
   min-width: 34px;
+}
+
+window.osd-window,
+.osd-placement,
+.osd-revealer {
+    background: transparent;
+    background-image: none;
+    border: none;
+    box-shadow: none;
+}
+
+frame.osd-frame {
+    min-width: 300px;
+    background: @popup_surface_bg;
+    color: @fg;
+    border: 1px solid @popup_surface_border;
+    border-radius: 18px;
+    box-shadow: none;
+}
+
+.osd-body {
+    padding: 12px 16px 14px 16px;
+    background: transparent;
+}
+
+.osd-header {
+    min-height: 24px;
+}
+
+.osd-icon {
+    min-width: 20px;
+    font-family: "Material Design Icons";
+    font-size: 18px;
+    font-style: normal;
+    font-weight: 400;
+}
+
+.osd-title,
+.osd-percent {
+    font-size: 14px;
+}
+
+.osd-percent {
+    min-width: 48px;
+}
+
+scale.osd-slider,
+scale.osd-slider:disabled,
+scale.osd-slider:hover,
+scale.osd-slider:active,
+scale.osd-slider:focus,
+scale.osd-slider:focus-within {
+    min-width: 264px;
+    min-height: 16px;
+    padding: 0;
+    margin: 0 2px 2px 2px;
+    background: transparent;
+    background-image: none;
+    border: none;
+    box-shadow: none;
+    outline: none;
+    opacity: 1;
+}
+
+scale.osd-slider trough,
+scale.osd-slider > trough {
+    min-height: 8px;
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: 999px;
+}
+
+scale.osd-slider highlight,
+scale.osd-slider fill,
+scale.osd-slider > trough > highlight,
+scale.osd-slider > trough > fill {
+    min-height: 8px;
+    background: rgba(255, 255, 255, 0.96);
+    border-radius: 999px;
+}
+
+scale.osd-slider slider,
+scale.osd-slider > trough > slider {
+    min-width: 0;
+    min-height: 0;
+    opacity: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
 }
