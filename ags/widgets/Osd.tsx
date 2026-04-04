@@ -158,13 +158,7 @@ export function suppressBrightnessOsd(ms = OSD_BAR_SUPPRESS_MS) {
   brightnessSuppressUntil = suppressForBar(ms)
 }
 
-const IS_HYPRLAND_SESSION = Boolean(GLib.getenv("HYPRLAND_INSTANCE_SIGNATURE"))
-
 async function isFullscreenActive() {
-  if (!IS_HYPRLAND_SESSION) {
-    return true
-  }
-
   try {
     const raw = await execAsync(["hyprctl", "-j", "activewindow"])
     const trimmed = raw.trim()

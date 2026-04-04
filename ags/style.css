@@ -521,8 +521,8 @@ scale.slider-control > trough > fill {
 
 scale.slider-control slider,
 scale.slider-control > trough > slider {
-    min-width: 8px;
-    min-height: 8px;
+    min-width: 0;
+    min-height: 0;
     padding: 0;
     margin: 0;
     border: none;
@@ -2319,8 +2319,8 @@ scale.osd-slider > trough > fill {
 
 scale.osd-slider slider,
 scale.osd-slider > trough > slider {
-    min-width: 8px;
-    min-height: 8px;
+    min-width: 0;
+    min-height: 0;
     opacity: 0;
     background: transparent;
     border: none;
