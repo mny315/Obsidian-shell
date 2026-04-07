@@ -285,31 +285,60 @@ function getWallpaperTexture(path: string) {
 
 type WallpaperWidgetSettings = {
   directory?: string
+  currentWallpaper?: string
 }
 
 function isAbsoluteDirectory(path: string) {
   return isExistingDirectoryPath(path)
 }
 
-function readWallpaperDirectory() {
+function isExistingFilePath(path: string) {
+  const trimmed = path.trim()
+  if (!trimmed || !GLib.path_is_absolute(trimmed)) return false
+
   try {
-    const [ok, contents] = GLib.file_get_contents(WALLPAPER_SETTINGS_PATH)
-    if (!ok || !contents) return DEFAULT_WALLPAPER_DIR
-
-    const parsed = JSON.parse(new TextDecoder().decode(contents)) as WallpaperWidgetSettings | string
-    if (typeof parsed === "string") return isAbsoluteDirectory(parsed) ? parsed.trim() : DEFAULT_WALLPAPER_DIR
-
-    const directory = parsed?.directory?.trim() ?? ""
-    return isAbsoluteDirectory(directory) ? directory : DEFAULT_WALLPAPER_DIR
+    return Gio.File.new_for_path(trimmed).query_file_type(Gio.FileQueryInfoFlags.NONE, null) === Gio.FileType.REGULAR
   } catch {
-    return DEFAULT_WALLPAPER_DIR
+    return false
   }
 }
 
-function saveWallpaperDirectory(path: string) {
+function readWallpaperSettings() {
   try {
+    const [ok, contents] = GLib.file_get_contents(WALLPAPER_SETTINGS_PATH)
+    if (!ok || !contents) return {} as WallpaperWidgetSettings
+
+    const parsed = JSON.parse(new TextDecoder().decode(contents)) as WallpaperWidgetSettings | string
+    if (typeof parsed === "string") {
+      return isAbsoluteDirectory(parsed) ? { directory: parsed.trim() } : ({} as WallpaperWidgetSettings)
+    }
+
+    const directory = parsed?.directory?.trim() ?? ""
+    const currentWallpaper = parsed?.currentWallpaper?.trim() ?? ""
+
+    return {
+      directory: isAbsoluteDirectory(directory) ? directory : undefined,
+      currentWallpaper: isExistingFilePath(currentWallpaper) ? currentWallpaper : undefined,
+    } satisfies WallpaperWidgetSettings
+  } catch {
+    return {} as WallpaperWidgetSettings
+  }
+}
+
+function readWallpaperDirectory() {
+  return readWallpaperSettings().directory ?? DEFAULT_WALLPAPER_DIR
+}
+
+function saveWallpaperSettings(nextPatch: Partial<WallpaperWidgetSettings>) {
+  try {
+    const current = readWallpaperSettings()
+    const next: WallpaperWidgetSettings = {
+      ...current,
+      ...nextPatch,
+    }
+
     GLib.mkdir_with_parents(WALLPAPER_STATE_DIR, 0o700)
-    GLib.file_set_contents(WALLPAPER_SETTINGS_PATH, JSON.stringify({ directory: path }))
+    GLib.file_set_contents(WALLPAPER_SETTINGS_PATH, JSON.stringify(next))
   } catch (error) {
     console.error(error)
   }
@@ -524,12 +553,13 @@ function WallpaperPreview({
 }
 
 export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
-  const [wallpaperDir, setWallpaperDir] = createState(readWallpaperDirectory())
+  const initialSettings = readWallpaperSettings()
+  const [wallpaperDir, setWallpaperDir] = createState(initialSettings.directory ?? DEFAULT_WALLPAPER_DIR)
   const [wallpapers, setWallpapers] = createState<WallpaperItem[]>(listWallpapers(wallpaperDir()))
   const [notice, setNotice] = createState<string | null>(null)
   const [refreshing, setRefreshing] = createState(false)
   const [applying, setApplying] = createState(false)
-  const [activePath, setActivePath] = createState("")
+  const [activePath, setActivePath] = createState(initialSettings.currentWallpaper ?? "")
 
   const countLabel = createComputed(() => `${wallpapers().length}`)
   const [visibleCount, setVisibleCount] = createState(WALLPAPER_INITIAL_VISIBLE_ITEMS)
@@ -556,7 +586,12 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   })
 
   const syncActiveWallpaper = async () => {
-    if (!SWWW_BIN) return
+    const savedPath = readWallpaperSettings().currentWallpaper ?? ""
+
+    if (!SWWW_BIN) {
+      setActivePath(savedPath)
+      return
+    }
 
     try {
       const output = await execAsync([SWWW_BIN, "query"])
@@ -570,7 +605,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       // Ignore missing daemon / query failures silently to avoid log spam on startup.
     }
 
-    setActivePath("")
+    setActivePath(savedPath)
   }
 
   const runWallpaperApplyCommand = async (path: string) => {
@@ -689,6 +724,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
 
     try {
       await runWallpaperApplyCommand(item.path)
+      saveWallpaperSettings({ currentWallpaper: item.path })
       setActivePath(item.path)
       applyingCleanupTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 180, () => {
         setNotice("Wallpaper applied")
@@ -737,7 +773,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
         setNotice(null)
 
         resetWallpaperTexturePipeline()
-        saveWallpaperDirectory(selectedPath)
+        saveWallpaperSettings({ directory: selectedPath })
         setWallpaperDir(selectedPath)
         const items = listWallpapers(selectedPath)
         setWallpapers(items)
