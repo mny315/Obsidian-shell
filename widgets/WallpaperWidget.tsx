@@ -56,12 +56,13 @@ const CARD_WIDTH = 144
 const CARD_HEIGHT = 84
 const GRID_GAP = 8
 const SCROLLER_WIDTH = GRID_COLUMNS * CARD_WIDTH + GRID_GAP * (GRID_COLUMNS - 1)
-const GRID_VISIBLE_ROWS = 4
-const SCROLLER_HEIGHT = CARD_HEIGHT * GRID_VISIBLE_ROWS + GRID_GAP * (GRID_VISIBLE_ROWS - 1) + 40
+const GRID_VISIBLE_ROWS = 6
+const SCROLLER_HEIGHT = CARD_HEIGHT * GRID_VISIBLE_ROWS + GRID_GAP * (GRID_VISIBLE_ROWS - 1)
+const SCROLLER_MIN_HEIGHT = CARD_HEIGHT * 2 + GRID_GAP
 const POPOVER_WIDTH = SCROLLER_WIDTH + 24
-const WALLPAPER_POPOVER_REVEAL_DURATION_MS = 220
+const WALLPAPER_POPOVER_REVEAL_DURATION_MS = 165
 const WALLPAPER_POPOVER_OFFSET_Y = 20
-const WALLPAPER_INITIAL_VISIBLE_ITEMS = GRID_COLUMNS * (GRID_VISIBLE_ROWS + 1)
+const WALLPAPER_INITIAL_VISIBLE_ITEMS = GRID_COLUMNS * GRID_VISIBLE_ROWS
 const WALLPAPER_LOAD_MORE_ITEMS = GRID_COLUMNS * 2
 const WALLPAPER_LOAD_MORE_THRESHOLD = CARD_HEIGHT + GRID_GAP
 const WALLPAPER_TEXTURE_QUEUE_INTERVAL_MS = 12
@@ -72,10 +73,12 @@ const wallpaperTextureSubscribers = new Map<string, Set<(texture: Gdk.Texture | 
 const wallpaperTextureQueued = new Set<string>()
 const wallpaperTextureQueue: string[] = []
 let wallpaperTextureQueueSourceId = 0
+let wallpaperThumbnailBuildGeneration = 0
 const SWWW_BIN = GLib.find_program_in_path("swww")?.trim() ?? ""
 
-
 function resetWallpaperTexturePipeline() {
+  wallpaperThumbnailBuildGeneration += 1
+
   if (wallpaperTextureQueueSourceId !== 0) {
     GLib.source_remove(wallpaperTextureQueueSourceId)
     wallpaperTextureQueueSourceId = 0
@@ -223,18 +226,52 @@ function generateWallpaperThumbnail(path: string, thumbnailPath: string) {
   }
 }
 
-function ensureWallpaperThumbnail(path: string) {
+function getExistingWallpaperThumbnail(path: string) {
   const thumbnailPath = getWallpaperThumbnailPath(path)
-  if (Gio.File.new_for_path(thumbnailPath).query_exists(null)) return thumbnailPath
-  return generateWallpaperThumbnail(path, thumbnailPath)
+  return Gio.File.new_for_path(thumbnailPath).query_exists(null) ? thumbnailPath : null
+}
+
+function yieldLowPriorityFrame() {
+  return new Promise<void>((resolve) => {
+    GLib.idle_add(GLib.PRIORITY_LOW, () => {
+      resolve()
+      return GLib.SOURCE_REMOVE
+    })
+  })
+}
+
+async function buildWallpaperThumbnails(
+  items: WallpaperItem[],
+  onProgress?: (done: number, total: number) => void,
+) {
+  const total = items.length
+  const buildGeneration = ++wallpaperThumbnailBuildGeneration
+
+  for (let index = 0; index < items.length; index += 1) {
+    if (buildGeneration !== wallpaperThumbnailBuildGeneration) return false
+
+    const item = items[index]
+    const thumbnailPath = getWallpaperThumbnailPath(item.path)
+    if (!Gio.File.new_for_path(thumbnailPath).query_exists(null)) {
+      generateWallpaperThumbnail(item.path, thumbnailPath)
+    }
+
+    onProgress?.(index + 1, total)
+    await yieldLowPriorityFrame()
+  }
+
+  return buildGeneration === wallpaperThumbnailBuildGeneration
 }
 
 function getWallpaperTexture(path: string) {
   if (wallpaperTextureCache.has(path)) return wallpaperTextureCache.get(path) ?? null
 
   try {
-    const thumbnailPath = ensureWallpaperThumbnail(path)
-    if (!thumbnailPath) throw new Error(`Failed to build wallpaper thumbnail for ${path}`)
+    const thumbnailPath = getExistingWallpaperThumbnail(path)
+    if (!thumbnailPath) {
+      wallpaperTextureCache.set(path, null)
+      return null
+    }
 
     const texture = Gdk.Texture.new_from_filename(thumbnailPath)
     wallpaperTextureCache.set(path, texture)
@@ -323,7 +360,6 @@ function listWallpapers(wallpaperDir: string): WallpaperItem[] {
     return []
   }
 }
-
 
 function chunkWallpapers(items: WallpaperItem[], chunkSize: number) {
   const rows: WallpaperItem[][] = []
@@ -452,12 +488,15 @@ function WallpaperPreview({
 
             const beginTextureLoad = () => {
               cancelTextureRequest()
+              self.set_paintable(null)
 
               const cachedTexture = wallpaperTextureCache.get(item.path)
               if (cachedTexture !== undefined) {
                 if (cachedTexture) self.set_paintable(cachedTexture)
                 return
               }
+
+              if (!getExistingWallpaperThumbnail(item.path)) return
 
               cancelTextureRequest = requestWallpaperTexture(item.path, (texture) => {
                 cancelTextureRequest = () => {}
@@ -544,31 +583,45 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
         SWWW_BIN,
         "img",
         "--transition-type",
-        "fade",
+        "grow",
+        "--transition-pos",
+        "center",
         "--transition-duration",
-        "0.55",
+        "0.9",
         "--transition-fps",
         "120",
         "--transition-step",
-        "90",
-        "--transition-bezier",
-        ".25,1,.35,1",
+        "28",
         path,
       ],
       [
         SWWW_BIN,
         "img",
         "--transition-type",
-        "fade",
+        "outer",
+        "--transition-pos",
+        "center",
         "--transition-duration",
-        "0.45",
+        "0.8",
         "--transition-fps",
-        "90",
+        "120",
         "--transition-step",
-        "80",
+        "24",
         path,
       ],
-      [SWWW_BIN, "img", "--transition-type", "fade", "--transition-duration", "0.35", path],
+      [
+        SWWW_BIN,
+        "img",
+        "--transition-type",
+        "simple",
+        "--transition-duration",
+        "0.7",
+        "--transition-fps",
+        "120",
+        "--transition-step",
+        "8",
+        path,
+      ],
       [SWWW_BIN, "img", path],
     ]
 
@@ -597,6 +650,22 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       resetWallpaperTexturePipeline()
       const items = listWallpapers(wallpaperDir())
       setWallpapers(items)
+      resetVisibleWallpapers(items)
+
+      if (items.length === 0) {
+        setNotice("Reloaded 0")
+        return
+      }
+
+      setNotice(`Building previews 0/${items.length}`)
+      const completed = await buildWallpaperThumbnails(items, (done, total) => {
+        setNotice(`Building previews ${done}/${total}`)
+      })
+
+      if (!completed) return
+
+      wallpaperTextureCache.clear()
+      setWallpapers([...items])
       resetVisibleWallpapers(items)
       setNotice(`Reloaded ${items.length}`)
     } catch (error) {
@@ -673,7 +742,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
         const items = listWallpapers(selectedPath)
         setWallpapers(items)
         resetVisibleWallpapers(items)
-        setNotice(`Folder set: ${formatWallpaperDirectory(selectedPath)}`)
+        setNotice(`Folder set: ${formatWallpaperDirectory(selectedPath)} · hit reload to build previews`)
       } catch (error) {
         setNotice(formatError(error))
       } finally {
@@ -738,12 +807,15 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
           <Gtk.ScrolledWindow
             class="wallpaper-list-wrap"
             widthRequest={SCROLLER_WIDTH}
-            heightRequest={SCROLLER_HEIGHT}
             minContentWidth={SCROLLER_WIDTH}
-            minContentHeight={SCROLLER_HEIGHT}
+            minContentHeight={SCROLLER_MIN_HEIGHT}
             maxContentHeight={SCROLLER_HEIGHT}
-            propagateNaturalHeight={false}
+            propagateNaturalHeight={true}
             propagateNaturalWidth={false}
+            vexpand={false}
+            hexpand={false}
+            valign={Gtk.Align.START}
+            halign={Gtk.Align.START}
             $={(self) => {
               self.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
 
@@ -847,17 +919,9 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   let popupRevealer: Gtk.Revealer | null = null
   let popupFrame: Gtk.Box | null = null
   let popupRoot: Gtk.Box | null = null
-  let closeTimeoutId = 0
   let applyingCleanupTimeoutId = 0
   let closingPopup = false
   const [windowVisible, setWindowVisible] = createState(false)
-
-  const clearCloseTimeout = () => {
-    if (closeTimeoutId !== 0) {
-      GLib.source_remove(closeTimeoutId)
-      closeTimeoutId = 0
-    }
-  }
 
   const clearApplyingCleanupTimeout = () => {
     if (applyingCleanupTimeoutId !== 0) {
@@ -881,7 +945,6 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   }
 
   const finishClosePopup = () => {
-    clearCloseTimeout()
     closingPopup = false
     setWindowVisible(false)
     setTriggerOpen(false)
@@ -894,10 +957,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
 
     if (popupRevealer?.get_reveal_child()) {
       popupRevealer.revealChild = false
-      closeTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, WALLPAPER_POPOVER_REVEAL_DURATION_MS, () => {
-        finishClosePopup()
-        return GLib.SOURCE_REMOVE
-      })
+      if (!popupRevealer.get_child_revealed()) finishClosePopup()
       return
     }
 
@@ -910,7 +970,6 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       return
     }
 
-    clearCloseTimeout()
     closingPopup = false
     setWindowVisible(true)
     setTriggerOpen(true)
@@ -936,6 +995,14 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       exclusivity={Astal.Exclusivity.IGNORE}
       keymode={Astal.Keymode.EXCLUSIVE}
       anchor={FLOATING_POPUP_ANCHOR}
+      $={(self) => {
+        self.connect("destroy", () => {
+          popupPlacement = null
+          popupRevealer = null
+          popupFrame = null
+          popupRoot = null
+        })
+      }}
     >
       <box class="widget-popup-root" hexpand vexpand $={(self) => {
         popupRoot = self
@@ -944,7 +1011,8 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       }}>
         <Gtk.GestureClick
           button={0}
-          onPressed={(_, _nPress, x, y) => {
+          propagationPhase={Gtk.PropagationPhase.CAPTURE}
+          onReleased={(_, _nPress, x, y) => {
             const root = popupPlacement?.get_parent?.() as Gtk.Widget | null
             if (isPointInsideWidget(popupFrame, root, x, y)) return
             closePopup()
@@ -963,9 +1031,23 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
             revealChild={false}
             transitionType={Gtk.RevealerTransitionType.SLIDE_RIGHT}
             transitionDuration={WALLPAPER_POPOVER_REVEAL_DURATION_MS}
-            $={(revealer) => (popupRevealer = revealer)}
+            $={(revealer) => {
+              popupRevealer = revealer
+
+              const childRevealedId = revealer.connect("notify::child-revealed", () => {
+                if (!revealer.get_reveal_child() && !revealer.get_child_revealed() && closingPopup) {
+                  finishClosePopup()
+                }
+              })
+
+              revealer.connect("destroy", () => {
+                revealer.disconnect(childRevealedId)
+              })
+            }}
           >
-            <box class="widget-popup-frame wallpaper-popover-window" widthRequest={POPOVER_WIDTH} $={(self) => (popupFrame = self)}>
+            <box class="widget-popup-frame wallpaper-popover-window" widthRequest={POPOVER_WIDTH} $={(self) => {
+              popupFrame = self
+            }}>
               {createPopoverContent()}
             </box>
           </revealer>
@@ -986,7 +1068,6 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
 
         void syncActiveWallpaper()
         self.connect("destroy", () => {
-          clearCloseTimeout()
           clearApplyingCleanupTimeout()
           resetWallpaperTexturePipeline()
           closingPopup = false

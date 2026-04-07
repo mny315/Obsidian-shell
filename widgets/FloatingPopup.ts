@@ -104,7 +104,6 @@ export function placePopupFromTrigger(
   placement.set_margin_top(Math.max(0, y))
 }
 
-
 export function isPointInsideWidget(
   widget: Gtk.Widget | null,
   root: Gtk.Widget | null,

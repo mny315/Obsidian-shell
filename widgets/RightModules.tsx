@@ -128,7 +128,6 @@ export function RightModules({
       <AppLauncherControl monitor={monitor} bindBarHoverWatcher={(watcher) => barHoverWatchers.add(watcher)} />
       <BluetoothControl monitor={monitor} bindBarHoverWatcher={(watcher) => barHoverWatchers.add(watcher)} />
       <NetworkControl monitor={monitor} bindBarHoverWatcher={(watcher) => barHoverWatchers.add(watcher)} />
-     
 
       <BrightnessControl
         onToggle={() => toggleRevealer(brightnessRevealer)}

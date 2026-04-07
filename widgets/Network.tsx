@@ -474,7 +474,6 @@ export function NetworkControl({
     else trigger.remove_css_class("widget-trigger-open")
   }
 
-
   const finishClosePopup = () => {
     clearCloseTimeout()
     closingPopup = false
@@ -625,7 +624,7 @@ export function NetworkControl({
       const metaStr = `${network.signal}% • ${network.security}${network.saved ? " • saved" : ""}`
       const rowIcon = wifiSignalIcon(network.signal)
       if (network.inUse) {
-        const row = network.saved 
+        const row = network.saved
           ? makeRowWithAction(rowIcon, network.ssid, metaStr, [makeIconLabel("󰗠", "network-row-status")], null, "󰅖", "network-icon-button", `Forget ${network.ssid}`, () => deferAction(() => forgetWifi(network)))
           : makeInfoRow(rowIcon, network.ssid, metaStr, [makeIconLabel("󰗠", "network-row-status")])
         row.add_css_class("network-row-current")
@@ -787,7 +786,6 @@ export function NetworkControl({
     }
     scheduleRefresh(100)
   }
-
 
   const rescanBtn = makeIconButton("󰑐", "network-icon-button", "Rescan", () => {
     if (wifiEnabled && wifiDevice) {

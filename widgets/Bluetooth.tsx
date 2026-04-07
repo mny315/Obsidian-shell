@@ -727,7 +727,6 @@ export function BluetoothControl({
     return lines.join("\n")
   })
 
-
   const clearCloseTimeout = () => {
     if (closeTimeoutId !== 0) {
       GLib.source_remove(closeTimeoutId)
@@ -751,7 +750,6 @@ export function BluetoothControl({
     if (open) trigger.add_css_class("widget-trigger-open")
     else trigger.remove_css_class("widget-trigger-open")
   }
-
 
   const finishClosePopup = () => {
     clearCloseTimeout()

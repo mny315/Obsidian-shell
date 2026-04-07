@@ -78,9 +78,9 @@ function TrayItem({ item }: { item: any }) {
         }}
       />
 
-      <image 
-        $={(self) => (image = self)} 
-        pixelSize={18} 
+      <image
+        $={(self) => (image = self)}
+        pixelSize={18}
         halign={Gtk.Align.CENTER}
         valign={Gtk.Align.CENTER}
         hexpand={true}

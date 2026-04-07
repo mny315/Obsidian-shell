@@ -1066,9 +1066,15 @@ function NotificationGroup({
         <button
           class="notification-icon-button notification-dismiss-button"
           tooltipText={`Dismiss ${group.items.length === 1 ? "notification" : "group"}`}
+          widthRequest={24}
+          heightRequest={24}
+          hexpand={false}
+          vexpand={false}
+          halign={Gtk.Align.CENTER}
+          valign={Gtk.Align.CENTER}
           onClicked={onDismissGroup}
         >
-          <label class="notification-dismiss-glyph" label="✕" />
+          <label class="notification-dismiss-glyph" label="✕" halign={Gtk.Align.CENTER} valign={Gtk.Align.CENTER} />
         </button>
       </box>
 
