@@ -56,7 +56,7 @@ let
 
   src = builtins.fetchurl {
     url = "https://github.com/mny315/Obsidian-shell/releases/download/${releaseTag}/${releaseAsset}";
-    sha256 = "sha256-E0M3soxql03dHuXXv1cgHemnOsC4FhZRh2ILepEO9Hc=";
+    sha256 = "sha256-sSs6IYPIibcJwPmsn7R2k3D+Mq9qIkpnJsed5iYNUJY=";
   };
 
   saveWallpaperScript = pkgs.writeShellScriptBin "obsidian-shell-set-wallpaper" ''

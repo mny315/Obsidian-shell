@@ -1059,14 +1059,16 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
           class="widget-popup-placement"
           halign={Gtk.Align.START}
           valign={Gtk.Align.START}
+          overflow={Gtk.Overflow.HIDDEN}
           $={(self) => (popupPlacement = self)}
         >
 
           <revealer
             class="widget-popup-revealer"
             revealChild={false}
-            transitionType={Gtk.RevealerTransitionType.SLIDE_RIGHT}
+            transitionType={Gtk.RevealerTransitionType.CROSSFADE}
             transitionDuration={WALLPAPER_POPOVER_REVEAL_DURATION_MS}
+            overflow={Gtk.Overflow.HIDDEN}
             $={(revealer) => {
               popupRevealer = revealer
 
@@ -1081,9 +1083,14 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
               })
             }}
           >
-            <box class="widget-popup-frame wallpaper-popover-window" widthRequest={POPOVER_WIDTH} $={(self) => {
-              popupFrame = self
-            }}>
+            <box
+              class="widget-popup-frame wallpaper-popover-window"
+              widthRequest={POPOVER_WIDTH}
+              overflow={Gtk.Overflow.HIDDEN}
+              $={(self) => {
+                popupFrame = self
+              }}
+            >
               {createPopoverContent()}
             </box>
           </revealer>
