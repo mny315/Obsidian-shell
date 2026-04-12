@@ -33,7 +33,10 @@ Obsidian Shell already includes its own launcher, so you do not need **fuzzel** 
 Example bind:
 
 ```ini
+hyprland
 $mainMod, TAB, exec, obsidian-shell launcher toggle
+
+niri
 Mod+Tab { spawn "obsidian-shell" "launcher" "toggle"; } 
 ```
 
@@ -59,30 +62,9 @@ imports = [ ./dotfiles/ags/obsidian-shell.nix ];
 
 The module already provides the wrapper, runtime packages, and fonts.
 
-The shell itself is expected at:
-
-```bash
-~/.config/ags/obsidian-shell
-```
-
-In a typical Home Manager setup, that file is symlinked from your dotfiles:
-
-```nix
-home.file.".config/ags/obsidian-shell".source = ./dotfiles/ags/obsidian-shell;
-```
-
-Make sure the target file is executable, then apply your config:
-
 ```bash
 home-manager switch
 ```
-
-After that, you can launch it with:
-
-```bash
-obsidian-shell
-```
-
 ## Autostart
 ### Hyprland
 

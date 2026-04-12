@@ -138,7 +138,6 @@ in
     Unit = {
       Description = "swww-daemon";
       PartOf = [ "graphical-session.target" ];
-      After = [ "graphical-session.target" ];
     };
 
     Service = {
@@ -154,12 +153,13 @@ in
     Unit = {
       Description = "Restore wallpaper with swww";
       Requires = [ "swww-daemon.service" ];
-      After = [ "swww-daemon.service" ];
+      After = [ "graphical-session.target" "swww-daemon.service" ];
       PartOf = [ "graphical-session.target" ];
     };
 
     Service = {
       Type = "oneshot";
+      ExecStartPre = "${pkgs.coreutils}/bin/sleep 0.5";
       ExecStart = restoreWallpaperScript;
     };
 
