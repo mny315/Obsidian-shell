@@ -60,7 +60,7 @@ scale.slider-control:hover slider,scale.slider-control:hover > trough > slider,s
 .power-action box{margin:0 1px;}
 .power-action-icon{min-width:16px;}
 popover.bluetooth-popover-window contents,popover.network-popover-window contents,popover.launcher-popover-window contents,popover.wallpaper-popover-window contents,popover.tray-menu-popover-window contents{background:@popup_surface_bg;border:1px solid @popup_surface_border;border-radius:18px;background-clip:padding-box;padding:12px;box-shadow:none;animation:none;}
-window.widget-popup-window,.widget-popup-root,.widget-popup-placement,.widget-popup-revealer{background:transparent;background-image:none;box-shadow:none;border:none;}
+window.widget-popup-window,.widget-popup-root,.widget-popup-placement,.widget-popup-clip,.widget-popup-revealer{background:transparent;background-image:none;box-shadow:none;border:none;}
 box.widget-popup-frame,.widget-popup-frame,.network-popover-window,.bluetooth-popover-window,.launcher-popover-window,.wallpaper-popover-window{padding:12px;background:@popup_surface_bg;color:@fg;border:1px solid @popup_surface_border;border-radius:18px;background-clip:padding-box;box-shadow:none;}
 window.widget-popup-window box.widget-popup-frame,window.widget-popup-window .widget-popup-frame,.notification-history-frame,.notification-history-panel,.notification-player-shell,.notification-card,.notification-app-group,.notification-ignored-panel{background:@popup_surface_bg;border:1px solid @popup_surface_border;border-radius:18px;background-clip:padding-box;box-shadow:none;}
 window.wallpaper-popup-window box.widget-popup-frame,window.wallpaper-popup-window .widget-popup-frame,box.widget-popup-frame.wallpaper-popover-window,.wallpaper-popover-window.widget-popup-frame,.wallpaper-popover-window{background:@popup_surface_bg;border:1px solid @popup_surface_border;background-clip:padding-box;box-shadow:none;}
@@ -144,18 +144,19 @@ entry.launcher-search{background:transparent;border:none;box-shadow:none;padding
 .launcher-count{min-width:24px;padding:1px 7px;border-radius:999px;background:rgba(28,34,46,0.50);border:1px solid rgba(255,255,255,0.08);font-size:12px;opacity:0.86;}
 .launcher-hidden-toggle,.launcher-app-side-button{background:rgba(28,34,46,0.50);border:1px solid rgba(255,255,255,0.08);box-shadow:none;}
 .launcher-hidden-toggle{min-height:26px;padding:0 10px;border-radius:999px;}
-.launcher-hidden-toggle:hover,.launcher-app-side-button:hover{background:rgba(255,255,255,0.08);border-color:@glass_border;}
-.launcher-hidden-toggle:active,.launcher-app-side-button:active{background:rgba(255,255,255,0.12);border-color:rgba(220,232,255,0.20);}
-.launcher-app-card{min-height:56px;}
-.launcher-app-button{min-height:56px;padding:4px 10px;border-radius:12px;background:@panel_bg;border:1px solid @panel_border;box-shadow:inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 6px 18px rgba(0,0,0,0.12);}
-.launcher-app-main{padding-right:8px;}
-.launcher-app-side-button{min-width:42px;min-height:56px;padding:0;border-radius:12px;}
+.launcher-hidden-toggle:hover{background:rgba(255,255,255,0.08);border-color:@glass_border;}
+.launcher-hidden-toggle:active{background:rgba(255,255,255,0.12);border-color:rgba(220,232,255,0.20);}
+.launcher-app-card{min-height:56px;padding:0 6px 0 0;border-radius:12px;background:@panel_bg;border:1px solid @panel_border;box-shadow:inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 6px 18px rgba(0,0,0,0.12);transition:background-color 140ms ease,border-color 140ms ease;}
+.launcher-app-card:hover{background:rgba(255,255,255,0.08);border-color:@glass_border;}
+.launcher-app-card:active{background:rgba(255,255,255,0.12);border-color:rgba(220,232,255,0.20);}
+.launcher-app-main{min-height:56px;padding:4px 4px 4px 10px;border:none;border-radius:12px;background:transparent;box-shadow:none;}
+.launcher-app-main:hover,.launcher-app-main:active,.launcher-app-main:focus,.launcher-app-main:focus-visible{background:transparent;border:none;box-shadow:none;outline:none;}
+.launcher-app-side-button{min-width:36px;min-height:36px;margin:10px 0;padding:0;border-radius:10px;background:transparent;border:none;box-shadow:none;}
+.launcher-app-side-button:hover{background:rgba(255,255,255,0.10);border:none;box-shadow:none;}
+.launcher-app-side-button:active{background:rgba(255,255,255,0.14);border:none;box-shadow:none;}
 .launcher-side-icon{font-size:18px;opacity:0.92;}
-.launcher-app-button:hover{background:rgba(255,255,255,0.08);border-color:@glass_border;}
-.launcher-app-button:active{background:rgba(255,255,255,0.12);border-color:rgba(220,232,255,0.20);}
 .launcher-app-row{min-height:54px;margin:0;}
 .launcher-app-icon-wrap{min-width:44px;min-height:44px;margin:0 6px 0 0;padding:0;background:transparent;border:none;box-shadow:none;}
-.launcher-app-icon-center{min-width:44px;min-height:44px;margin:0;padding:0;background:transparent;border:none;box-shadow:none;}
 .launcher-app-icon-wrap image,.launcher-app-icon{-gtk-icon-size:40px;margin:0;padding:0;}
 .launcher-app-fallback{min-width:24px;font-size:24px;opacity:0.86;}
 .launcher-app-content{min-height:54px;padding:0;margin:10px 0 0 0;}

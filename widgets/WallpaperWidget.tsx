@@ -74,7 +74,12 @@ const wallpaperTextureQueued = new Set<string>()
 const wallpaperTextureQueue: string[] = []
 let wallpaperTextureQueueSourceId = 0
 let wallpaperThumbnailBuildGeneration = 0
-const SWWW_BIN = GLib.find_program_in_path("swww")?.trim() ?? ""
+const WALLPAPER_CLI_BIN = GLib.find_program_in_path("awww")?.trim()
+  ?? GLib.find_program_in_path("swww")?.trim()
+  ?? ""
+const WALLPAPER_DAEMON_BIN = GLib.find_program_in_path("awww-daemon")?.trim()
+  ?? GLib.find_program_in_path("swww-daemon")?.trim()
+  ?? ""
 
 function resetWallpaperTexturePipeline() {
   wallpaperThumbnailBuildGeneration += 1
@@ -588,13 +593,13 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   const syncActiveWallpaper = async () => {
     const savedPath = readWallpaperSettings().currentWallpaper ?? ""
 
-    if (!SWWW_BIN) {
+    if (!WALLPAPER_CLI_BIN) {
       setActivePath(savedPath)
       return
     }
 
     try {
-      const output = await execAsync([SWWW_BIN, "query"])
+      const output = await execAsync([WALLPAPER_CLI_BIN, "query"])
       const currentPaths = parseCurrentWallpaperPaths(String(output ?? ""))
       if (currentPaths.size === 1) {
         const [onlyPath] = [...currentPaths]
@@ -609,14 +614,52 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   }
 
   const runWallpaperApplyCommand = async (path: string) => {
-    if (!SWWW_BIN) {
-      throw new Error("swww is not available in PATH")
+    if (!WALLPAPER_CLI_BIN) {
+      throw new Error("Neither awww nor swww is available in PATH")
     }
+
+    const ensureDaemon = async () => {
+      if (!WALLPAPER_DAEMON_BIN) return false
+
+      try {
+        await execAsync([WALLPAPER_CLI_BIN, "query"])
+        return true
+      } catch {
+        // daemon not ready yet
+      }
+
+      try {
+        void execAsync([WALLPAPER_DAEMON_BIN])
+      } catch {
+        // ignore spawn race, query loop below handles readiness
+      }
+
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        await new Promise<void>((resolve) => {
+          GLib.timeout_add(GLib.PRIORITY_DEFAULT, 80, () => {
+            resolve()
+            return GLib.SOURCE_REMOVE
+          })
+        })
+
+        try {
+          await execAsync([WALLPAPER_CLI_BIN, "query"])
+          return true
+        } catch {
+          // keep waiting for daemon socket
+        }
+      }
+
+      return false
+    }
+
+    await ensureDaemon()
 
     const commands = [
       [
-        SWWW_BIN,
+        WALLPAPER_CLI_BIN,
         "img",
+        path,
         "--transition-type",
         "grow",
         "--transition-pos",
@@ -627,11 +670,11 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
         "120",
         "--transition-step",
         "28",
-        path,
       ],
       [
-        SWWW_BIN,
+        WALLPAPER_CLI_BIN,
         "img",
+        path,
         "--transition-type",
         "outer",
         "--transition-pos",
@@ -642,11 +685,11 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
         "120",
         "--transition-step",
         "24",
-        path,
       ],
       [
-        SWWW_BIN,
+        WALLPAPER_CLI_BIN,
         "img",
+        path,
         "--transition-type",
         "simple",
         "--transition-duration",
@@ -655,9 +698,8 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
         "120",
         "--transition-step",
         "8",
-        path,
       ],
-      [SWWW_BIN, "img", path],
+      [WALLPAPER_CLI_BIN, "img", path],
     ]
 
     let lastError: unknown = null
@@ -955,6 +997,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   let popupRevealer: Gtk.Revealer | null = null
   let popupFrame: Gtk.Box | null = null
   let popupRoot: Gtk.Box | null = null
+  let closeTimeoutId = 0
   let applyingCleanupTimeoutId = 0
   let closingPopup = false
   const [windowVisible, setWindowVisible] = createState(false)
@@ -963,6 +1006,13 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
     if (applyingCleanupTimeoutId !== 0) {
       GLib.source_remove(applyingCleanupTimeoutId)
       applyingCleanupTimeoutId = 0
+    }
+  }
+
+  const clearCloseTimeout = () => {
+    if (closeTimeoutId !== 0) {
+      GLib.source_remove(closeTimeoutId)
+      closeTimeoutId = 0
     }
   }
 
@@ -981,6 +1031,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   }
 
   const finishClosePopup = () => {
+    clearCloseTimeout()
     closingPopup = false
     setWindowVisible(false)
     setTriggerOpen(false)
@@ -993,7 +1044,11 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
 
     if (popupRevealer?.get_reveal_child()) {
       popupRevealer.revealChild = false
-      if (!popupRevealer.get_child_revealed()) finishClosePopup()
+      clearCloseTimeout()
+      closeTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, WALLPAPER_POPOVER_REVEAL_DURATION_MS, () => {
+        finishClosePopup()
+        return GLib.SOURCE_REMOVE
+      })
       return
     }
 
@@ -1006,6 +1061,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       return
     }
 
+    clearCloseTimeout()
     closingPopup = false
     setWindowVisible(true)
     setTriggerOpen(true)
@@ -1059,34 +1115,22 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
           class="widget-popup-placement"
           halign={Gtk.Align.START}
           valign={Gtk.Align.START}
-          overflow={Gtk.Overflow.HIDDEN}
-          $={(self) => (popupPlacement = self)}
+          $={(self) => {
+            popupPlacement = self
+          }}
         >
-
           <revealer
             class="widget-popup-revealer"
             revealChild={false}
-            transitionType={Gtk.RevealerTransitionType.CROSSFADE}
+            transitionType={Gtk.RevealerTransitionType.SLIDE_LEFT}
             transitionDuration={WALLPAPER_POPOVER_REVEAL_DURATION_MS}
-            overflow={Gtk.Overflow.HIDDEN}
-            $={(revealer) => {
-              popupRevealer = revealer
-
-              const childRevealedId = revealer.connect("notify::child-revealed", () => {
-                if (!revealer.get_reveal_child() && !revealer.get_child_revealed() && closingPopup) {
-                  finishClosePopup()
-                }
-              })
-
-              revealer.connect("destroy", () => {
-                revealer.disconnect(childRevealedId)
-              })
+            $={(self) => {
+              popupRevealer = self
             }}
           >
             <box
               class="widget-popup-frame wallpaper-popover-window"
               widthRequest={POPOVER_WIDTH}
-              overflow={Gtk.Overflow.HIDDEN}
               $={(self) => {
                 popupFrame = self
               }}
@@ -1111,6 +1155,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
 
         void syncActiveWallpaper()
         self.connect("destroy", () => {
+          clearCloseTimeout()
           clearApplyingCleanupTimeout()
           resetWallpaperTexturePipeline()
           closingPopup = false

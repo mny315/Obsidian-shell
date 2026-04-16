@@ -498,8 +498,8 @@ export function AppLauncherControl({
         <box class="launcher-list-content" orientation={Gtk.Orientation.VERTICAL} spacing={4} marginEnd={6}>
           <For each={filteredApps}>
             {(app) => (
-              <box class="launcher-app-card" spacing={8} hexpand>
-                <button class="flat launcher-app-button launcher-app-main" hexpand onClicked={() => void launchApp(app)}>
+              <box class="launcher-app-card" hexpand spacing={0} valign={Gtk.Align.CENTER}>
+                <button class="flat launcher-app-main" hexpand onClicked={() => void launchApp(app)}>
                   <box class="launcher-app-row" spacing={10} hexpand valign={Gtk.Align.CENTER}>
                     <box class="launcher-app-icon-wrap" valign={Gtk.Align.CENTER} halign={Gtk.Align.CENTER}>
                       <image
@@ -542,6 +542,7 @@ export function AppLauncherControl({
                   class="flat launcher-app-side-button"
                   tooltipText={showHiddenApps() ? "Restore application" : "Hide application"}
                   onClicked={() => (showHiddenApps() ? restoreApp(app) : hideApp(app))}
+                  valign={Gtk.Align.CENTER}
                 >
                   <label
                     class="launcher-side-icon launcher-material-icon"
