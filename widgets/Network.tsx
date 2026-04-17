@@ -178,7 +178,6 @@ function makeToggle(
 ) {
   const toggle = new Gtk.Switch({
     active,
-    state: active,
     valign: Gtk.Align.CENTER,
     halign: Gtk.Align.END,
   })
@@ -577,9 +576,10 @@ export function NetworkControl({
 
   const syncWifiSwitch = (enabled: boolean) => {
     if (!wifiSwitch) return
+    if (wifiSwitch.get_active() === enabled) return
+
     syncingWifiSwitch = true
     wifiSwitch.set_active(enabled)
-    wifiSwitch.set_state(enabled)
     syncingWifiSwitch = false
   }
 
@@ -805,15 +805,19 @@ export function NetworkControl({
           <label class="network-header-meta" xalign={0} label={meta} />
         </box>
         {rescanBtn}
-        <Gtk.Switch class="network-toggle" $={(self) => {
+        <Gtk.Switch class="network-toggle" valign={Gtk.Align.CENTER} halign={Gtk.Align.END} $={(self) => {
           wifiSwitch = self
           self.connect("notify::active", () => {
-            if (!syncingWifiSwitch && wifiDevice) {
-              deferAction(() => {
-                wifiDevice.set_enabled(self.get_active())
-                scheduleRefresh(100)
-              })
-            }
+            if (syncingWifiSwitch || !wifiDevice) return
+
+            const enabled = self.get_active()
+            wifiEnabled = enabled
+            rescanButton?.set_sensitive(enabled)
+
+            deferAction(() => {
+              wifiDevice.set_enabled(enabled)
+              scheduleRefresh(100)
+            })
           })
         }} />
       </box>

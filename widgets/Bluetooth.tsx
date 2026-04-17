@@ -541,30 +541,40 @@ function BluetoothDeviceRow({
         <Gtk.Switch
           class="network-toggle bluetooth-device-switch"
           sensitive={busy((v) => !v)}
+          valign={Gtk.Align.CENTER}
+          halign={Gtk.Align.END}
           $={(self) => {
+            let syncingSwitch = false
+
             const syncSwitch = () => {
               const displayConnected = pendingConnected() ?? Boolean(device.connected)
+              if (self.get_active() === displayConnected) return
+
+              syncingSwitch = true
               self.set_active(displayConnected)
-              self.set_state(displayConnected)
+              syncingSwitch = false
             }
 
             syncSwitch()
 
             const connectedId = device.connect("notify::connected", syncSwitch)
 
-            self.connect("state-set", (_switch, state) => {
-              const targetConnected = Boolean(state)
+            self.connect("notify::active", () => {
+              if (syncingSwitch) return
+
+              const targetConnected = self.get_active()
               if (busy()) {
                 syncSwitch()
-                return true
+                return
+              }
+
+              if (targetConnected === Boolean(device.connected)) {
+                setPendingConnected(null)
+                return
               }
 
               setPendingConnected(targetConnected)
-              self.set_active(targetConnected)
-              self.set_state(targetConnected)
-
               runDetachedConnection(targetConnected, syncSwitch)
-              return true
             })
 
             self.connect("destroy", () => {
@@ -802,71 +812,95 @@ export function BluetoothControl({
   const popoverContent = (
     <box class="network-popover bluetooth-popover" orientation={Gtk.Orientation.VERTICAL} spacing={10} widthRequest={BLUETOOTH_POPOVER_WIDTH}>
       <With value={createComputed(() => adapterList()[0] ?? null)}>
-        {(adapter) => adapter && (
-          <box class="network-header" spacing={8}>
-            <box orientation={Gtk.Orientation.VERTICAL} hexpand>
-              <label class="network-header-title" xalign={0} label={createBinding(adapter, "alias")} />
-              <label class="network-header-meta" xalign={0} label={createBinding(adapter, "discovering")((d) => d ? "Scanning…" : "Visible")} />
-            </box>
-            <button class="flat network-icon-button" onClicked={() => {
-              deferAction(() => {
-                try {
-                  if (adapter.discovering) {
-                    clearDiscoveryTimeout()
-                    adapter.stop_discovery()
-                  } else {
-                    adapter.start_discovery()
-                    scheduleDiscoveryTimeout(adapter)
-                  }
-                  requestAdapterRefresh(0)
-                } catch (e) {
-                  presentNotice({ text: formatError(e) }, { desktop: true, urgency: "critical" })
-                  requestAdapterRefresh()
-                }
-              })
-            }}>
-              <label class="network-icon-button-label" label={"󰑐"} />
-            </button>
-            <Gtk.Switch class="network-toggle bluetooth-toggle" $={(self) => {
-              let pendingPowered: boolean | null = null
+        {(adapter) => {
+          if (!adapter) return null
 
-              const syncSwitch = () => {
-                const isPowered = pendingPowered ?? Boolean(adapter.powered)
-                self.set_active(isPowered)
-                self.set_state(isPowered)
-              }
+          const adapterPowered = createBinding(adapter, "powered")
+          const adapterDiscovering = createBinding(adapter, "discovering")
+          const adapterMeta = createComputed(() => {
+            if (!adapterPowered()) return "Off"
+            if (adapterDiscovering()) return "Scanning…"
+            return "Ready"
+          })
 
-              syncSwitch()
-
-              const poweredId = adapter.connect("notify::powered", () => {
-                pendingPowered = null
-                syncSwitch()
-              })
-
-              self.connect("state-set", (_switch, state) => {
-                pendingPowered = Boolean(state)
-                syncSwitch()
-                deferAction(async () => {
+          return (
+            <box class="network-header" spacing={8}>
+              <box orientation={Gtk.Orientation.VERTICAL} hexpand>
+                <label class="network-header-title" xalign={0} label={createBinding(adapter, "alias")} />
+                <label class="network-header-meta" xalign={0} label={adapterMeta} />
+              </box>
+              <button class="flat network-icon-button" onClicked={() => {
+                deferAction(() => {
                   try {
-                    adapter.powered = Boolean(state)
-                    requestAdapterRefresh(120)
-                  } finally {
-                    pendingPowered = null
-                    GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-                      syncSwitch()
-                      return GLib.SOURCE_REMOVE
-                    })
+                    if (adapter.discovering) {
+                      clearDiscoveryTimeout()
+                      adapter.stop_discovery()
+                    } else {
+                      adapter.start_discovery()
+                      scheduleDiscoveryTimeout(adapter)
+                    }
+                    requestAdapterRefresh(0)
+                  } catch (e) {
+                    presentNotice({ text: formatError(e) }, { desktop: true, urgency: "critical" })
+                    requestAdapterRefresh()
                   }
                 })
-                return true
-              })
+              }}>
+                <label class="network-icon-button-label" label={"󰑐"} />
+              </button>
+              <Gtk.Switch class="network-toggle bluetooth-toggle" valign={Gtk.Align.CENTER} halign={Gtk.Align.END} $={(self) => {
+                let pendingPowered: boolean | null = null
+                let syncingSwitch = false
 
-              self.connect("destroy", () => {
-                adapter.disconnect(poweredId)
-              })
-            }} />
-          </box>
-        )}
+                const syncSwitch = () => {
+                  const isPowered = pendingPowered ?? Boolean(adapter.powered)
+                  if (self.get_active() === isPowered) return
+
+                  syncingSwitch = true
+                  self.set_active(isPowered)
+                  syncingSwitch = false
+                }
+
+                syncSwitch()
+
+                const poweredId = adapter.connect("notify::powered", () => {
+                  pendingPowered = null
+                  syncSwitch()
+                })
+
+                self.connect("notify::active", () => {
+                  if (syncingSwitch) return
+
+                  if (pendingPowered !== null) {
+                    syncSwitch()
+                    return
+                  }
+
+                  const targetPowered = self.get_active()
+                  if (targetPowered === Boolean(adapter.powered)) return
+
+                  pendingPowered = targetPowered
+                  deferAction(async () => {
+                    try {
+                      adapter.powered = targetPowered
+                      requestAdapterRefresh(120)
+                    } finally {
+                      pendingPowered = null
+                      GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+                        syncSwitch()
+                        return GLib.SOURCE_REMOVE
+                      })
+                    }
+                  })
+                })
+
+                self.connect("destroy", () => {
+                  adapter.disconnect(poweredId)
+                })
+              }} />
+            </box>
+          )
+        }}
       </With>
 
       <box orientation={Gtk.Orientation.VERTICAL} spacing={6} vexpand>
