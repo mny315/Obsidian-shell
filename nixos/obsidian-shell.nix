@@ -1,31 +1,48 @@
 { lib, pkgs, inputs, config, ... }:
 
 let
+  cfg = config.programs.obsidian-shell;
+
   system = pkgs.stdenv.hostPlatform.system;
   astal = inputs.astal.packages.${system};
 
-  releaseTag = "Obsidian-shell";
-  releaseAsset = "obsidian-shell";
+  agsPackages = if inputs ? ags then inputs.ags.packages.${system} else { };
+  agsPkg =
+    if agsPackages ? default then agsPackages.default
+    else if agsPackages ? ags then agsPackages.ags
+    else pkgs.ags;
+
+  src =
+    if inputs ? obsidian-shell then
+      inputs.obsidian-shell
+    else
+      throw ''
+        Missing flake input `obsidian-shell`.
+
+        Add this to your flake inputs:
+          obsidian-shell.url = "github:mny315/Obsidian-shell";
+
+        Then update it with:
+          nix flake lock --update-input obsidian-shell
+      '';
 
   wallpaperStateDir = "${config.home.homeDirectory}/.local/state/obsidian-shell";
   wallpaperStateFile = "${wallpaperStateDir}/last-wallpaper";
-  defaultWallpaper = "${config.home.homeDirectory}/Pictures/wallpapers/default.png";
 
   runtimePackages = with pkgs; [
     bash
     coreutils
     gawk
     procps
-    swww
+    awww
     brightnessctl
     networkmanager
     wireplumber
     hypridle
     hyprlock
-  ];
+  ] ++ cfg.extraRuntimePackages;
 
   gappDeps = with pkgs; [
-    gobject-introspection
     gjs
     glib
     gtk4
@@ -37,12 +54,6 @@ let
     shared-mime-info
     adwaita-icon-theme
     hicolor-icon-theme
-    gdk-pixbuf
-    pango
-    harfbuzz
-    cairo
-    graphene
-    brightnessctl
   ] ++ [
     astal.io
     astal.astal4
@@ -54,10 +65,19 @@ let
     astal.hyprland
   ];
 
-  src = builtins.fetchurl {
-    url = "https://github.com/mny315/Obsidian-shell/releases/download/${releaseTag}/${releaseAsset}";
-    sha256 = "sha256-sSs6IYPIibcJwPmsn7R2k3D+Mq9qIkpnJsed5iYNUJY=";
-  };
+  waitForAwwwScript = pkgs.writeShellScript "obsidian-shell-wait-for-awww" ''
+    set -eu
+
+    for _ in $(seq 1 200); do
+      if ${pkgs.awww}/bin/awww query >/dev/null 2>&1; then
+        exit 0
+      fi
+      sleep 0.1
+    done
+
+    echo "awww-daemon did not become ready in time" >&2
+    exit 1
+  '';
 
   saveWallpaperScript = pkgs.writeShellScriptBin "obsidian-shell-set-wallpaper" ''
     set -eu
@@ -68,47 +88,79 @@ let
       exit 1
     fi
 
+    if [ ! -f "$img" ]; then
+      echo "wallpaper file does not exist: $img" >&2
+      exit 1
+    fi
+
     mkdir -p ${lib.escapeShellArg wallpaperStateDir}
     printf '%s\n' "$img" > ${lib.escapeShellArg wallpaperStateFile}
 
-    ${pkgs.swww}/bin/swww img "$img" --transition-type none
+    ${waitForAwwwScript}
+    exec ${pkgs.awww}/bin/awww img "$img" --transition-type none
   '';
 
   restoreWallpaperScript = pkgs.writeShellScript "obsidian-shell-restore-wallpaper" ''
     set -eu
 
     mkdir -p ${lib.escapeShellArg wallpaperStateDir}
+    ${waitForAwwwScript}
+
+    if ${pkgs.awww}/bin/awww restore >/dev/null 2>&1; then
+      exit 0
+    fi
 
     img=""
     if [ -f ${lib.escapeShellArg wallpaperStateFile} ]; then
       img="$(cat ${lib.escapeShellArg wallpaperStateFile})"
     fi
 
-    if [ -z "$img" ] || [ ! -f "$img" ]; then
-      img=${lib.escapeShellArg defaultWallpaper}
+    if [ -n "$img" ] && [ -f "$img" ]; then
+      exec ${pkgs.awww}/bin/awww img "$img" --transition-type none
     fi
 
-    if [ -f "$img" ]; then
-      ${pkgs.swww}/bin/swww img "$img" --transition-type none
-    fi
+    ${lib.optionalString (cfg.defaultWallpaper != null) ''
+      if [ -f ${lib.escapeShellArg cfg.defaultWallpaper} ]; then
+        exec ${pkgs.awww}/bin/awww img ${lib.escapeShellArg cfg.defaultWallpaper} --transition-type none
+      fi
+    ''}
+
+    echo "no wallpaper available: awww restore failed, saved wallpaper missing${lib.optionalString (cfg.defaultWallpaper != null) ", default wallpaper missing"}" >&2
+    exit 1
   '';
 
   obsidianShellPackage = pkgs.stdenvNoCC.mkDerivation {
     pname = "obsidian-shell";
-    version = releaseTag;
+    version = if src ? rev then builtins.substring 0 8 src.rev else "dirty";
 
     inherit src;
-    dontUnpack = true;
 
     nativeBuildInputs = [
       pkgs.wrapGAppsHook4
       pkgs.gobject-introspection
+      agsPkg
     ];
 
     buildInputs = gappDeps;
 
     installPhase = ''
-      install -Dm755 "$src" "$out/bin/obsidian-shell"
+      runHook preInstall
+
+      mkdir -p "$out/bin" "$out/libexec" "$out/share/obsidian-shell"
+      cp -r ./. "$out/share/obsidian-shell"
+
+      cd "$out/share/obsidian-shell"
+      ${agsPkg}/bin/ags bundle app.tsx "$out/libexec/obsidian-shell"
+
+      cat > "$out/bin/obsidian-shell" <<EOF2
+#!${pkgs.bash}/bin/bash
+set -euo pipefail
+cd "$out/share/obsidian-shell"
+exec "$out/libexec/obsidian-shell" "\$@"
+EOF2
+      chmod +x "$out/bin/obsidian-shell"
+
+      runHook postInstall
     '';
 
     preFixup = ''
@@ -127,42 +179,59 @@ let
   };
 in
 {
-  fonts.fontconfig.enable = true;
+  options.programs.obsidian-shell = {
+    enable = lib.mkEnableOption "Obsidian shell";
 
-  home.packages = runtimePackages ++ [
-    obsidianShellPackage
-    saveWallpaperScript
-  ];
-
-  systemd.user.services.swww-daemon = {
-    Unit = {
-      Description = "swww-daemon";
-      PartOf = [ "graphical-session.target" ];
+    defaultWallpaper = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = "${config.home.homeDirectory}/Pictures/wallpapers/default.png";
+      description = "Default wallpaper path used when no saved wallpaper exists.";
     };
 
-    Service = {
-      ExecStart = "${pkgs.swww}/bin/swww-daemon";
-      Restart = "on-failure";
-      RestartSec = 1;
+    extraRuntimePackages = lib.mkOption {
+      type = with lib.types; listOf package;
+      default = [ ];
+      description = "Additional runtime packages exposed in PATH to the shell.";
     };
-
-    Install.WantedBy = [ "graphical-session.target" ];
   };
 
-  systemd.user.services.swww-wallpaper = {
-    Unit = {
-      Description = "Restore wallpaper with swww";
-      Requires = [ "swww-daemon.service" ];
-      After = [ "graphical-session.target" "swww-daemon.service" ];
-      PartOf = [ "graphical-session.target" ];
+  config = lib.mkIf cfg.enable {
+    fonts.fontconfig.enable = true;
+
+    home.packages = [
+      obsidianShellPackage
+      saveWallpaperScript
+    ];
+
+    systemd.user.services.awww-daemon = {
+      Unit = {
+        Description = "awww-daemon";
+        PartOf = [ "graphical-session.target" ];
+      };
+
+      Service = {
+        ExecStart = "${pkgs.awww}/bin/awww-daemon";
+        Restart = "on-failure";
+        RestartSec = 1;
+      };
+
+      Install.WantedBy = [ "graphical-session.target" ];
     };
 
-    Service = {
-      Type = "oneshot";
-      ExecStartPre = "${pkgs.coreutils}/bin/sleep 0.5";
-      ExecStart = restoreWallpaperScript;
-    };
+    systemd.user.services.awww-wallpaper = {
+      Unit = {
+        Description = "Restore wallpaper with awww";
+        Requires = [ "awww-daemon.service" ];
+        After = [ "graphical-session.target" "awww-daemon.service" ];
+        PartOf = [ "graphical-session.target" ];
+      };
 
-    Install.WantedBy = [ "graphical-session.target" ];
+      Service = {
+        Type = "oneshot";
+        ExecStart = restoreWallpaperScript;
+      };
+
+      Install.WantedBy = [ "graphical-session.target" ];
+    };
   };
 }
