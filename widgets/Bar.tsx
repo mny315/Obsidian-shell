@@ -69,17 +69,17 @@ export function Bar({ monitor }: { monitor: number }) {
             onLeave={() => barHoverHandlers.onLeave()}
           />
 
-          <box $type="start" valign={Gtk.Align.CENTER}>
+          <box class="bar-start" $type="start" valign={Gtk.Align.CENTER}>
             <LeftModules monitor={monitor} />
           </box>
 
-          <box hexpand $type="center" halign={Gtk.Align.CENTER} valign={Gtk.Align.CENTER}>
+          <box class="bar-center" hexpand $type="center" halign={Gtk.Align.CENTER} valign={Gtk.Align.CENTER}>
             <CenterModules monitor={monitor} />
           </box>
 
           <box
             $type="end"
-            class="right-side-wrap"
+            class="bar-end right-side-wrap"
             spacing={0}
             hexpand={false}
             halign={Gtk.Align.END}

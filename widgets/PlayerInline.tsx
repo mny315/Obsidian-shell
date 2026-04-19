@@ -4,7 +4,6 @@ import Mpris from "gi://AstalMpris"
 
 import { With, createBinding, createComputed, createState } from "ags"
 
-import { playerPinned, togglePlayerPinned } from "./PlayerPinState"
 
 const mpris = Mpris.get_default()
 
@@ -342,51 +341,6 @@ export function PlayerInline({
         </button>
       </box>
     </box>
-  )
-}
-
-export function PlayerDock({
-  rootClass = "notification-player-shell",
-  playerClass = "notification-player-inline",
-  controlsClass = "section section-center section-player-controls notification-player-controls",
-  metaClass = "notification-player-meta",
-  buttonWidth = 352,
-  showPinButton = false,
-}: {
-  rootClass?: string
-  playerClass?: string
-  controlsClass?: string
-  metaClass?: string
-  buttonWidth?: number
-  showPinButton?: boolean
-}) {
-  const header = showPinButton ? (
-    <box class="notification-player-toolbar" spacing={8} valign={Gtk.Align.CENTER}>
-      <box hexpand />
-      <button
-        class="notification-action-button notification-player-pin-button"
-        tooltipText={playerPinned((value) => value ? "Hide player from bar" : "Show player in bar")}
-        onClicked={() => togglePlayerPinned()}
-      >
-        <label label={playerPinned((value) => value ? "Unpin" : "Pin")} />
-      </button>
-    </box>
-  ) : undefined
-
-  return (
-    <ActivePlayerWatcher
-      rootClass={rootClass}
-      playerClass={playerClass}
-      controlsClass={controlsClass}
-      metaClass={metaClass}
-      buttonWidth={buttonWidth}
-      layout="vertical"
-      centerText
-      showMainIcon={false}
-      textCharLimit={63}
-      fillWidth
-      header={header}
-    />
   )
 }
 

@@ -10,6 +10,7 @@ import { Astal } from "ags/gtk4"
 import { For, createComputed, createState } from "ags"
 import { execAsync } from "ags/process"
 import { attachEscapeKey } from "./EscapeKey"
+import { playerPinned, togglePlayerPinned } from "./PlayerPinState"
 import { FLOATING_POPUP_ANCHOR, isPointInsideWidget, placePopupFromTrigger } from "./FloatingPopup"
 
 type WallpaperItem = {
@@ -60,6 +61,7 @@ const GRID_VISIBLE_ROWS = 6
 const SCROLLER_HEIGHT = CARD_HEIGHT * GRID_VISIBLE_ROWS + GRID_GAP * (GRID_VISIBLE_ROWS - 1)
 const SCROLLER_MIN_HEIGHT = CARD_HEIGHT * 2 + GRID_GAP
 const POPOVER_WIDTH = SCROLLER_WIDTH + 24
+const WALLPAPER_NOTICE_MAX_WIDTH = POPOVER_WIDTH - 40
 const WALLPAPER_POPOVER_REVEAL_DURATION_MS = 165
 const WALLPAPER_POPOVER_OFFSET_Y = 20
 const WALLPAPER_INITIAL_VISIBLE_ITEMS = GRID_COLUMNS * GRID_VISIBLE_ROWS
@@ -861,6 +863,16 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
 
         <box class="wallpaper-header-actions" spacing={6} valign={Gtk.Align.START}>
           <button
+            class={playerPinned((value) => value
+              ? "flat wallpaper-refresh-button wallpaper-refresh-button-active"
+              : "flat wallpaper-refresh-button")}
+            tooltipText={playerPinned((value) => value ? "Hide player in bar" : "Show player in bar")}
+            onClicked={() => togglePlayerPinned()}
+          >
+            <label class="wallpaper-refresh-icon" label={playerPinned((value) => value ? "󰎇" : "󰎈")} />
+          </button>
+
+          <button
             class="flat wallpaper-refresh-button"
             tooltipText="Choose wallpapers folder"
             sensitive={refreshBusy((value) => !value)}
@@ -977,16 +989,23 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
 
       <box
         class="wallpaper-notice-wrap"
-        hexpand
+        widthRequest={WALLPAPER_NOTICE_MAX_WIDTH}
+        hexpand={false}
         halign={Gtk.Align.FILL}
         visible={noticeVisible}
+        tooltipText={notice((value) => value ?? "")}
       >
         <label
           class="wallpaper-notice-label"
-          hexpand
+          widthRequest={WALLPAPER_NOTICE_MAX_WIDTH - 16}
+          hexpand={false}
           xalign={0}
           ellipsize={Pango.EllipsizeMode.END}
           label={notice((value) => value ?? "")}
+          $={(self) => {
+            self.set_single_line_mode(true)
+            self.set_max_width_chars(52)
+          }}
         />
       </box>
     </box>
@@ -1044,7 +1063,6 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
 
     if (popupRevealer?.get_reveal_child()) {
       popupRevealer.revealChild = false
-      clearCloseTimeout()
       closeTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, WALLPAPER_POPOVER_REVEAL_DURATION_MS, () => {
         finishClosePopup()
         return GLib.SOURCE_REMOVE
@@ -1085,7 +1103,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       namespace="obsidian-shell"
       class="widget-popup-window wallpaper-popup-window"
       exclusivity={Astal.Exclusivity.IGNORE}
-      keymode={Astal.Keymode.EXCLUSIVE}
+      keymode={Astal.Keymode.ON_DEMAND}
       anchor={FLOATING_POPUP_ANCHOR}
       $={(self) => {
         self.connect("destroy", () => {

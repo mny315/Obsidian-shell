@@ -7,7 +7,6 @@ import { Astal } from "ags/gtk4"
 import { createComputed, createState } from "ags"
 import { execAsync } from "ags/process"
 import { timeout } from "ags/time"
-import { sendShellNotification } from "./ShellNotifications"
 import { attachEscapeKey } from "./EscapeKey"
 import { FLOATING_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, TOP_BAR_POPUP_MARGIN_TOP, isPointInsideWidget } from "./FloatingPopup"
 
@@ -43,12 +42,7 @@ type LabelOptions = {
 }
 
 type NoticeOptions = {
-  desktop?: boolean
   durationMs?: number
-  urgency?: "low" | "normal" | "critical"
-  summary?: string
-  iconName?: string
-  replaceKey?: string
 }
 
 const network = AstalNetwork.get_default()
@@ -387,13 +381,7 @@ function importWireGuard(
       if (!path) return
       const result = await execResult(["nmcli", "connection", "import", "type", "wireguard", "file", path])
       if (!result.ok) {
-        presentStatus(result.text || "Import failed", {
-          desktop: true,
-          urgency: "normal",
-          summary: "WireGuard import failed",
-          iconName: "network-vpn-symbolic",
-          replaceKey: "network-status",
-        })
+        presentStatus(result.text || "Import failed")
         await refresh()
         return
       }
@@ -443,6 +431,7 @@ export function NetworkControl({
   let pendingSecureNetwork: WifiNetwork | null = null
   let refreshDebounce: { cancel: () => void } | null = null
   let statusTimer: { cancel: () => void } | null = null
+  let wifiSignalIds: number[] = []
 
   const [icon, setIcon] = createState("󰖪")
   const [title, setTitle] = createState("Network")
@@ -504,6 +493,11 @@ export function NetworkControl({
     closingPopup = false
     setWindowVisible(true)
     setTriggerOpen(true)
+
+    if (wifiDevice?.get_enabled()) {
+      scheduleRefresh(0)
+    }
+
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
       if (popupRevealer) popupRevealer.revealChild = true
       popupRoot?.grab_focus()
@@ -532,21 +526,6 @@ export function NetworkControl({
     }
 
     if (!safeText) return
-
-    if (options.desktop ?? false) {
-      void sendShellNotification({
-        appName: "AGS Network",
-        summary: options.summary ?? "Network",
-        body: safeText,
-        iconName: options.iconName ?? "network-wireless-symbolic",
-        urgency: options.urgency ?? "normal",
-        expireTimeoutMs: options.durationMs ?? 4200,
-        replaceKey: options.replaceKey ?? "network-status",
-        category: "network",
-      }).catch((error) => {
-        console.warn(`Network desktop notification failed: ${errorText(error)}`)
-      })
-    }
 
     const durationMs = options.durationMs ?? 4200
     if (durationMs <= 0) return
@@ -649,16 +628,10 @@ export function NetworkControl({
     for (const profile of profiles) {
       const toggle = makeToggle(profile.active, "network-toggle", (active) => {
         deferAction(async () => {
-          presentStatus(active ? `Starting ${profile.name}…` : `Stopping ${profile.name}…`, { desktop: false, durationMs: 0 })
+          presentStatus(active ? `Starting ${profile.name}…` : `Stopping ${profile.name}…`, { durationMs: 0 })
           const result = await execResult(["nmcli", "connection", active ? "up" : "down", "uuid", profile.uuid])
           if (result.ok) presentStatus("")
-          else presentStatus(result.text || "Failed", {
-            desktop: true,
-            urgency: "normal",
-            summary: active ? "WireGuard start failed" : "WireGuard stop failed",
-            iconName: "network-vpn-symbolic",
-            replaceKey: "network-status",
-          })
+          else presentStatus(result.text || "Failed")
           await refresh()
         })
       })
@@ -706,6 +679,40 @@ export function NetworkControl({
     })
   }
 
+  const connectWifiSignals = () => {
+    if (!wifiDevice || wifiSignalIds.length > 0) return
+
+    const refreshNow = () => scheduleRefresh(100)
+    const connectSignal = (signal: string) => {
+      try {
+        wifiSignalIds.push(wifiDevice.connect(signal, refreshNow))
+      } catch {
+        // Signal is not available in older astal-network builds.
+      }
+    }
+
+    connectSignal("notify::access-points")
+    connectSignal("notify::active-access-point")
+    connectSignal("notify::enabled")
+    connectSignal("notify::scanning")
+    connectSignal("access-point-added")
+    connectSignal("access-point-removed")
+  }
+
+  const disconnectWifiSignals = () => {
+    if (!wifiDevice || wifiSignalIds.length === 0) return
+
+    for (const id of wifiSignalIds) {
+      try {
+        wifiDevice.disconnect(id)
+      } catch {
+        // Ignore stale signal ids during teardown.
+      }
+    }
+
+    wifiSignalIds = []
+  }
+
   const waitForWifiConnection = async (ssid: string, timeoutMs = 8000, intervalMs = 250) => {
     const deadline = Date.now() + timeoutMs
 
@@ -721,18 +728,12 @@ export function NetworkControl({
 
   const connectToWifi = async (network: WifiNetwork, password = "") => {
     hidePasswordPrompt()
-    presentStatus(`Connecting to ${network.ssid}…`, { desktop: false, durationMs: 0 })
+    presentStatus(`Connecting to ${network.ssid}…`, { durationMs: 0 })
     const cmd = ["nmcli", "--wait", "0", "dev", "wifi", "connect", network.ssid]
     if (password) cmd.push("password", password)
     const result = await execResult(cmd)
     if (!result.ok) {
-      presentStatus(result.text || "Failed", {
-        desktop: true,
-        urgency: "normal",
-        summary: "Wi‑Fi connection failed",
-        iconName: "network-wireless-symbolic",
-        replaceKey: "network-status",
-      })
+      presentStatus(result.text || "Failed")
       scheduleRefresh(100)
       return
     }
@@ -745,13 +746,7 @@ export function NetworkControl({
       return
     }
 
-    presentStatus(`Timed out while connecting to ${network.ssid}` , {
-      desktop: true,
-      urgency: "normal",
-      summary: "Wi‑Fi connection failed",
-      iconName: "network-wireless-symbolic",
-      replaceKey: "network-status",
-    })
+    presentStatus(`Timed out while connecting to ${network.ssid}`)
     scheduleRefresh(100)
   }
 
@@ -760,13 +755,7 @@ export function NetworkControl({
     for (const uuid of uuids) {
       const result = await execResult(["nmcli", "connection", "delete", "uuid", uuid])
       if (!result.ok) {
-        presentStatus(result.text || `Failed to forget ${network.ssid}`, {
-          desktop: true,
-          urgency: "normal",
-          summary: "Wi‑Fi forget failed",
-          iconName: "network-wireless-symbolic",
-          replaceKey: "network-status",
-        })
+        presentStatus(result.text || `Failed to forget ${network.ssid}`)
         break
       }
     }
@@ -776,13 +765,7 @@ export function NetworkControl({
   const deleteWireGuard = async (profile: WireGuardProfile) => {
     const result = await execResult(["nmcli", "connection", "delete", "uuid", profile.uuid])
     if (!result.ok) {
-      presentStatus(result.text || `Failed to delete ${profile.name}`, {
-        desktop: true,
-        urgency: "normal",
-        summary: "WireGuard delete failed",
-        iconName: "network-vpn-symbolic",
-        replaceKey: "network-status",
-      })
+      presentStatus(result.text || `Failed to delete ${profile.name}`)
     }
     scheduleRefresh(100)
   }
@@ -791,7 +774,7 @@ export function NetworkControl({
     if (wifiEnabled && wifiDevice) {
       deferAction(() => {
         wifiDevice.scan()
-        presentStatus("Scanning…", { desktop: false, durationMs: 1200 })
+        presentStatus("Scanning…", { durationMs: 1200 })
         timeout(1200, () => { presentStatus(""); void refresh() })
       })
     }
@@ -883,7 +866,7 @@ export function NetworkControl({
       namespace="obsidian-shell"
       class="widget-popup-window network-popup-window"
       exclusivity={Astal.Exclusivity.IGNORE}
-      keymode={Astal.Keymode.EXCLUSIVE}
+      keymode={Astal.Keymode.ON_DEMAND}
       anchor={FLOATING_POPUP_ANCHOR}
       $={(self) => {
         self.connect("destroy", () => {
@@ -941,8 +924,8 @@ export function NetworkControl({
     <box class="network-shell" valign={Gtk.Align.CENTER} $={(self) => {
       void self
       rescanButton = rescanBtn
+      connectWifiSignals()
       void refresh()
-      wifiDevice?.connect("notify::access-points", () => scheduleRefresh(100))
     }}>
       <button class="network-trigger" valign={Gtk.Align.CENTER} tooltipText={triggerTooltip} onClicked={togglePopup} $={(self) => {
         trigger = self
@@ -950,6 +933,9 @@ export function NetworkControl({
         self.connect("destroy", () => {
           clearCloseTimeout()
           clearStatusTimer()
+          refreshDebounce?.cancel()
+          refreshDebounce = null
+          disconnectWifiSignals()
           closingPopup = false
           setWindowVisible(false)
         })

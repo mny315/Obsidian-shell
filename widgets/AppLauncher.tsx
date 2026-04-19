@@ -582,7 +582,7 @@ export function AppLauncherControl({
       namespace="obsidian-shell"
       class="widget-popup-window launcher-popup-window"
       exclusivity={Astal.Exclusivity.IGNORE}
-      keymode={Astal.Keymode.EXCLUSIVE}
+      keymode={Astal.Keymode.ON_DEMAND}
       anchor={FLOATING_POPUP_ANCHOR}
     >
       <box class="widget-popup-root" hexpand vexpand $={(self) => {

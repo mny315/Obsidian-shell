@@ -24,7 +24,7 @@ in
         brightnessctl
         networkmanager
         wireplumber
-        swww
+        awww
         hypridle
         hyprlock
         gsettings-desktop-schemas

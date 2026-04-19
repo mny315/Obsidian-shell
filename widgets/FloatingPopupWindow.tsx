@@ -73,7 +73,7 @@ export function FloatingPopupWindow({
       namespace={namespace}
       class={windowClass}
       exclusivity={Astal.Exclusivity.IGNORE}
-      keymode={Astal.Keymode.EXCLUSIVE}
+      keymode={Astal.Keymode.ON_DEMAND}
       anchor={FLOATING_POPUP_ANCHOR}
       $={(self) => {
         self.connect("destroy", () => {
