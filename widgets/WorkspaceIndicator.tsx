@@ -26,13 +26,6 @@ type NiriWorkspace = {
   active_window_id: number | null
 }
 
-type WorkspaceStateLike = {
-  active: boolean
-  focused: boolean
-  urgent: boolean
-  occupied: boolean
-}
-
 function compactText(value: unknown) {
   return typeof value === "string" ? value.trim() : ""
 }
@@ -67,7 +60,7 @@ function getMonitorConnectorName(index: number) {
   return null
 }
 
-function workspaceChipClass({ active, focused, urgent, occupied }: WorkspaceStateLike) {
+function workspaceChipClass({ active, focused, urgent, occupied }: { active: boolean; focused: boolean; urgent: boolean; occupied: boolean }) {
   const classes = ["workspace-chip"]
   if (occupied) classes.push("occupied")
   if (active) classes.push("active")
@@ -76,7 +69,7 @@ function workspaceChipClass({ active, focused, urgent, occupied }: WorkspaceStat
   return classes.join(" ")
 }
 
-function workspaceChipCoreClass({ active, focused, urgent, occupied }: WorkspaceStateLike) {
+function workspaceChipCoreClass({ active, focused, urgent, occupied }: { active: boolean; focused: boolean; urgent: boolean; occupied: boolean }) {
   const classes = ["workspace-chip-core"]
   if (occupied) classes.push("occupied")
   if (active) classes.push("active")
@@ -101,10 +94,6 @@ function workspaceChipTooltip(label: string, name: string | null, active: boolea
   if (occupied) parts.push("occupied")
   if (urgent) parts.push("urgent")
   return parts.join(" • ")
-}
-
-function shouldShowWorkspace(state: WorkspaceStateLike) {
-  return state.active || state.focused || state.urgent || state.occupied
 }
 
 function arrayFromUnknown<T>(value: unknown): T[] {
@@ -235,19 +224,15 @@ function niriWorkspaceItems(workspaces: NiriWorkspace[], monitor: number) {
 
   return filtered
     .filter((workspace) => workspace.idx > 0)
-    .map((workspace) => ({
-      workspace,
-      state: {
+    .sort((a, b) => a.idx - b.idx)
+    .map<WorkspaceChip>((workspace) => {
+      const label = `${workspace.idx}`
+      const state = {
         active: workspace.is_active,
         focused: workspace.is_focused,
         urgent: workspace.is_urgent,
         occupied: workspace.active_window_id !== null,
-      },
-    }))
-    .filter(({ state }) => shouldShowWorkspace(state))
-    .sort((a, b) => a.workspace.idx - b.workspace.idx)
-    .map<WorkspaceChip>(({ workspace, state }) => {
-      const label = `${workspace.idx}`
+      }
 
       return {
         key: `niri-${workspace.id}`,
@@ -400,7 +385,8 @@ function hyprlandWorkspaceItems(hyprland: Record<string, unknown>, monitor: numb
       const id = getHyprWorkspaceId(workspace)
       return Number.isFinite(id) && id > 0
     })
-    .map((workspace) => {
+    .sort((a, b) => getHyprWorkspaceId(a) - getHyprWorkspaceId(b))
+    .map<WorkspaceChip>((workspace) => {
       const id = getHyprWorkspaceId(workspace)
       const name = getHyprWorkspaceName(workspace)
       const monitorName = getHyprWorkspaceMonitorName(workspace)
@@ -410,14 +396,8 @@ function hyprlandWorkspaceItems(hyprland: Record<string, unknown>, monitor: numb
       const occupied = getHyprWorkspaceClients(workspace).length > 0
       const urgent = false
       const label = workspaceChipLabel(id, name)
-      const state = { active, focused, urgent, occupied }
 
-      return { workspace, id, name, label, state }
-    })
-    .filter(({ state }) => shouldShowWorkspace(state))
-    .sort((a, b) => a.id - b.id)
-    .map<WorkspaceChip>(({ workspace, id, name, label, state }) => {
-      const { active, focused, urgent, occupied } = state
+      const state = { active, focused, urgent, occupied }
 
       return {
         key: `hypr-${id}`,

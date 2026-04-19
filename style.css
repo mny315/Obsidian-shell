@@ -1,5 +1,5 @@
 @define-color fg rgba(255,255,255,1.00);@define-color glass_bg rgba(14,18,26,0.58);@define-color popup_surface_bg rgba(11,15,22,0.46);@define-color popup_surface_border rgba(255,255,255,0.12);@define-color glass_border rgba(255,255,255,0.14);@define-color section_bg rgba(24,29,40,0.42);@define-color section_border rgba(255,255,255,0.08);@define-color panel_bg rgba(28,34,46,0.52);@define-color panel_border rgba(255,255,255,0.11);@define-color hover_bg rgba(255,255,255,0.10);@define-color active_bg rgba(255,255,255,0.15);@define-color glass_toggle_bg rgba(255,255,255,0.08);@define-color glass_toggle_border rgba(255,255,255,0.14);@define-color glass_toggle_on_bg rgba(210,225,255,0.20);@define-color glass_toggle_on_border rgba(235,243,255,0.26);@define-color danger_fg rgba(255,120,120,1.00);*{border:none;font-family:"Lexend";font-size:15px;font-weight:400;color:@fg;box-shadow:none;text-shadow:none;outline:none;background-image:none;}
-.module-icon,.power-action-icon,.network-row-icon,.network-row-status,.clock-icon,.player-main-icon,.player-transport-icon,.bluetooth-header-icon,.bluetooth-section-icon,.bluetooth-device-icon,.network-icon-button-label,.launcher-trigger-icon,.launcher-empty-icon,.wallpaper-trigger-icon,.wallpaper-header-icon,.wallpaper-refresh-icon,.wallpaper-empty-icon{font-family:"Material Design Icons";font-size:15px;font-style:normal;font-weight:400;font-feature-settings:normal;letter-spacing:0;}
+.module-icon,.power-action-icon,.network-row-icon,.network-row-status,.clock-icon,.player-main-icon,.player-transport-icon,.network-icon-button-label,.launcher-trigger-icon,.wallpaper-trigger-icon,.wallpaper-header-icon,.wallpaper-refresh-icon,.wallpaper-empty-icon{font-family:"Material Design Icons";font-size:15px;font-style:normal;font-weight:400;font-feature-settings:normal;letter-spacing:0;}
 .tray-item image{font-family:"Material Design Icons";}
 window.bar-window{background-color:transparent;}
 revealer.bar-revealer,revealer.inline-revealer,revealer.widget-popup-revealer,.right-side-wrap,.controls-shell,.quick-control,.inline-control,.bar-start,.bar-center,.bar-end{background-color:transparent;background-image:none;box-shadow:none;border:none;}
@@ -8,7 +8,7 @@ revealer.bar-revealer,revealer.inline-revealer,revealer.widget-popup-revealer,.r
 revealer.widget-popup-revealer > widget,revealer.widget-popup-revealer > box,revealer.widget-popup-revealer > contents,scrollbar.vertical,.center-slot,.left-player-inline,entry.launcher-search > text,.launcher-list-wrap,button.wallpaper-card:hover,button.wallpaper-card:active{background:transparent;}
 .inline-revealer,.left-module-shell,.pinned-player-meta,.pinned-player-meta .player-main-content,.pinned-player-meta .player-main-label,.pinned-player-meta .player-main-button,.battery-percent,.left-status-shell,.player-main-content,.player-main-button,.player-main-label,.wallpaper-grid-row,.center-slot,.player-main-content-centered{min-width:0;}
 .section{background:@section_bg;color:@fg;margin:5px 3px;padding:0 6px;border:1px solid @section_border;border-radius:13px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 4px 12px rgba(0,0,0,0.10);}
-.module{background:transparent;color:@fg;margin:0 1px;padding:0 8px;}
+
 .left-side-wrap{background:transparent;margin-left:0;}
 .pinned-player-shell{min-height:30px;min-width:0;margin-left:3px;padding:0 6px;}
 .pinned-player-inline{background:transparent;min-width:0;}
@@ -18,7 +18,7 @@ revealer.widget-popup-revealer > widget,revealer.widget-popup-revealer > box,rev
 .left-module-button,menubutton.left-module-button,menubutton.left-module-button > button.toggle,menubutton.left-module-button button.toggle{min-height:30px;padding:0 8px;margin:0;border-radius:10px;border:none;outline:none;box-shadow:none;background:transparent;background-image:none;border-color:transparent;outline-color:transparent;}
 .left-module-content{min-width:0;min-height:30px;margin:0;padding:0;}
 .left-module-label,.clock,.inline-panel .brightness-icon,.power-action-label,.player-main-label,.osd-title,.osd-percent{font-size:14px;}
-.clock-icon,.battery-icon,.wallpaper-refresh-icon{min-width:16px;font-size:16px;}
+.clock-icon,.wallpaper-refresh-icon{min-width:16px;font-size:16px;}
 .clock{min-height:30px;padding:0;}
 .battery-indicator,.inline-control,.layout-indicator{min-height:30px;}
 .left-status-content{min-width:0;min-height:30px;padding:0 8px;}
@@ -66,28 +66,13 @@ popover.network-popover-window > arrow,popover.bluetooth-popover-window > arrow,
 popover.tray-menu-popover-window contents modelbutton,popover.tray-menu-popover-window contents button{min-height:30px;margin:2px 0;padding:0 10px;border-radius:10px;background:transparent;background-image:none;box-shadow:none;}
 popover.tray-menu-popover-window contents modelbutton:hover,popover.tray-menu-popover-window contents button:hover,popover.tray-menu-popover-window contents modelbutton:active,popover.tray-menu-popover-window contents button:active,popover.tray-menu-popover-window contents modelbutton:checked,popover.tray-menu-popover-window contents button:checked{background:@hover_bg;background-image:none;box-shadow:none;}
 .bluetooth-popover,.network-popover{min-width:350px;}
-.bluetooth-header{padding-bottom:10px;}
-.bluetooth-header-top,.wallpaper-header-top,.osd-header{min-height:24px;}
-.bluetooth-header-icon{min-width:18px;font-size:16px;opacity:0.92;}
-.bluetooth-section-header{min-height:30px;padding-top:2px;}
-.bluetooth-section-icon{min-width:16px;font-size:14px;opacity:0.78;}
-.bluetooth-section-count,.wallpaper-count{padding:2px 8px;border-radius:999px;background:rgba(28,34,46,0.50);border:1px solid rgba(255,255,255,0.08);font-size:12px;opacity:0.86;}
-.bluetooth-adapter-row,.bluetooth-device-row{min-height:52px;}
-.bluetooth-device-icon-wrap{min-width:34px;min-height:34px;padding:0 8px;border-radius:12px;background:rgba(28,34,46,0.52);border:1px solid rgba(255,255,255,0.07);box-shadow:inset 0 1px 0 rgba(255,255,255,0.06),inset 0 -1px 0 rgba(0,0,0,0.06);transition:background-color 160ms ease,border-color 160ms ease,opacity 160ms ease;}
-.bluetooth-device-icon{min-width:18px;font-size:17px;}
-.bluetooth-device-summary{margin-right:4px;}
-.bluetooth-device-actions{margin-left:6px;}
-button.bluetooth-chip{min-height:30px;padding:0 10px;border-radius:10px;background:rgba(28,34,46,0.52);border:1px solid rgba(255,255,255,0.08);box-shadow:inset 0 1px 0 rgba(255,255,255,0.05),inset 0 -1px 0 rgba(0,0,0,0.06);transition:background-color 160ms ease,border-color 160ms ease,opacity 160ms ease;}
-button.bluetooth-chip:hover{background:rgba(255,255,255,0.08);}
-button.bluetooth-chip:active{background:rgba(255,255,255,0.12);}
-.bluetooth-chip-label,.launcher-empty-title,.wallpaper-empty-title{font-size:13px;font-weight:500;}
-button.bluetooth-chip-primary{background:rgba(34,42,58,0.62);border-color:rgba(255,255,255,0.12);}
-button.bluetooth-chip-primary:hover{background:rgba(40,48,66,0.72);}
-button.bluetooth-chip-primary:active{background:rgba(46,56,76,0.82);}
-button.bluetooth-chip-danger:hover{background:rgba(255,120,120,0.12);}
-button.bluetooth-chip-danger:active{background:rgba(255,120,120,0.18);}
-.bluetooth-chip-danger .bluetooth-chip-label{color:@danger_fg;}
-.bluetooth-status{padding:8px 10px;border-radius:12px;background:rgba(28,34,46,0.52);border:1px solid rgba(255,255,255,0.08);box-shadow:inset 0 1px 0 rgba(255,255,255,0.06),inset 0 -1px 0 rgba(0,0,0,0.06);color:rgba(255,255,255,0.90);}
+
+.wallpaper-header-top,.osd-header{min-height:24px;}
+
+.wallpaper-count{padding:2px 8px;border-radius:999px;background:rgba(28,34,46,0.50);border:1px solid rgba(255,255,255,0.08);font-size:12px;opacity:0.86;}
+
+.launcher-empty-title,.wallpaper-empty-title{font-size:13px;font-weight:500;}
+
 .network-shell{margin:0;padding:0;min-height:28px;}
 .network-trigger.widget-trigger-open,.bluetooth-trigger.widget-trigger-open,.app-launcher-trigger.widget-trigger-open,.wallpaper-widget-trigger.widget-trigger-open{background:@active_bg;background-image:none;box-shadow:none;}
 .network-header{min-height:34px;padding:2px 2px 6px 2px;margin-bottom:8px;}
@@ -123,11 +108,11 @@ scrollbar.vertical slider,scrollbar.vertical:hover slider,scrollbar.vertical:act
 .network-password-box{background:rgba(14,18,26,0.50);padding:12px;border-radius:12px;margin-bottom:10px;}
 entry{background:rgba(28,34,46,0.56);border:1px solid @panel_border;border-radius:8px;padding:6px 10px;color:@fg;margin:4px 0;}
 .network-notice{margin:2px 4px 0;padding:0;}
-.center-player-wrap{background:transparent;margin:5px 0;}
+
 .section-player-meta{min-width:0;padding-left:6px;padding-right:6px;}
 .left-player-controls{margin-left:3px;}
 .left-player-meta{margin-left:3px;min-width:200px;}
-.section-player-controls,.section-player-balance{min-width:112px;padding-left:4px;padding-right:4px;}
+.section-player-controls{min-width:112px;padding-left:4px;padding-right:4px;}
 .player-main-button{min-height:30px;min-width:0;padding:0 8px;border-radius:10px;}
 .left-player-meta,.section-player-meta,.player-main-button,.player-main-content{min-width:200px;}
 .player-transport-button{min-width:30px;min-height:30px;padding:0 6px;border-radius:10px;}
@@ -140,12 +125,12 @@ entry{background:rgba(28,34,46,0.56);border:1px solid @panel_border;border-radiu
 .launcher-list-content{padding-right:12px;}
 .launcher-list-wrap scrollbar.vertical,.launcher-list-wrap scrollbar.vertical:hover,.launcher-list-wrap scrollbar.vertical:active{margin-left:8px;margin-right:0;}
 .launcher-search-shell{min-height:38px;padding:0 10px;border-radius:14px;background:rgba(28,34,46,0.58);border:1px solid rgba(255,255,255,0.10);box-shadow:inset 0 1px 0 rgba(255,255,255,0.08),inset 0 -1px 0 rgba(0,0,0,0.06);}
-.launcher-material-icon,.launcher-search-icon,.launcher-app-fallback,.launcher-empty-icon,.launcher-trigger-icon,.wallpaper-trigger-icon,.wallpaper-header-icon,.wallpaper-refresh-icon,.wallpaper-empty-icon{font-family:"Material Design Icons";font-style:normal;font-weight:400;font-feature-settings:normal;letter-spacing:0;}
-.launcher-search-icon{min-width:16px;font-size:16px;opacity:0.92;}
+.launcher-material-icon,.launcher-app-fallback,.launcher-trigger-icon,.wallpaper-trigger-icon,.wallpaper-header-icon,.wallpaper-refresh-icon,.wallpaper-empty-icon{font-family:"Material Design Icons";font-style:normal;font-weight:400;font-feature-settings:normal;letter-spacing:0;}
+
 entry.launcher-search{background:transparent;border:none;box-shadow:none;padding:0;min-height:34px;}
 .launcher-header{padding:0 2px 0 2px;}
 .launcher-title,.launcher-app-title{font-size:13px;font-weight:600;}
-.launcher-count{min-width:24px;padding:1px 7px;border-radius:999px;background:rgba(28,34,46,0.50);border:1px solid rgba(255,255,255,0.08);font-size:12px;opacity:0.86;}
+
 .launcher-hidden-toggle,.launcher-app-side-button{background:rgba(28,34,46,0.50);border:1px solid rgba(255,255,255,0.08);box-shadow:none;}
 .launcher-hidden-toggle{min-height:26px;padding:0 10px;border-radius:999px;}
 .launcher-hidden-toggle:hover{background:rgba(255,255,255,0.08);border-color:@glass_border;}
@@ -164,9 +149,8 @@ entry.launcher-search{background:transparent;border:none;box-shadow:none;padding
 .launcher-app-icon-wrap image,.launcher-app-icon{-gtk-icon-size:40px;margin:0;padding:0;}
 .launcher-app-fallback{min-width:24px;font-size:24px;opacity:0.86;}
 .launcher-app-content{min-height:54px;padding:0;margin:10px 0 0 0;}
-.launcher-app-meta,.launcher-empty-meta,.launcher-notice{font-size:11px;opacity:0.78;}
-.launcher-empty{min-height:96px;padding:14px 10px;border-radius:14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);}
-.launcher-empty-icon{font-size:20px;opacity:0.86;}
+.launcher-app-meta,.launcher-notice{font-size:11px;opacity:0.78;}
+
 .launcher-notice{padding:7px 9px;border-radius:10px;background:rgba(255,120,120,0.10);border:1px solid rgba(255,120,120,0.18);color:@danger_fg;opacity:1;}
 .wallpaper-widget-trigger,menubutton.wallpaper-widget-trigger,menubutton.wallpaper-widget-trigger > button.toggle,menubutton.wallpaper-widget-trigger button.toggle{min-width:22px;min-height:22px;padding:0 2px;margin:0;border-radius:8px;border:none;outline:none;box-shadow:none;transition:background-color 160ms ease,opacity 160ms ease;background:transparent;background-image:none;border-color:transparent;outline-color:transparent;}
 .wallpaper-widget-trigger:hover,.wallpaper-widget-trigger:active,menubutton.wallpaper-widget-trigger:hover,menubutton.wallpaper-widget-trigger:active,menubutton.wallpaper-widget-trigger > button.toggle:hover,menubutton.wallpaper-widget-trigger > button.toggle:active,menubutton.wallpaper-widget-trigger > button.toggle:checked,menubutton.wallpaper-widget-trigger button.toggle:hover,menubutton.wallpaper-widget-trigger button.toggle:active,menubutton.wallpaper-widget-trigger button.toggle:checked{background:rgba(255,255,255,0.05);background-image:none;border-color:transparent;box-shadow:none;}
@@ -204,7 +188,7 @@ button.wallpaper-refresh-button:disabled,button.wallpaper-card:disabled{opacity:
 .wallpaper-notice-label{min-width:0;min-height:0;}
 
 window.osd-window,.osd-placement,.osd-revealer{background:transparent;background-image:none;border:none;box-shadow:none;}
-.layout-separator{font-size:12px;opacity:0.55;margin-top:-1px;}
+
 .layout-label{min-width:22px;font-size:13px;font-weight:400;letter-spacing:0.06em;}
 .module-percent{font-size:12px;font-weight:700;min-width:32px;}
 frame.osd-frame{min-width:300px;background:@popup_surface_bg;color:@fg;border:1px solid @popup_surface_border;border-radius:18px;box-shadow:none;}
