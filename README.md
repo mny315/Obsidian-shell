@@ -108,7 +108,6 @@ spawn-at-startup "obsidian-shell"
 
 - `obsidian-shell` in your `PATH` is a Nix wrapper from the built package.
 - The wrapper launches the bundled shell from the Nix store, not `~/.config/ags/obsidian-shell`.
-- Notifications were removed.
 - If you want to change shell behavior, edit the source and rebuild.
 - Optional module settings:
 
