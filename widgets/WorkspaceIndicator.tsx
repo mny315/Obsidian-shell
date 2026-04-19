@@ -26,6 +26,13 @@ type NiriWorkspace = {
   active_window_id: number | null
 }
 
+type WorkspaceStateLike = {
+  active: boolean
+  focused: boolean
+  urgent: boolean
+  occupied: boolean
+}
+
 function compactText(value: unknown) {
   return typeof value === "string" ? value.trim() : ""
 }
@@ -60,7 +67,7 @@ function getMonitorConnectorName(index: number) {
   return null
 }
 
-function workspaceChipClass({ active, focused, urgent, occupied }: { active: boolean; focused: boolean; urgent: boolean; occupied: boolean }) {
+function workspaceChipClass({ active, focused, urgent, occupied }: WorkspaceStateLike) {
   const classes = ["workspace-chip"]
   if (occupied) classes.push("occupied")
   if (active) classes.push("active")
@@ -69,7 +76,7 @@ function workspaceChipClass({ active, focused, urgent, occupied }: { active: boo
   return classes.join(" ")
 }
 
-function workspaceChipCoreClass({ active, focused, urgent, occupied }: { active: boolean; focused: boolean; urgent: boolean; occupied: boolean }) {
+function workspaceChipCoreClass({ active, focused, urgent, occupied }: WorkspaceStateLike) {
   const classes = ["workspace-chip-core"]
   if (occupied) classes.push("occupied")
   if (active) classes.push("active")
@@ -94,6 +101,10 @@ function workspaceChipTooltip(label: string, name: string | null, active: boolea
   if (occupied) parts.push("occupied")
   if (urgent) parts.push("urgent")
   return parts.join(" • ")
+}
+
+function shouldShowWorkspace(state: WorkspaceStateLike) {
+  return state.active || state.focused || state.urgent || state.occupied
 }
 
 function arrayFromUnknown<T>(value: unknown): T[] {
@@ -224,15 +235,19 @@ function niriWorkspaceItems(workspaces: NiriWorkspace[], monitor: number) {
 
   return filtered
     .filter((workspace) => workspace.idx > 0)
-    .sort((a, b) => a.idx - b.idx)
-    .map<WorkspaceChip>((workspace) => {
-      const label = `${workspace.idx}`
-      const state = {
+    .map((workspace) => ({
+      workspace,
+      state: {
         active: workspace.is_active,
         focused: workspace.is_focused,
         urgent: workspace.is_urgent,
         occupied: workspace.active_window_id !== null,
-      }
+      },
+    }))
+    .filter(({ state }) => shouldShowWorkspace(state))
+    .sort((a, b) => a.workspace.idx - b.workspace.idx)
+    .map<WorkspaceChip>(({ workspace, state }) => {
+      const label = `${workspace.idx}`
 
       return {
         key: `niri-${workspace.id}`,
@@ -385,8 +400,7 @@ function hyprlandWorkspaceItems(hyprland: Record<string, unknown>, monitor: numb
       const id = getHyprWorkspaceId(workspace)
       return Number.isFinite(id) && id > 0
     })
-    .sort((a, b) => getHyprWorkspaceId(a) - getHyprWorkspaceId(b))
-    .map<WorkspaceChip>((workspace) => {
+    .map((workspace) => {
       const id = getHyprWorkspaceId(workspace)
       const name = getHyprWorkspaceName(workspace)
       const monitorName = getHyprWorkspaceMonitorName(workspace)
@@ -396,8 +410,14 @@ function hyprlandWorkspaceItems(hyprland: Record<string, unknown>, monitor: numb
       const occupied = getHyprWorkspaceClients(workspace).length > 0
       const urgent = false
       const label = workspaceChipLabel(id, name)
-
       const state = { active, focused, urgent, occupied }
+
+      return { workspace, id, name, label, state }
+    })
+    .filter(({ state }) => shouldShowWorkspace(state))
+    .sort((a, b) => a.id - b.id)
+    .map<WorkspaceChip>(({ workspace, id, name, label, state }) => {
+      const { active, focused, urgent, occupied } = state
 
       return {
         key: `hypr-${id}`,
@@ -432,7 +452,7 @@ async function initializeHyprland(monitor: number, setItems: (value: WorkspaceCh
     try {
       const next = hyprlandWorkspaceItems(hyprland, monitor)
       setItems(next)
-      setVisible(next.length > 1)
+      setVisible(next.length > 0)
     } catch (error) {
       console.error(error)
       setItems([])
@@ -478,7 +498,7 @@ async function initializeNiri(monitor: number, setItems: (value: WorkspaceChip[]
   const sync = () => {
     const next = niriWorkspaceItems(knownWorkspaces, monitor)
     setItems(next)
-    setVisible(next.length > 1)
+    setVisible(next.length > 0)
   }
 
   const scheduleReconnect = () => {

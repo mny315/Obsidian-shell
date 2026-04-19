@@ -60,7 +60,6 @@ let
     astal.bluetooth
     astal.mpris
     astal.network
-    astal.notifd
     astal.tray
     astal.hyprland
   ];

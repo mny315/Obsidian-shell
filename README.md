@@ -1,6 +1,6 @@
 # Obsidian Shell
 
-A compact **AGS v2 / GTK4 / Astal shell** for **Hyprland** and **Niri**, built around a **NixOS + Home Manager** setup.
+A compact **AGS v2 / GTK4 / Astal shell** for **Hyprland** and **Niri**, built for a **NixOS + Home Manager** workflow.
 
 ## Screenshots
 
@@ -9,8 +9,6 @@ A compact **AGS v2 / GTK4 / Astal shell** for **Hyprland** and **Niri**, built a
 
 ![Bar](./screenshots/bar.png)
 ![Launcher](./screenshots/launcher.png)
-![Notification](./screenshots/notification.png)
-![Brightness](./screenshots/brightness.png)
 ![Network](./screenshots/network.png)
 ![Bluetooth](./screenshots/bluetooth.png)
 ![Wallpapers](./screenshots/wallpapers.png)
@@ -18,16 +16,18 @@ A compact **AGS v2 / GTK4 / Astal shell** for **Hyprland** and **Niri**, built a
 </details>
 
 ## Features
+
 - multi-monitor bar
 - built-in application launcher
 - network and Bluetooth popovers
 - MPRIS media controls
-- notifications and tray integration
+- tray integration
 - brightness and volume controls
-- wallpaper-related controls
+- wallpaper controls
 - dark translucent GTK styling
 
 ## No fuzzel or rofi required
+
 Obsidian Shell already includes its own launcher, so you do not need **fuzzel** or **rofi** just to open applications.
 
 Example bind:
@@ -37,10 +37,11 @@ hyprland
 $mainMod, TAB, exec, obsidian-shell launcher toggle
 
 niri
-Mod+Tab { spawn "obsidian-shell" "launcher" "toggle"; } 
+Mod+Tab { spawn "obsidian-shell" "launcher" "toggle"; }
 ```
 
 ## Blur on Hyprland
+
 To get the intended glass look on **Hyprland**, enable blur for the `obsidian-shell` namespace:
 
 ```nix
@@ -52,20 +53,45 @@ wayland.windowManager.hyprland.settings.layerrule = [
 ```
 
 ## Installation
-The repository includes a **Home Manager module** in `obsidian-shell.nix`.
 
-Import it from your dotfiles:
+This repository ships a **Home Manager module** and is meant to be used from a **flake**.
+
+Add the shell as a flake input:
 
 ```nix
-imports = [ ./dotfiles/ags/obsidian-shell.nix ];
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    home-manager.url = "github:nix-community/home-manager";
+    home-manager.inputs.nixpkgs.follows = "nixpkgs";
+
+    astal.url = "github:aylur/astal";
+    astal.inputs.nixpkgs.follows = "nixpkgs";
+
+    obsidian-shell.url = "github:mny315/Obsidian-shell";
+  };
+}
 ```
 
-The module already provides the wrapper, runtime packages, and fonts.
+Make sure Home Manager receives your flake `inputs`, then import and enable the module:
 
-```bash
-home-manager switch
+```nix
+{
+  home-manager.extraSpecialArgs = { inherit inputs; };
+
+  home-manager.users.yourUser = { ... }: {
+    imports = [ (inputs.obsidian-shell + /obsidian-shell.nix) ];
+
+    programs.obsidian-shell = {
+      enable = true;
+    };
+  };
+}
 ```
+
+
 ## Autostart
+
 ### Hyprland
 
 ```ini
@@ -73,12 +99,23 @@ exec-once = obsidian-shell
 ```
 
 ### Niri
+
 ```kdl
 spawn-at-startup "obsidian-shell"
 ```
 
 ## Notes
 
-- This setup is documented as a **NixOS / Home Manager** workflow.
-- `obsidian-shell` in your `PATH` is a wrapper that launches `~/.config/ags/obsidian-shell`.
-- If you want to change basic behavior such as brightness step, volume step, or popup auto-close timing, edit `config.ts`.
+- `obsidian-shell` in your `PATH` is a Nix wrapper from the built package.
+- The wrapper launches the bundled shell from the Nix store, not `~/.config/ags/obsidian-shell`.
+- Notifications were removed.
+- If you want to change shell behavior, edit the source and rebuild.
+- Optional module settings:
+
+```nix
+programs.obsidian-shell = {
+  enable = true;
+  defaultWallpaper = "/path/to/default.png";
+  extraRuntimePackages = [ ];
+};
+```
