@@ -432,7 +432,7 @@ async function initializeHyprland(monitor: number, setItems: (value: WorkspaceCh
     try {
       const next = hyprlandWorkspaceItems(hyprland, monitor)
       setItems(next)
-      setVisible(next.length > 0)
+      setVisible(next.length > 1)
     } catch (error) {
       console.error(error)
       setItems([])
@@ -478,7 +478,7 @@ async function initializeNiri(monitor: number, setItems: (value: WorkspaceChip[]
   const sync = () => {
     const next = niriWorkspaceItems(knownWorkspaces, monitor)
     setItems(next)
-    setVisible(next.length > 0)
+    setVisible(next.length > 1)
   }
 
   const scheduleReconnect = () => {
