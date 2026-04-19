@@ -78,6 +78,10 @@ function workspaceChipCoreClass({ active, focused, urgent, occupied }: { active:
   return classes.join(" ")
 }
 
+function shouldRenderWorkspace({ active, focused, urgent, occupied }: { active: boolean; focused: boolean; urgent: boolean; occupied: boolean }) {
+  return active || focused || urgent || occupied
+}
+
 function workspaceChipLabel(id: number, fallbackName: string | null) {
   const fallback = compactText(fallbackName)
   if (Number.isFinite(id) && id > 0) return `${id}`
@@ -225,15 +229,18 @@ function niriWorkspaceItems(workspaces: NiriWorkspace[], monitor: number) {
   return filtered
     .filter((workspace) => workspace.idx > 0)
     .sort((a, b) => a.idx - b.idx)
-    .map<WorkspaceChip>((workspace) => {
-      const label = `${workspace.idx}`
-      const state = {
+    .map((workspace) => ({
+      workspace,
+      label: `${workspace.idx}`,
+      state: {
         active: workspace.is_active,
         focused: workspace.is_focused,
         urgent: workspace.is_urgent,
         occupied: workspace.active_window_id !== null,
-      }
-
+      },
+    }))
+    .filter(({ state }) => shouldRenderWorkspace(state))
+    .map<WorkspaceChip>(({ workspace, label, state }) => {
       return {
         key: `niri-${workspace.id}`,
         className: workspaceChipClass(state),
@@ -386,7 +393,7 @@ function hyprlandWorkspaceItems(hyprland: Record<string, unknown>, monitor: numb
       return Number.isFinite(id) && id > 0
     })
     .sort((a, b) => getHyprWorkspaceId(a) - getHyprWorkspaceId(b))
-    .map<WorkspaceChip>((workspace) => {
+    .map((workspace) => {
       const id = getHyprWorkspaceId(workspace)
       const name = getHyprWorkspaceName(workspace)
       const monitorName = getHyprWorkspaceMonitorName(workspace)
@@ -397,7 +404,11 @@ function hyprlandWorkspaceItems(hyprland: Record<string, unknown>, monitor: numb
       const urgent = false
       const label = workspaceChipLabel(id, name)
 
-      const state = { active, focused, urgent, occupied }
+      return { workspace, id, name, label, state: { active, focused, urgent, occupied } }
+    })
+    .filter(({ state }) => shouldRenderWorkspace(state))
+    .map<WorkspaceChip>(({ workspace, id, name, label, state }) => {
+      const { active, focused, urgent, occupied } = state
 
       return {
         key: `hypr-${id}`,
@@ -432,7 +443,7 @@ async function initializeHyprland(monitor: number, setItems: (value: WorkspaceCh
     try {
       const next = hyprlandWorkspaceItems(hyprland, monitor)
       setItems(next)
-      setVisible(next.length > 0)
+      setVisible(next.length > 1)
     } catch (error) {
       console.error(error)
       setItems([])
@@ -478,7 +489,7 @@ async function initializeNiri(monitor: number, setItems: (value: WorkspaceChip[]
   const sync = () => {
     const next = niriWorkspaceItems(knownWorkspaces, monitor)
     setItems(next)
-    setVisible(next.length > 0)
+    setVisible(next.length > 1)
   }
 
   const scheduleReconnect = () => {
