@@ -113,7 +113,6 @@ export function BrightnessControl({
   let backend: BrightnessBackend = "unknown"
   let flashTimeoutId: number | null = null
   let syncTimeoutId = 0
-  let deferredSyncTimeoutId = 0
   let writeDebounceId = 0
   let readBusy = false
   let writeBusy = false
@@ -233,15 +232,6 @@ export function BrightnessControl({
     })
   }
 
-  const scheduleBrightnessSync = (delayMs: number) => {
-    deferredSyncTimeoutId = clearSource(deferredSyncTimeoutId)
-    deferredSyncTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT_IDLE, delayMs, () => {
-      deferredSyncTimeoutId = 0
-      void syncBrightness()
-      return GLib.SOURCE_REMOVE
-    })
-  }
-
   const setBrightness = (nextValue: number) => {
     if (updatingFromRead || GLib.get_monotonic_time() < ignoreSliderChangesUntil) return
 
@@ -270,7 +260,7 @@ export function BrightnessControl({
       halign={Gtk.Align.START}
       valign={Gtk.Align.CENTER}
       $={(self) => {
-        scheduleBrightnessSync(1500)
+        void syncBrightness()
 
         syncTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
           if (backend === "ddc") return GLib.SOURCE_CONTINUE
@@ -280,7 +270,6 @@ export function BrightnessControl({
 
         self.connect("destroy", () => {
           syncTimeoutId = clearSource(syncTimeoutId)
-          deferredSyncTimeoutId = clearSource(deferredSyncTimeoutId)
           writeDebounceId = clearSource(writeDebounceId)
           if (flashTimeoutId) GLib.source_remove(flashTimeoutId)
         })
@@ -324,8 +313,8 @@ export function BrightnessControl({
         valign={Gtk.Align.CENTER}
         tooltipText={tooltip}
         onClicked={() => {
+          if (backend === "ddc" || backend === "unknown") void syncBrightness()
           onToggle()
-          if (backend === "unknown") scheduleBrightnessSync(600)
         }}
       >
         <Gtk.EventControllerScroll

@@ -36,6 +36,7 @@ let
     procps
     awww
     brightnessctl
+    ddcutil
     networkmanager
     wireplumber
     hypridle
@@ -165,6 +166,7 @@ EOF2
     preFixup = ''
       gappsWrapperArgs+=(
         --prefix PATH : ${lib.makeBinPath runtimePackages}
+        --set OBSIDIAN_SHELL_DDCUTIL ${pkgs.ddcutil}/bin/ddcutil
         --prefix XDG_DATA_DIRS : "${pkgs.shared-mime-info}/share"
         --prefix XDG_DATA_DIRS : "${pkgs.adwaita-icon-theme}/share"
         --prefix XDG_DATA_DIRS : "${pkgs.hicolor-icon-theme}/share"

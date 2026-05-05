@@ -68,6 +68,7 @@ const WALLPAPER_INITIAL_VISIBLE_ITEMS = GRID_COLUMNS * GRID_VISIBLE_ROWS
 const WALLPAPER_LOAD_MORE_ITEMS = GRID_COLUMNS * 2
 const WALLPAPER_LOAD_MORE_THRESHOLD = CARD_HEIGHT + GRID_GAP
 const WALLPAPER_TEXTURE_QUEUE_INTERVAL_MS = 12
+const WALLPAPER_THUMBNAIL_VERSION = "cover-fill-v3"
 const WALLPAPER_CACHE_DIR = GLib.build_filenamev([GLib.get_user_cache_dir(), "obsidian-shell", "wallpaper-thumbs"])
 const wallpaperTextureCache = new Map<string, Gdk.Texture | null>()
 const wallpaperThumbnailPathCache = new Map<string, string>()
@@ -192,7 +193,7 @@ function getWallpaperThumbnailPath(path: string) {
 
   const key = GLib.compute_checksum_for_string(
     GLib.ChecksumType.SHA256,
-    `${path}:${etag}:${CARD_WIDTH}x${CARD_HEIGHT}`,
+    `${path}:${etag}:${CARD_WIDTH}x${CARD_HEIGHT}:${WALLPAPER_THUMBNAIL_VERSION}`,
     -1,
   )
 
@@ -211,19 +212,30 @@ function generateWallpaperThumbnail(path: string, thumbnailPath: string) {
 
     if (sourceWidth <= 0 || sourceHeight <= 0) throw new Error(`Invalid image size for ${path}`)
 
-    const scale = Math.max(CARD_WIDTH / sourceWidth, CARD_HEIGHT / sourceHeight)
-    const scaledWidth = Math.max(CARD_WIDTH, Math.round(sourceWidth * scale))
-    const scaledHeight = Math.max(CARD_HEIGHT, Math.round(sourceHeight * scale))
-    const scaled = source.scale_simple(scaledWidth, scaledHeight, GdkPixbuf.InterpType.BILINEAR)
+    const thumbnailAspect = CARD_WIDTH / CARD_HEIGHT
+    const sourceAspect = sourceWidth / sourceHeight
+    const zoom = 1.03
 
-    if (!scaled) throw new Error(`Failed to scale preview for ${path}`)
+    let cropWidth = sourceWidth
+    let cropHeight = sourceHeight
 
-    const cropX = Math.max(0, Math.floor((scaledWidth - CARD_WIDTH) / 2))
-    const cropY = Math.max(0, Math.floor((scaledHeight - CARD_HEIGHT) / 2))
-    const cropped = scaled.new_subpixbuf(cropX, cropY, CARD_WIDTH, CARD_HEIGHT)
+    if (sourceAspect > thumbnailAspect) {
+      cropWidth = Math.max(1, Math.round(sourceHeight * thumbnailAspect / zoom))
+      cropHeight = sourceHeight
+    } else {
+      cropWidth = sourceWidth
+      cropHeight = Math.max(1, Math.round(sourceWidth / thumbnailAspect / zoom))
+    }
+
+    const cropX = Math.max(0, Math.floor((sourceWidth - cropWidth) / 2))
+    const cropY = Math.max(0, Math.floor((sourceHeight - cropHeight) / 2))
+    const cropped = source.new_subpixbuf(cropX, cropY, cropWidth, cropHeight)
+    const thumbnail = cropped.scale_simple(CARD_WIDTH, CARD_HEIGHT, GdkPixbuf.InterpType.BILINEAR)
+
+    if (!thumbnail) throw new Error(`Failed to scale preview for ${path}`)
 
     const tempPath = `${thumbnailPath}.tmp`
-    cropped.savev(tempPath, "png", [], [])
+    thumbnail.savev(tempPath, "png", [], [])
     GLib.rename(tempPath, thumbnailPath)
 
     return thumbnailPath
@@ -358,7 +370,7 @@ function formatWallpaperDirectory(path: string) {
   return path
 }
 
-function listWallpapers(wallpaperDir: string): WallpaperItem[] {
+function listWallpaperFiles(wallpaperDir: string): WallpaperItem[] {
   try {
     const dir = Gio.File.new_for_path(wallpaperDir)
     const enumerator = dir.enumerate_children(
@@ -395,6 +407,11 @@ function listWallpapers(wallpaperDir: string): WallpaperItem[] {
     console.error(error)
     return []
   }
+}
+
+
+function listWallpapers(wallpaperDir: string): WallpaperItem[] {
+  return listWallpaperFiles(wallpaperDir).filter((item) => getExistingWallpaperThumbnail(item.path) !== null)
 }
 
 function chunkWallpapers(items: WallpaperItem[], chunkSize: number) {
@@ -485,7 +502,8 @@ function WallpaperPreview({
         self.set_focus_on_click(false)
         self.set_focusable(false)
         self.set_can_target(true)
-        self.set_can_shrink(true)
+        self.set_can_shrink(false)
+        self.set_overflow(Gtk.Overflow.HIDDEN)
         self.set_halign(Gtk.Align.START)
         self.set_valign(Gtk.Align.START)
         self.set_size_request(CARD_WIDTH, CARD_HEIGHT)
@@ -515,7 +533,8 @@ function WallpaperPreview({
             let destroyed = false
 
             self.set_content_fit(Gtk.ContentFit.COVER)
-            self.set_can_shrink(true)
+            self.set_can_shrink(false)
+            self.set_overflow(Gtk.Overflow.HIDDEN)
             self.set_halign(Gtk.Align.FILL)
             self.set_valign(Gtk.Align.FILL)
             self.set_hexpand(false)
@@ -727,11 +746,11 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
 
     try {
       resetWallpaperTexturePipeline()
-      const items = listWallpapers(wallpaperDir())
-      setWallpapers(items)
-      resetVisibleWallpapers(items)
+      const items = listWallpaperFiles(wallpaperDir())
 
       if (items.length === 0) {
+        setWallpapers([])
+        resetVisibleWallpapers([])
         setNotice("Reloaded 0")
         return
       }
@@ -744,9 +763,10 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       if (!completed) return
 
       wallpaperTextureCache.clear()
-      setWallpapers([...items])
-      resetVisibleWallpapers(items)
-      setNotice(`Reloaded ${items.length}`)
+      const readyItems = items.filter((item) => getExistingWallpaperThumbnail(item.path) !== null)
+      setWallpapers(readyItems)
+      resetVisibleWallpapers(readyItems)
+      setNotice(readyItems.length === items.length ? `Reloaded ${readyItems.length}` : `Reloaded ${readyItems.length}/${items.length}`)
     } catch (error) {
       setNotice(formatError(error))
     } finally {

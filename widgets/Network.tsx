@@ -45,8 +45,10 @@ type NoticeOptions = {
   durationMs?: number
 }
 
-const network = AstalNetwork.get_default()
-const wifiDevice = network.get_wifi()
+type SignalSource = {
+  connect: (signal: string, callback: () => void) => number
+  disconnect: (id: number) => void
+}
 
 function errorText(error: unknown) {
   return typeof error === "string"
@@ -77,6 +79,43 @@ async function execResult(command: Command) {
       text: errorText(error),
     }
   }
+}
+
+async function isNetworkManagerReady() {
+  return Boolean(await execText(["nmcli", "-t", "-f", "STATE", "general", "status"]))
+}
+
+async function getWifiEnabled() {
+  const out = (await execText(["nmcli", "-t", "-f", "WIFI", "general", "status"])).toLowerCase()
+  return out === "enabled"
+}
+
+function nmSecurityText(value: string) {
+  const security = value.trim()
+  return !security || security === "--" ? "open" : "secured"
+}
+
+async function getWifiNetworks(savedConnections: Map<string, string[]>) {
+  const out = await execText(["nmcli", "-t", "-e", "yes", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "no"])
+  return uniqueWifiNetworks(out.split("\n").map((line) => {
+    const [active = "", ssid = "", signal = "0", security = ""] = splitNmcliEscaped(line)
+    return {
+      inUse: active === "*" || active.toLowerCase() === "yes",
+      ssid,
+      signal: Number.parseInt(signal, 10) || 0,
+      security: nmSecurityText(security),
+      saved: savedConnections.has(ssid),
+    }
+  }))
+}
+
+async function getActiveWifiSsid() {
+  const out = await execText(["nmcli", "-t", "-e", "yes", "-f", "IN-USE,SSID", "device", "wifi", "list", "--rescan", "no"])
+  for (const line of out.split("\n")) {
+    const [active = "", ssid = ""] = splitNmcliEscaped(line)
+    if (active === "*" || active.toLowerCase() === "yes") return ssid
+  }
+  return ""
 }
 
 function splitNmcliEscaped(raw: string) {
@@ -431,7 +470,11 @@ export function NetworkControl({
   let pendingSecureNetwork: WifiNetwork | null = null
   let refreshDebounce: { cancel: () => void } | null = null
   let statusTimer: { cancel: () => void } | null = null
-  let wifiSignalIds: number[] = []
+  let networkSignalIds: Array<[SignalSource, number]> = []
+  let startupRefreshId = 0
+  let steadyRefreshId = 0
+  let refreshInFlight = false
+  let refreshAgain = false
 
   const [icon, setIcon] = createState("󰖪")
   const [title, setTitle] = createState("Network")
@@ -494,9 +537,7 @@ export function NetworkControl({
     setWindowVisible(true)
     setTriggerOpen(true)
 
-    if (wifiDevice?.get_enabled()) {
-      scheduleRefresh(0)
-    }
+    scheduleRefresh(0)
 
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
       if (popupRevealer) popupRevealer.revealChild = true
@@ -588,15 +629,15 @@ export function NetworkControl({
     })).sort((a, b) => a.active !== b.active ? (a.active ? -1 : 1) : a.name.localeCompare(b.name))
   }
 
-  const renderWifiList = (networks: WifiNetwork[]) => {
+  const renderWifiList = (networks: WifiNetwork[], emptyText = "No networks found", disabledText = "Wi‑Fi is disabled") => {
     clearChildren(wifiListBox)
     if (!wifiListBox) return
     if (!wifiEnabled) {
-      wifiListBox.append(makeLabel("Wi‑Fi is disabled", "network-empty"))
+      wifiListBox.append(makeLabel(disabledText, "network-empty"))
       return
     }
     if (networks.length === 0) {
-      wifiListBox.append(makeLabel("No networks found", "network-empty"))
+      wifiListBox.append(makeLabel(emptyText, "network-empty"))
       return
     }
     for (const network of networks) {
@@ -640,35 +681,56 @@ export function NetworkControl({
   }
 
   const refresh = async () => {
-    if (!wifiDevice) return
-    const [wgProfiles, savedConnections] = await Promise.all([getWireGuardProfiles(), getSavedWifiConnections()])
-    const wgActive = wgProfiles.some(p => p.active)
-    const enabled = wifiDevice.get_enabled()
-    wifiEnabled = enabled
-    syncWifiSwitch(enabled)
-    rescanButton?.set_sensitive(enabled)
-
-    if (!enabled) {
-      setIcon(BAR_WIFI_OFF_ICON)
-      setTitle("Network")
-      setMeta(wgActive ? "Radio off • VPN" : "Radio off")
-      renderWifiList([])
-    } else {
-      const activeAp = wifiDevice.get_active_access_point()
-      const networks = uniqueWifiNetworks((wifiDevice.get_access_points() || []).map(ap => ({
-        inUse: activeAp ? ap.get_bssid() === activeAp.get_bssid() : false,
-        ssid: ap.get_ssid() || "",
-        signal: ap.get_strength() || 0,
-        security: securityText(ap.get_flags()),
-        saved: savedConnections.has(ap.get_ssid() || ""),
-      })))
-      const current = networks.find(n => n.inUse)
-      setIcon(current ? wifiSignalIcon(current.signal) : BAR_WIFI_ICON)
-      setTitle(current?.ssid || "Wi‑Fi")
-      setMeta(`${current ? current.signal + "%" : "Ready"}${wgActive ? " • VPN" : ""}`)
-      renderWifiList(networks)
+    if (refreshInFlight) {
+      refreshAgain = true
+      return
     }
-    renderWireGuardList(wgProfiles)
+
+    refreshInFlight = true
+
+    try {
+      const nmReady = await isNetworkManagerReady()
+      const [wgProfiles, savedConnections] = await Promise.all([getWireGuardProfiles(), getSavedWifiConnections()])
+      const wgActive = wgProfiles.some(p => p.active)
+
+      if (!nmReady) {
+        wifiEnabled = false
+        syncWifiSwitch(false)
+        rescanButton?.set_sensitive(false)
+        setIcon(BAR_WIFI_OFF_ICON)
+        setTitle("Network")
+        setMeta("NetworkManager starting…")
+        renderWifiList([], "No networks found", "NetworkManager is starting…")
+        renderWireGuardList(wgProfiles)
+        return
+      }
+
+      const [enabled, networks] = await Promise.all([getWifiEnabled(), getWifiNetworks(savedConnections)])
+      wifiEnabled = enabled
+      syncWifiSwitch(enabled)
+      rescanButton?.set_sensitive(enabled)
+
+      if (!enabled) {
+        setIcon(BAR_WIFI_OFF_ICON)
+        setTitle("Network")
+        setMeta(wgActive ? "Radio off • VPN" : "Radio off")
+        renderWifiList([])
+      } else {
+        const current = networks.find(n => n.inUse)
+        setIcon(current ? wifiSignalIcon(current.signal) : BAR_WIFI_ICON)
+        setTitle(current?.ssid || "Wi‑Fi")
+        setMeta(`${current ? current.signal + "%" : "Ready"}${wgActive ? " • VPN" : ""}`)
+        renderWifiList(networks)
+      }
+
+      renderWireGuardList(wgProfiles)
+    } finally {
+      refreshInFlight = false
+      if (refreshAgain) {
+        refreshAgain = false
+        scheduleRefresh(100)
+      }
+    }
   }
 
   const scheduleRefresh = (delay = 200) => {
@@ -679,50 +741,76 @@ export function NetworkControl({
     })
   }
 
-  const connectWifiSignals = () => {
-    if (!wifiDevice || wifiSignalIds.length > 0) return
+  const connectNetworkSignals = () => {
+    if (networkSignalIds.length > 0) return
 
     const refreshNow = () => scheduleRefresh(100)
-    const connectSignal = (signal: string) => {
-      try {
-        wifiSignalIds.push(wifiDevice.connect(signal, refreshNow))
-      } catch {
-        // Signal is not available in older astal-network builds.
+
+    try {
+      const astalNetwork = AstalNetwork.get_default() as SignalSource & { client?: SignalSource, get_client?: () => SignalSource | null }
+      networkSignalIds.push([astalNetwork, astalNetwork.connect("notify", refreshNow)])
+
+      const client = astalNetwork.get_client?.() ?? astalNetwork.client
+      if (client) {
+        networkSignalIds.push([client, client.connect("notify", refreshNow)])
       }
+    } catch (error) {
+      console.warn(`Network signal setup failed: ${errorText(error)}`)
     }
 
-    connectSignal("notify::access-points")
-    connectSignal("notify::active-access-point")
-    connectSignal("notify::enabled")
-    connectSignal("notify::scanning")
-    connectSignal("access-point-added")
-    connectSignal("access-point-removed")
+    if (startupRefreshId === 0) {
+      let startupTicks = 0
+      startupRefreshId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1000, () => {
+        startupTicks += 1
+        scheduleRefresh(0)
+        if (startupTicks >= 30) {
+          startupRefreshId = 0
+          return GLib.SOURCE_REMOVE
+        }
+        return GLib.SOURCE_CONTINUE
+      })
+    }
+
+    if (steadyRefreshId === 0) {
+      steadyRefreshId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 15000, () => {
+        scheduleRefresh(0)
+        return GLib.SOURCE_CONTINUE
+      })
+    }
   }
 
-  const disconnectWifiSignals = () => {
-    if (!wifiDevice || wifiSignalIds.length === 0) return
-
-    for (const id of wifiSignalIds) {
+  const disconnectNetworkSignals = () => {
+    for (const [source, id] of networkSignalIds) {
       try {
-        wifiDevice.disconnect(id)
+        source.disconnect(id)
       } catch {
         // Ignore stale signal ids during teardown.
       }
     }
 
-    wifiSignalIds = []
+    networkSignalIds = []
+
+    if (startupRefreshId !== 0) {
+      GLib.source_remove(startupRefreshId)
+      startupRefreshId = 0
+    }
+
+    if (steadyRefreshId !== 0) {
+      GLib.source_remove(steadyRefreshId)
+      steadyRefreshId = 0
+    }
   }
 
   const waitForWifiConnection = async (ssid: string, timeoutMs = 8000, intervalMs = 250) => {
     const deadline = Date.now() + timeoutMs
 
     while (Date.now() < deadline) {
-      const activeSsid = wifiDevice?.get_active_access_point?.()?.get_ssid?.() || ""
+      const activeSsid = await getActiveWifiSsid()
       if (activeSsid === ssid) return true
       await new Promise(resolve => setTimeout(resolve, intervalMs))
     }
 
-    const activeSsid = wifiDevice?.get_active_access_point?.()?.get_ssid?.() || ""
+    const activeSsid = await getActiveWifiSsid()
     return activeSsid === ssid
   }
 
@@ -771,11 +859,11 @@ export function NetworkControl({
   }
 
   const rescanBtn = makeIconButton("󰑐", "network-icon-button", "Rescan", () => {
-    if (wifiEnabled && wifiDevice) {
-      deferAction(() => {
-        wifiDevice.scan()
+    if (wifiEnabled) {
+      deferAction(async () => {
         presentStatus("Scanning…", { durationMs: 1200 })
-        timeout(1200, () => { presentStatus(""); void refresh() })
+        await execResult(["nmcli", "device", "wifi", "rescan"])
+        timeout(1200, () => { presentStatus(""); scheduleRefresh(0) })
       })
     }
   })
@@ -791,14 +879,15 @@ export function NetworkControl({
         <Gtk.Switch class="network-toggle" valign={Gtk.Align.CENTER} halign={Gtk.Align.END} $={(self) => {
           wifiSwitch = self
           self.connect("notify::active", () => {
-            if (syncingWifiSwitch || !wifiDevice) return
+            if (syncingWifiSwitch) return
 
             const enabled = self.get_active()
             wifiEnabled = enabled
             rescanButton?.set_sensitive(enabled)
 
-            deferAction(() => {
-              wifiDevice.set_enabled(enabled)
+            deferAction(async () => {
+              const result = await execResult(["nmcli", "radio", "wifi", enabled ? "on" : "off"])
+              if (!result.ok) presentStatus(result.text || "Failed to change Wi‑Fi state")
               scheduleRefresh(100)
             })
           })
@@ -924,7 +1013,7 @@ export function NetworkControl({
     <box class="network-shell" valign={Gtk.Align.CENTER} $={(self) => {
       void self
       rescanButton = rescanBtn
-      connectWifiSignals()
+      connectNetworkSignals()
       void refresh()
     }}>
       <button class="network-trigger" valign={Gtk.Align.CENTER} tooltipText={triggerTooltip} onClicked={togglePopup} $={(self) => {
@@ -935,7 +1024,7 @@ export function NetworkControl({
           clearStatusTimer()
           refreshDebounce?.cancel()
           refreshDebounce = null
-          disconnectWifiSignals()
+          disconnectNetworkSignals()
           closingPopup = false
           setWindowVisible(false)
         })
