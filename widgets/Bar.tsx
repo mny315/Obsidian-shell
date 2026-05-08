@@ -9,6 +9,7 @@ import { LeftModules } from "./LeftModules"
 import { Tray } from "./Tray"
 import { CenterModules } from "./CenterModules"
 import { RightModules } from "./RightModules"
+import { debugPopupLog } from "./DebugPopupLog"
 
 const { TOP, LEFT, RIGHT } = Astal.WindowAnchor
 
@@ -31,7 +32,9 @@ export function Bar({ monitor }: { monitor: number }) {
       keymode={Astal.Keymode.ON_DEMAND}
       anchor={TOP | LEFT | RIGHT}
       $={(self) => {
+        debugPopupLog("bar", "window ready", { monitor })
         self.connect("destroy", () => {
+          debugPopupLog("bar", "window destroy", { monitor })
           if (closeTimeoutId !== 0) {
             GLib.source_remove(closeTimeoutId)
             closeTimeoutId = 0

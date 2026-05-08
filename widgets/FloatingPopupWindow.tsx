@@ -2,6 +2,7 @@ import Gtk from "gi://Gtk?version=4.0"
 import { Astal } from "ags/gtk4"
 
 import { attachEscapeKey } from "./EscapeKey"
+import { debugPopupLog } from "./DebugPopupLog"
 import { FLOATING_POPUP_ANCHOR, isPointInsideWidget } from "./FloatingPopup"
 
 type PopupCloseGesture = "pressed" | "released"
@@ -58,7 +59,10 @@ export function FloatingPopupWindow({
 
   const closeIfOutside = (_gesture: Gtk.GestureClick, _nPress: number, x: number, y: number) => {
     const root = placement?.get_parent?.() as Gtk.Widget | null
-    if (isPointInsideWidget(frame, root, x, y)) return
+    const inside = isPointInsideWidget(frame, root, x, y)
+    // DEBUG_POPUP_LOG: outside-click diagnostics only; remove after bug is found.
+    debugPopupLog(namespace, "outside-click", { x, y, inside, closeGesture, captureCloseGesture })
+    if (inside) return
     onClose()
   }
 
@@ -77,6 +81,7 @@ export function FloatingPopupWindow({
       anchor={FLOATING_POPUP_ANCHOR}
       $={(self) => {
         self.connect("destroy", () => {
+          debugPopupLog(namespace, "window destroy")
           placement = null
           frame = null
           onWindowDestroy?.()
@@ -91,6 +96,7 @@ export function FloatingPopupWindow({
         self.set_focusable(true)
         attachEscapeKey(self, onClose)
         onRoot?.(self)
+        debugPopupLog(namespace, "root ready")
       }}>
         <Gtk.GestureClick
           button={0}
@@ -105,6 +111,7 @@ export function FloatingPopupWindow({
           $={(self) => {
             placement = self
             onPlacement?.(self)
+            debugPopupLog(namespace, "placement ready")
           }}
         >
           <revealer
@@ -112,11 +119,15 @@ export function FloatingPopupWindow({
             revealChild={revealChild}
             transitionType={transitionType}
             transitionDuration={transitionDuration}
-            $={(self) => onRevealer?.(self)}
+            $={(self) => {
+              onRevealer?.(self)
+              debugPopupLog(namespace, "revealer ready", { revealed: self.get_reveal_child() })
+            }}
           >
             <box class={frameClass} widthRequest={widthRequest} $={(self) => {
               frame = self
               onFrame?.(self)
+              debugPopupLog(namespace, "frame ready")
             }}>
               {children}
             </box>

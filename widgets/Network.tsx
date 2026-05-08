@@ -10,6 +10,7 @@ import { timeout } from "ags/time"
 import { attachEscapeKey } from "./EscapeKey"
 import { FLOATING_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, TOP_BAR_POPUP_MARGIN_TOP, isPointInsideWidget } from "./FloatingPopup"
 import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
+import { debugPopupLog, debugPopupSnapshot } from "./DebugPopupLog"
 
 const POPOVER_REVEAL_DURATION_MS = 165
 const NETWORK_POPOVER_WIDTH = 392
@@ -467,6 +468,20 @@ export function NetworkControl({
   const [windowVisible, setWindowVisible] = createState(false)
   const popupRegistryId = `network:${monitor}`
 
+  // DEBUG_POPUP_LOG: temporary state snapshot for the intermittent dead-button bug.
+  const debugState = () => debugPopupSnapshot({
+    windowVisible: windowVisible(),
+    closingPopup,
+    revealed: popupRevealer?.get_reveal_child?.(),
+    hasRoot: Boolean(popupRoot),
+    hasPlacement: Boolean(popupPlacement),
+    hasFrame: Boolean(popupFrame),
+    hasRevealer: Boolean(popupRevealer),
+    hasTrigger: Boolean(trigger),
+    triggerOpen: (trigger as any)?.has_css_class?.("widget-trigger-open"),
+    closeTimeoutId,
+  })
+
   let wifiEnabled = false
   let syncingWifiSwitch = false
   let pendingSecureNetwork: WifiNetwork | null = null
@@ -508,20 +523,24 @@ export function NetworkControl({
   }
 
   const finishClosePopup = () => {
+    debugPopupLog(popupRegistryId, "finishClose before", debugState())
     clearCloseTimeout()
     closingPopup = false
     setWindowVisible(false)
     setTriggerOpen(false)
+    debugPopupLog(popupRegistryId, "finishClose after", debugState())
   }
 
   const isPopupRevealed = () => Boolean(popupRevealer?.get_reveal_child())
 
   const resetStalePopupState = (reason: string) => {
+    debugPopupLog(popupRegistryId, "reset stale", { reason, ...debugState() })
     console.warn(`[popup:${popupRegistryId}] reset stale state: ${reason}`)
     finishClosePopup()
   }
 
   const closePopup = () => {
+    debugPopupLog(popupRegistryId, "close requested", debugState())
     if (!windowVisible()) {
       closingPopup = false
       setTriggerOpen(false)
@@ -552,6 +571,7 @@ export function NetworkControl({
   const unregisterPopupController = registerPopupController(popupRegistryId, { close: closePopup })
 
   const openPopup = () => {
+    debugPopupLog(popupRegistryId, "open requested", debugState())
     if (windowVisible()) {
       if (closingPopup || !isPopupRevealed()) resetStalePopupState("open requested while visible but not revealed")
       else return
@@ -564,17 +584,21 @@ export function NetworkControl({
     setTriggerOpen(true)
 
     scheduleRefresh(0)
+    debugPopupLog(popupRegistryId, "open state set", debugState())
 
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+      debugPopupLog(popupRegistryId, "open idle", debugState())
       if (!windowVisible() || closingPopup) return GLib.SOURCE_REMOVE
       if (popupRevealer) popupRevealer.revealChild = true
       else resetStalePopupState("revealer missing after open")
       popupRoot?.grab_focus()
+      debugPopupLog(popupRegistryId, "open idle done", debugState())
       return GLib.SOURCE_REMOVE
     })
   }
 
   const togglePopup = () => {
+    debugPopupLog(popupRegistryId, "bar-click/toggle", debugState())
     if (closingPopup) {
       resetStalePopupState("toggle requested while closing")
       openPopup()
@@ -1060,7 +1084,10 @@ export function NetworkControl({
       connectNetworkSignals()
       void refresh()
     }}>
-      <button class="network-trigger" valign={Gtk.Align.CENTER} tooltipText={triggerTooltip} onClicked={togglePopup} $={(self) => {
+      <button class="network-trigger" valign={Gtk.Align.CENTER} tooltipText={triggerTooltip} onClicked={() => {
+        debugPopupLog(popupRegistryId, "trigger onClicked", debugState())
+        togglePopup()
+      }} $={(self) => {
         trigger = self
 
         self.connect("destroy", () => {

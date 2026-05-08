@@ -11,6 +11,7 @@ import { suppressVolumeOsd } from "./Osd"
 import { attachEscapeKey } from "./EscapeKey"
 import { FLOATING_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, TOP_BAR_POPUP_MARGIN_TOP, isPointInsideWidget } from "./FloatingPopup"
 import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
+import { debugPopupLog, debugPopupSnapshot } from "./DebugPopupLog"
 
 const AUDIO_POPOVER_WIDTH = 392
 const AUDIO_LIST_MAX_HEIGHT = 220
@@ -202,6 +203,21 @@ export function AudioControl({
 
   const popupRegistryId = `audio-devices-${monitor}`
 
+  // DEBUG_POPUP_LOG: temporary state snapshot for the intermittent dead-button bug.
+  const debugState = () => debugPopupSnapshot({
+    windowVisible: windowVisible(),
+    closingPopup,
+    revealed: popupRevealer?.get_reveal_child?.(),
+    hasRoot: Boolean(popupRoot),
+    hasPlacement: Boolean(popupPlacement),
+    hasFrame: Boolean(popupFrame),
+    hasRevealer: Boolean(popupRevealer),
+    hasTrigger: Boolean(trigger),
+    triggerOpen: (trigger as any)?.has_css_class?.("widget-trigger-open"),
+    closeTimeoutId,
+    extra: { current: current(), muted: muted(), sinks: allSinks().length },
+  })
+
   const isOpen = () => Boolean(windowVisible())
 
   const clearCloseTimeout = () => {
@@ -218,21 +234,25 @@ export function AudioControl({
   }
 
   const finishCloseDevicesPopup = () => {
+    debugPopupLog(popupRegistryId, "finishClose before", debugState())
     clearCloseTimeout()
     closingPopup = false
     setWindowVisible(false)
     setTriggerOpen(false)
     setShowHidden(false)
+    debugPopupLog(popupRegistryId, "finishClose after", debugState())
   }
 
   const isDevicesPopupRevealed = () => Boolean(popupRevealer?.get_reveal_child())
 
   const resetStaleDevicesPopupState = (reason: string) => {
+    debugPopupLog(popupRegistryId, "reset stale", { reason, ...debugState() })
     console.warn(`[popup:${popupRegistryId}] reset stale state: ${reason}`)
     finishCloseDevicesPopup()
   }
 
   const closeDevicesPopup = () => {
+    debugPopupLog(popupRegistryId, "close requested", debugState())
     if (!windowVisible()) {
       closingPopup = false
       setTriggerOpen(false)
@@ -369,6 +389,7 @@ export function AudioControl({
   }
 
   const openDevicesPopup = () => {
+    debugPopupLog(popupRegistryId, "open requested", debugState())
     if (windowVisible()) {
       if (closingPopup || !isDevicesPopupRevealed()) resetStaleDevicesPopupState("open requested while visible but not revealed")
       else return
@@ -381,17 +402,21 @@ export function AudioControl({
     setTriggerOpen(true)
     setShowHidden(false)
     void refresh()
+    debugPopupLog(popupRegistryId, "open state set", debugState())
 
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+      debugPopupLog(popupRegistryId, "open idle", debugState())
       if (!windowVisible() || closingPopup) return GLib.SOURCE_REMOVE
       if (popupRevealer) popupRevealer.revealChild = true
       else resetStaleDevicesPopupState("revealer missing after open")
       popupRoot?.grab_focus()
+      debugPopupLog(popupRegistryId, "open idle done", debugState())
       return GLib.SOURCE_REMOVE
     })
   }
 
   const toggleDevicesPopup = () => {
+    debugPopupLog(popupRegistryId, "right-click/toggle-devices", debugState())
     if (closingPopup) {
       resetStaleDevicesPopupState("toggle requested while closing")
       openDevicesPopup()
@@ -594,7 +619,10 @@ export function AudioControl({
         </box>
       </revealer>
 
-      <button class="icon-button quick-toggle audio-trigger flat" valign={Gtk.Align.CENTER} tooltipText={triggerTooltip} onClicked={onToggle} $={(self) => (trigger = self)}>
+      <button class="icon-button quick-toggle audio-trigger flat" valign={Gtk.Align.CENTER} tooltipText={triggerTooltip} onClicked={() => {
+        debugPopupLog(popupRegistryId, "left-click volume toggle", debugState())
+        onToggle()
+      }} $={(self) => (trigger = self)}>
         <Gtk.GestureClick button={3} propagationPhase={Gtk.PropagationPhase.CAPTURE} onReleased={toggleDevicesPopup} />
         <Gtk.EventControllerScroll
           flags={Gtk.EventControllerScrollFlags.VERTICAL}

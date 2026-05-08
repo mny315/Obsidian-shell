@@ -6,6 +6,7 @@ import { execAsync } from "ags/process"
 
 import { BRIGHTNESS_MIN, BRIGHTNESS_STEP, clamp } from "../config"
 import { suppressBrightnessOsd } from "./Osd"
+import { debugPopupLog } from "./DebugPopupLog"
 
 type BrightnessBackend = "unknown" | "backlight" | "ddc" | "none"
 
@@ -324,6 +325,7 @@ export function BrightnessControl({
         valign={Gtk.Align.CENTER}
         tooltipText={tooltip}
         onClicked={() => {
+          debugPopupLog("brightness", "trigger onClicked", { backend, current: current(), shown: showPercent() })
           onToggle()
           if (backend === "unknown") scheduleBrightnessSync(600)
         }}

@@ -1,6 +1,7 @@
 import Gtk from "gi://Gtk?version=4.0"
 
 import { createComputed } from "ags"
+import { debugPopupLog } from "./DebugPopupLog"
 
 export function PowerControl({
   onToggle,
@@ -79,7 +80,10 @@ export function PowerControl({
         </box>
       </revealer>
 
-      <button class="icon-button quick-toggle power-toggle flat" valign={Gtk.Align.CENTER} tooltipText={triggerTooltip} onClicked={onToggle}>
+      <button class="icon-button quick-toggle power-toggle flat" valign={Gtk.Align.CENTER} tooltipText={triggerTooltip} onClicked={() => {
+        debugPopupLog("power", "trigger onClicked")
+        onToggle()
+      }}>
         <label class="module-icon" label={"󰐥"} />
       </button>
     </box>

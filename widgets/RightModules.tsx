@@ -11,6 +11,7 @@ import { BrightnessControl } from "./Brightness"
 import { AudioControl } from "./Audio"
 import { PowerControl } from "./Power"
 import { attachEscapeKey } from "./EscapeKey"
+import { debugPopupLog } from "./DebugPopupLog"
 
 type HoverWatcher = (hovered: boolean) => void
 
@@ -78,6 +79,7 @@ export function RightModules({
   }
 
   const toggleRevealer = (target: Gtk.Revealer | null) => {
+    debugPopupLog("inline-controls", "toggleRevealer requested", { target: Boolean(target), current: target?.get_reveal_child?.(), barHovered })
     if (!target) return
 
     const shouldOpen = !target.get_reveal_child()
@@ -86,6 +88,8 @@ export function RightModules({
       if (!revealer) continue
       revealer.revealChild = shouldOpen && revealer === target
     }
+
+    debugPopupLog("inline-controls", "toggleRevealer applied", { shouldOpen, barHovered })
 
     if (shouldOpen) {
       focusControlsShell()
