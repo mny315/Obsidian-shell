@@ -38,6 +38,7 @@ let
     brightnessctl
     ddcutil
     networkmanager
+    pipewire
     wireplumber
     hypridle
     hyprlock
@@ -77,6 +78,21 @@ let
 
     echo "awww-daemon did not become ready in time" >&2
     exit 1
+  '';
+
+  waitForAudioScript = pkgs.writeShellScript "obsidian-shell-wait-for-audio" ''
+    set -eu
+
+    for _ in $(${pkgs.coreutils}/bin/seq 1 100); do
+      if ${pkgs.pipewire}/bin/pw-cli info 0 >/dev/null 2>&1 \
+        && ${pkgs.wireplumber}/bin/wpctl status >/dev/null 2>&1; then
+        exit 0
+      fi
+      ${pkgs.coreutils}/bin/sleep 0.1
+    done
+
+    echo "PipeWire/WirePlumber did not become ready in time; starting obsidian-shell anyway" >&2
+    exit 0
   '';
 
   saveWallpaperScript = pkgs.writeShellScriptBin "obsidian-shell-set-wallpaper" ''
@@ -155,6 +171,14 @@ let
       cat > "$out/bin/obsidian-shell" <<EOF2
 #!${pkgs.bash}/bin/bash
 set -euo pipefail
+
+# Avoid inheriting stale PipeWire/Pulse endpoints from the launcher environment.
+unset PIPEWIRE_REMOTE
+unset PIPEWIRE_RUNTIME_DIR
+unset PULSE_SERVER
+
+${waitForAudioScript} || true
+
 cd "$out/share/obsidian-shell"
 exec "$out/libexec/obsidian-shell" "\$@"
 EOF2

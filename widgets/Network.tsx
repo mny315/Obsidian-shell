@@ -9,6 +9,7 @@ import { execAsync } from "ags/process"
 import { timeout } from "ags/time"
 import { attachEscapeKey } from "./EscapeKey"
 import { FLOATING_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, TOP_BAR_POPUP_MARGIN_TOP, isPointInsideWidget } from "./FloatingPopup"
+import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
 
 const POPOVER_REVEAL_DURATION_MS = 165
 const NETWORK_POPOVER_WIDTH = 392
@@ -464,6 +465,7 @@ export function NetworkControl({
   let closeTimeoutId = 0
   let closingPopup = false
   const [windowVisible, setWindowVisible] = createState(false)
+  const popupRegistryId = `network:${monitor}`
 
   let wifiEnabled = false
   let syncingWifiSwitch = false
@@ -529,9 +531,12 @@ export function NetworkControl({
     finishClosePopup()
   }
 
+  const unregisterPopupController = registerPopupController(popupRegistryId, { close: closePopup })
+
   const openPopup = () => {
     if (windowVisible()) return
 
+    closeOtherPopups(popupRegistryId)
     clearCloseTimeout()
     closingPopup = false
     setWindowVisible(true)
@@ -952,7 +957,7 @@ export function NetworkControl({
     <window
       visible={windowVisible}
       monitor={monitor}
-      namespace="obsidian-shell"
+      namespace="obsidian-shell-network"
       class="widget-popup-window network-popup-window"
       exclusivity={Astal.Exclusivity.IGNORE}
       keymode={Astal.Keymode.ON_DEMAND}
@@ -1020,6 +1025,7 @@ export function NetworkControl({
         trigger = self
 
         self.connect("destroy", () => {
+          unregisterPopupController()
           clearCloseTimeout()
           clearStatusTimer()
           refreshDebounce?.cancel()

@@ -17,6 +17,7 @@ import {
   TOP_BAR_POPUP_MARGIN_TOP,
   isPointInsideWidget,
 } from "./FloatingPopup"
+import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
 
 const notifd = Notifd.get_default()
 
@@ -1187,6 +1188,7 @@ export function Notifications({ monitor }: { monitor: number }) {
   let disposed = false
 
   const [windowVisible, setWindowVisible] = createState(false)
+  const popupRegistryId = `notifications:${monitor}`
   const [expandedGroups, setExpandedGroups] = createState<string[]>([])
   const groupSlideRevealers = new Map<string, Gtk.Revealer>()
   const groupFadeRevealers = new Map<string, Gtk.Revealer>()
@@ -1359,9 +1361,12 @@ export function Notifications({ monitor }: { monitor: number }) {
     finishClosePopup()
   }
 
+  const unregisterPopupController = registerPopupController(popupRegistryId, { close: closePopup })
+
   const openPopup = () => {
     if (windowVisible()) return
 
+    closeOtherPopups(popupRegistryId)
     clearCloseTimeout()
     clearPopupAnimationTimeouts()
     closingPopup = false
@@ -1627,10 +1632,10 @@ export function Notifications({ monitor }: { monitor: number }) {
     <window
       visible={windowVisible}
       monitor={monitor}
-      namespace="obsidian-shell"
+      namespace="obsidian-shell-notifications"
       class="widget-popup-window notification-history-window"
       exclusivity={Astal.Exclusivity.IGNORE}
-      keymode={Astal.Keymode.EXCLUSIVE}
+      keymode={Astal.Keymode.ON_DEMAND}
       anchor={FLOATING_POPUP_ANCHOR}
       $={(self) => {
         self.connect("destroy", () => {
@@ -1701,6 +1706,7 @@ export function Notifications({ monitor }: { monitor: number }) {
           trigger = self
 
           self.connect("destroy", () => {
+            unregisterPopupController()
             clearCloseTimeout()
             clearPopupAnimationTimeouts()
             clearIgnoredAnimationTimeouts()

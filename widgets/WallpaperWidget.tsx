@@ -12,6 +12,7 @@ import { execAsync } from "ags/process"
 import { attachEscapeKey } from "./EscapeKey"
 import { playerPinned, togglePlayerPinned } from "./PlayerPinState"
 import { FLOATING_POPUP_ANCHOR, isPointInsideWidget, placePopupFromTrigger } from "./FloatingPopup"
+import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
 
 type WallpaperItem = {
   name: string
@@ -1040,6 +1041,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   let applyingCleanupTimeoutId = 0
   let closingPopup = false
   const [windowVisible, setWindowVisible] = createState(false)
+  const popupRegistryId = `wallpaper:${monitor}`
 
   const clearApplyingCleanupTimeout = () => {
     if (applyingCleanupTimeoutId !== 0) {
@@ -1093,12 +1095,15 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
     finishClosePopup()
   }
 
+  const unregisterPopupController = registerPopupController(popupRegistryId, { close: closePopup })
+
   const openPopup = () => {
     if (windowVisible()) {
       syncPopupPosition()
       return
     }
 
+    closeOtherPopups(popupRegistryId)
     clearCloseTimeout()
     closingPopup = false
     setWindowVisible(true)
@@ -1120,13 +1125,14 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
     <window
       visible={windowVisible}
       monitor={monitor}
-      namespace="obsidian-shell"
+      namespace="obsidian-shell-wallpaper"
       class="widget-popup-window wallpaper-popup-window"
       exclusivity={Astal.Exclusivity.IGNORE}
       keymode={Astal.Keymode.ON_DEMAND}
       anchor={FLOATING_POPUP_ANCHOR}
       $={(self) => {
         self.connect("destroy", () => {
+          unregisterPopupController()
           popupPlacement = null
           popupRevealer = null
           popupFrame = null

@@ -8,6 +8,7 @@ import { For, With, createBinding, createComputed, createState } from "ags"
 import { timeout } from "ags/time"
 import { attachEscapeKey } from "./EscapeKey"
 import { FLOATING_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, TOP_BAR_POPUP_MARGIN_TOP, isPointInsideWidget } from "./FloatingPopup"
+import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
 
 const bluetooth = Bluetooth.get_default()
 
@@ -645,6 +646,7 @@ export function BluetoothControl({
   let closeTimeoutId = 0
   let closingPopup = false
   const [windowVisible, setWindowVisible] = createState(false)
+  const popupRegistryId = `bluetooth:${monitor}`
   let deviceRefreshTimer: { cancel: () => void } | null = null
   let adapterRefreshTimer: { cancel: () => void } | null = null
   let discoveryTimeoutTimer: { cancel: () => void } | null = null
@@ -792,9 +794,12 @@ export function BluetoothControl({
     finishClosePopup()
   }
 
+  const unregisterPopupController = registerPopupController(popupRegistryId, { close: closePopup })
+
   const openPopup = () => {
     if (windowVisible()) return
 
+    closeOtherPopups(popupRegistryId)
     clearCloseTimeout()
     closingPopup = false
     setWindowVisible(true)
@@ -959,7 +964,7 @@ export function BluetoothControl({
     <window
       visible={windowVisible}
       monitor={monitor}
-      namespace="obsidian-shell"
+      namespace="obsidian-shell-bluetooth"
       class="widget-popup-window bluetooth-popup-window"
       exclusivity={Astal.Exclusivity.IGNORE}
       keymode={Astal.Keymode.ON_DEMAND}
@@ -1073,6 +1078,7 @@ export function BluetoothControl({
         scheduleDiscoveryTimeout(readAdapters()[0] ?? null)
 
         self.connect("destroy", () => {
+          unregisterPopupController()
           bluetooth.disconnect(notifyDevicesId)
           bluetooth.disconnect(notifyAdaptersId)
           bluetooth.disconnect(deviceAddedId)

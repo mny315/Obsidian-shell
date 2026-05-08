@@ -10,6 +10,7 @@ import { execAsync } from "ags/process"
 
 import { attachEscapeKey } from "./EscapeKey"
 import { FLOATING_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, TOP_BAR_POPUP_MARGIN_TOP, isPointInsideWidget } from "./FloatingPopup"
+import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
 
 type LaunchableApp = {
   key: string
@@ -217,6 +218,7 @@ export function AppLauncherControl({
   let closeTimeoutId = 0
   let closingPopup = false
   const [windowVisible, setWindowVisible] = createState(false)
+  const popupRegistryId = `launcher:${monitor}`
 
   void bindBarHoverWatcher
 
@@ -368,9 +370,12 @@ export function AppLauncherControl({
     finishClosePopup()
   }
 
+  const unregisterPopupController = registerPopupController(popupRegistryId, { close: closePopup })
+
   const openPopup = () => {
     if (windowVisible()) return
 
+    closeOtherPopups(popupRegistryId)
     clearCloseTimeout()
     closingPopup = false
     refreshInstalledApps()
@@ -579,7 +584,7 @@ export function AppLauncherControl({
     <window
       visible={windowVisible}
       monitor={monitor}
-      namespace="obsidian-shell"
+      namespace="obsidian-shell-launcher"
       class="widget-popup-window launcher-popup-window"
       exclusivity={Astal.Exclusivity.IGNORE}
       keymode={Astal.Keymode.ON_DEMAND}
@@ -640,6 +645,7 @@ export function AppLauncherControl({
             clearAppRefreshTimeout()
             destroyApplicationDirectoryMonitors()
             stopSmoothScroll()
+            unregisterPopupController()
             launcherControllers.delete(controller)
             closingPopup = false
             setWindowVisible(false)
