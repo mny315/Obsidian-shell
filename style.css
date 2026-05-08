@@ -1,214 +1,1752 @@
-@define-color fg rgba(255,255,255,1.00);@define-color glass_bg rgba(14,18,26,0.58);@define-color popup_surface_bg rgba(11,15,22,0.46);@define-color popup_surface_border rgba(255,255,255,0.12);@define-color glass_border rgba(255,255,255,0.14);@define-color section_bg rgba(24,29,40,0.42);@define-color section_border rgba(255,255,255,0.08);@define-color panel_bg rgba(28,34,46,0.52);@define-color panel_border rgba(255,255,255,0.11);@define-color hover_bg rgba(255,255,255,0.10);@define-color active_bg rgba(255,255,255,0.15);@define-color glass_toggle_bg rgba(255,255,255,0.08);@define-color glass_toggle_border rgba(255,255,255,0.14);@define-color glass_toggle_on_bg rgba(210,225,255,0.20);@define-color glass_toggle_on_border rgba(235,243,255,0.26);@define-color danger_fg rgba(255,120,120,1.00);*{border:none;font-family:"Lexend";font-size:15px;font-weight:400;color:@fg;box-shadow:none;text-shadow:none;outline:none;background-image:none;}
-.module-icon,.power-action-icon,.network-row-icon,.network-row-status,.clock-icon,.player-main-icon,.player-transport-icon,.network-icon-button-label,.launcher-trigger-icon,.wallpaper-trigger-icon,.wallpaper-header-icon,.wallpaper-refresh-icon,.wallpaper-empty-icon{font-family:"Material Design Icons";font-size:15px;font-style:normal;font-weight:400;font-feature-settings:normal;letter-spacing:0;}
-.tray-item image{font-family:"Material Design Icons";}
-window.bar-window{background-color:transparent;}
-revealer.bar-revealer,revealer.inline-revealer,revealer.widget-popup-revealer,.right-side-wrap,.controls-shell,.quick-control,.inline-control,.bar-start,.bar-center,.bar-end{background-color:transparent;background-image:none;box-shadow:none;border:none;}
-.bar-shell{margin:8px 12px 0 12px;padding:0 3px;min-height:40px;background:@glass_bg;color:@fg;border:1px solid @glass_border;border-radius:18px;background-clip:padding-box;box-shadow:inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(255,255,255,0.03),0 6px 18px rgba(0,0,0,0.18);transition:background-color 180ms ease,border-color 180ms ease,opacity 180ms ease;}.bar-shell > box{background:transparent;background-image:none;box-shadow:none;border:none;}
+/* Theme tokens */
+@define-color fg rgba(255,255,255,1.00);
+@define-color glass_bg rgba(14,18,26,0.58);
+@define-color popup_surface_bg rgba(11,15,22,0.46);
+@define-color popup_surface_border rgba(255,255,255,0.12);
+@define-color glass_border rgba(255,255,255,0.14);
+@define-color section_bg rgba(24,29,40,0.42);
+@define-color section_border rgba(255,255,255,0.08);
+@define-color panel_bg rgba(28,34,46,0.52);
+@define-color panel_border rgba(255,255,255,0.11);
+@define-color hover_bg rgba(255,255,255,0.10);
+@define-color active_bg rgba(255,255,255,0.15);
+@define-color glass_toggle_bg rgba(255,255,255,0.08);
+@define-color glass_toggle_border rgba(255,255,255,0.14);
+@define-color glass_toggle_on_bg rgba(210,225,255,0.20);
+@define-color glass_toggle_on_border rgba(235,243,255,0.26);
+@define-color danger_fg rgba(255,120,120,1.00);
 
-revealer.widget-popup-revealer > widget,revealer.widget-popup-revealer > box,revealer.widget-popup-revealer > contents,scrollbar.vertical,.center-slot,.left-player-inline,entry.launcher-search > text,.launcher-list-wrap,button.wallpaper-card:hover,button.wallpaper-card:active{background:transparent;}
-.inline-revealer,.left-module-shell,.pinned-player-meta,.pinned-player-meta .player-main-content,.pinned-player-meta .player-main-label,.pinned-player-meta .player-main-button,.battery-percent,.left-status-shell,.player-main-content,.player-main-button,.player-main-label,.wallpaper-grid-row,.center-slot,.player-main-content-centered{min-width:0;}
-.section{background:@section_bg;color:@fg;margin:5px 3px;padding:0 6px;border:1px solid @section_border;border-radius:13px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 4px 12px rgba(0,0,0,0.10);}
+/* Base */
+* {
+  border: none;
+  font-family: "Lexend";
+  font-size: 15px;
+  font-weight: 400;
+  color: @fg;
+  box-shadow: none;
+  text-shadow: none;
+  outline: none;
+  background-image: none;
+}
 
-.left-side-wrap{background:transparent;margin-left:0;}
-.pinned-player-shell{min-height:30px;min-width:0;margin-left:3px;padding:0 6px;}
-.pinned-player-inline{background:transparent;min-width:0;}
-.pinned-player-controls{min-width:0;margin-right:3px;}
-.pinned-player-meta .player-main-button,.section-center{padding-left:4px;padding-right:4px;}
+.module-icon,
+.power-action-icon,
+.network-row-icon,
+.network-row-status,
+.clock-icon,
+.player-main-icon,
+.player-transport-icon,
+.network-icon-button-label,
+.launcher-trigger-icon,
+.wallpaper-trigger-icon,
+.wallpaper-header-icon,
+.wallpaper-refresh-icon,
+.wallpaper-empty-icon {
+  font-family: "Material Design Icons";
+  font-size: 15px;
+  font-style: normal;
+  font-weight: 400;
+  font-feature-settings: normal;
+  letter-spacing: 0;
+}
 
-.left-module-button,menubutton.left-module-button,menubutton.left-module-button > button.toggle,menubutton.left-module-button button.toggle{min-height:30px;padding:0 8px;margin:0;border-radius:10px;border:none;outline:none;box-shadow:none;background:transparent;background-image:none;border-color:transparent;outline-color:transparent;}
-.left-module-content{min-width:0;min-height:30px;margin:0;padding:0;}
-.left-module-label,.clock,.inline-panel .brightness-icon,.power-action-label,.player-main-label,.osd-title,.osd-percent{font-size:14px;}
-.clock-icon,.wallpaper-refresh-icon{min-width:16px;font-size:16px;}
-.clock{min-height:30px;padding:0;}
-.battery-indicator,.inline-control,.layout-indicator{min-height:30px;}
-.left-status-content{min-width:0;min-height:30px;padding:0 8px;}
-.right-side-wrap,.wallpaper-list-wrap viewport{margin-right:0;}
-.tray-capsule,.power-panel{padding:0 4px;}
-.tray-item{min-width:30px;min-height:30px;padding:0 4px;margin:0;border-radius:10px;}
-.tray-item:hover,.quick-toggle:hover,.panel-icon-button:hover,.power-action:hover,button.bluetooth-trigger:hover,menubutton.bluetooth-trigger > button.toggle:hover,.network-trigger:hover,menubutton.network-trigger > button.toggle:hover,button.network-icon-button:hover,.player-main-button:hover,.player-transport-button:hover{background:@hover_bg;}
-.tray-item image{-gtk-icon-size:21px;}
-.controls-shell{margin:5px 2px;padding:0 1px;}
-.section-right-main{padding-left:1px;padding-right:1px;}
-.launcher-shell,.network-shell,.quick-control,.inline-control{margin:0;padding:0;min-height:28px;background:transparent;}
-.controls-shell .app-launcher-trigger,.controls-shell .bluetooth-trigger,.controls-shell .network-trigger,.controls-shell .quick-toggle,.controls-shell .power-toggle,.controls-shell .panel-icon-button{min-width:26px;min-height:26px;padding:0 3px;border-radius:9px;}
-.controls-shell .module-icon,.controls-shell .launcher-trigger-icon{min-width:18px;min-height:18px;margin:-1px 0 0 0;padding:0;font-size:17px;}
-.quick-control{margin:0;}
-.inline-panel{min-height:30px;padding:0 7px;border-radius:12px;background:@panel_bg;border:1px solid @panel_border;box-shadow:inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 6px 18px rgba(0,0,0,0.14);transition:background-color 180ms ease,border-color 180ms ease,opacity 180ms ease;}
-.slider-panel{min-width:210px;}
-.module-icon,.player-main-icon,.player-transport-icon{min-width:18px;font-size:16px;}
-button.quick-toggle .module-icon,menubutton.network-trigger > button.toggle .module-icon,menubutton.bluetooth-trigger > button.toggle .module-icon,button.panel-icon-button .module-icon,button.power-action .module-icon,.launcher-trigger-icon{min-width:20px;font-size:18px;}
-.controls-shell button.quick-toggle .brightness-icon,.controls-shell button.network-trigger .network-trigger-icon{font-size:16px;}
-.slider-value{min-width:44px;font-size:14px;}
-button.icon-button,button.panel-icon-button,button.quick-toggle,button.power-action,button.network-trigger,button.network-icon-button,button.network-row-button,button.network-password-action,button.bluetooth-trigger,menubutton.network-trigger > button.toggle,menubutton.bluetooth-trigger > button.toggle,.player-main-button,.player-transport-button{background-color:transparent;background-image:none;box-shadow:none;outline:none;}
-button.icon-button:hover,button.panel-icon-button:hover,button.quick-toggle:hover,button.power-action:hover,button.network-trigger:hover,button.network-icon-button:hover,button.network-row-button:hover,button.network-password-action:hover,button.icon-button:active,button.panel-icon-button:active,button.quick-toggle:active,button.power-action:active,button.network-trigger:active,button.network-icon-button:active,button.network-row-button:active,button.network-password-action:active{background-image:none;box-shadow:none;}
-.icon-button{padding:0;min-width:16px;min-height:16px;}
-menubutton.network-trigger,menubutton.bluetooth-trigger{padding:0;background:transparent;border:none;box-shadow:none;}
-.quick-toggle,button.bluetooth-trigger,menubutton.bluetooth-trigger > button.toggle,.network-trigger,menubutton.network-trigger > button.toggle{min-width:28px;min-height:28px;padding:0 4px;border-radius:10px;transition:background-color 160ms ease,opacity 160ms ease;}
-.quick-toggle:active,.panel-icon-button:active,.power-action:active,button.bluetooth-trigger:active,menubutton.bluetooth-trigger > button.toggle:active,menubutton.bluetooth-trigger > button.toggle:checked,.network-trigger:active,menubutton.network-trigger > button.toggle:active,menubutton.network-trigger > button.toggle:checked,button.network-icon-button:active,.player-main-button:active,.player-transport-button:active{background:@active_bg;}
-.panel-icon-button{min-width:24px;min-height:24px;border-radius:8px;transition:background-color 160ms ease,opacity 160ms ease;}
-.wallpaper-thumb-active{opacity:0.92;}
-scale.slider-control{min-width:128px;min-height:20px;padding:4px 0;margin:0;background-color:transparent;background-image:none;box-shadow:none;}
-scale.slider-control trough,scale.slider-control > trough{min-height:8px;padding:0;margin:0;border:none;border-radius:999px;background:rgba(255,255,255,0.16);background-image:none;box-shadow:none;}
-scale.slider-control highlight,scale.slider-control fill,scale.slider-control > trough > highlight,scale.slider-control > trough > fill{min-height:8px;padding:0;margin:0;border:none;border-radius:999px;background:rgba(255,255,255,0.92);background-image:none;box-shadow:none;}
-scale.slider-control slider,scale.slider-control > trough > slider{min-width:8px;min-height:8px;padding:0;margin:0;border:none;border-radius:0;background:transparent;background-image:none;box-shadow:none;opacity:0;}
-scale.slider-control:hover slider,scale.slider-control:hover > trough > slider,scale.slider-control:active slider,scale.slider-control:active > trough > slider{background:transparent;box-shadow:none;opacity:0;}
-.power-toggle{min-width:32px;}
-.power-action{min-height:30px;padding:0 8px;border-radius:10px;}
-.power-action box{margin:0 1px;}
-.power-action-icon{min-width:16px;}
-popover.bluetooth-popover-window contents,popover.network-popover-window contents,popover.launcher-popover-window contents,popover.wallpaper-popover-window contents,popover.tray-menu-popover-window contents{background:@popup_surface_bg;border:1px solid @popup_surface_border;border-radius:18px;background-clip:padding-box;padding:12px;box-shadow:none;animation:none;}
-window.widget-popup-window,.widget-popup-root,.widget-popup-placement,.widget-popup-revealer{background:transparent;background-image:none;box-shadow:none;border:none;}
-box.widget-popup-frame,.widget-popup-frame,.network-popover-window,.bluetooth-popover-window,.launcher-popover-window,.wallpaper-popover-window{padding:12px;background:@popup_surface_bg;color:@fg;border:1px solid @popup_surface_border;border-radius:18px;background-clip:padding-box;box-shadow:none;}
-window.widget-popup-window box.widget-popup-frame,window.widget-popup-window .widget-popup-frame{background:@popup_surface_bg;border:1px solid @popup_surface_border;border-radius:18px;background-clip:padding-box;box-shadow:none;}
-window.wallpaper-popup-window box.widget-popup-frame,window.wallpaper-popup-window .widget-popup-frame,box.widget-popup-frame.wallpaper-popover-window,.wallpaper-popover-window.widget-popup-frame,.wallpaper-popover-window{background:@popup_surface_bg;border:1px solid @popup_surface_border;background-clip:padding-box;box-shadow:none;}
-.wallpaper-popover-window,.wallpaper-popover,.wallpaper-gallery-frame,.wallpaper-count,.wallpaper-notice-wrap,.wallpaper-notice-label,.wallpaper-path,.wallpaper-thumb-wrap,button.wallpaper-refresh-button,button.wallpaper-card{transition:none;background-image:none;}
-popover.network-popover-window > arrow,popover.bluetooth-popover-window > arrow,popover.launcher-popover-window > arrow,popover.wallpaper-popover-window > arrow,popover.tray-menu-popover-window > arrow{min-width:0;min-height:0;opacity:0;background:transparent;border:none;box-shadow:none;}
-popover.tray-menu-popover-window contents modelbutton,popover.tray-menu-popover-window contents button{min-height:30px;margin:2px 0;padding:0 10px;border-radius:10px;background:transparent;background-image:none;box-shadow:none;}
-popover.tray-menu-popover-window contents modelbutton:hover,popover.tray-menu-popover-window contents button:hover,popover.tray-menu-popover-window contents modelbutton:active,popover.tray-menu-popover-window contents button:active,popover.tray-menu-popover-window contents modelbutton:checked,popover.tray-menu-popover-window contents button:checked{background:@hover_bg;background-image:none;box-shadow:none;}
-.bluetooth-popover,.network-popover{min-width:350px;}
+.tray-item image {
+  font-family: "Material Design Icons";
+}
 
-.wallpaper-header-top,.osd-header{min-height:24px;}
+/* Bar */
+window.bar-window {
+  background-color: transparent;
+}
 
-.wallpaper-count{padding:2px 8px;border-radius:999px;background:rgba(28,34,46,0.50);border:1px solid rgba(255,255,255,0.08);font-size:12px;opacity:0.86;}
+/* Shared layout helpers */
+revealer.bar-revealer,
+revealer.inline-revealer,
+revealer.widget-popup-revealer,
+.right-side-wrap,
+.controls-shell,
+.quick-control,
+.inline-control,
+.bar-start,
+.bar-center,
+.bar-end {
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  border: none;
+}
 
-.launcher-empty-title,.wallpaper-empty-title{font-size:13px;font-weight:500;}
+.bar-shell {
+  margin: 8px 12px 0 12px;
+  padding: 0 3px;
+  min-height: 40px;
+  background: @glass_bg;
+  color: @fg;
+  border: 1px solid @glass_border;
+  border-radius: 18px;
+  background-clip: padding-box;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(255,255,255,0.03),0 6px 18px rgba(0,0,0,0.18);
+  transition: background-color 180ms ease,border-color 180ms ease,opacity 180ms ease;
+}
 
-.network-shell{margin:0;padding:0;min-height:28px;}
-.network-trigger.widget-trigger-open,.bluetooth-trigger.widget-trigger-open,.app-launcher-trigger.widget-trigger-open,.wallpaper-widget-trigger.widget-trigger-open{background:@active_bg;background-image:none;box-shadow:none;}
-.network-header{min-height:34px;padding:2px 2px 6px 2px;margin-bottom:8px;}
-.network-header-actions{min-height:28px;}
-.network-header-title,.wallpaper-title{font-size:15px;font-weight:600;}
-.network-header-meta{font-size:13px;opacity:0.82;}
-switch.network-toggle,switch.bluetooth-device-switch{min-width:38px;min-height:20px;padding:2px;border-radius:999px;background:@glass_toggle_bg;border:1px solid @glass_toggle_border;box-shadow:inset 0 1px 0 rgba(255,255,255,0.08),inset 0 -1px 0 rgba(0,0,0,0.10);transition:background-color 180ms ease,border-color 180ms ease,opacity 180ms ease;}
-switch.network-toggle:hover,switch.bluetooth-device-switch:hover{background:rgba(255,255,255,0.11);border-color:rgba(255,255,255,0.18);}
-switch.network-toggle slider,switch.bluetooth-device-switch slider{min-width:14px;min-height:14px;border-radius:999px;background:rgba(255,255,255,0.92);border:1px solid rgba(18,22,30,0.34);box-shadow:inset 0 1px 0 rgba(255,255,255,0.45),0 2px 8px rgba(0,0,0,0.18);}
-switch.network-toggle:checked,switch.bluetooth-device-switch:checked{background:@glass_toggle_on_bg;border-color:@glass_toggle_on_border;box-shadow:inset 0 1px 0 rgba(255,255,255,0.12),inset 0 -1px 0 rgba(0,0,0,0.08),0 0 0 1px rgba(255,255,255,0.03);}
-switch.network-toggle:checked slider,switch.bluetooth-device-switch:checked slider{background:rgba(255,255,255,0.98);border-color:rgba(205,220,245,0.42);}
-gtkswitch.network-toggle:disabled,gtkswitch.bluetooth-device-switch:disabled,switch.network-toggle:disabled,switch.bluetooth-device-switch:disabled{opacity:0.55;}
-.network-section-title{padding-top:2px;font-size:13px;font-weight:500;opacity:0.78;margin:8px 0 4px 4px;}
-.network-row-shell{min-height:42px;padding:0 10px;margin:2px 0;border-radius:12px;background:@panel_bg;border:1px solid @panel_border;box-shadow:inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 6px 18px rgba(0,0,0,0.14);transition:background-color 200ms ease,border-color 200ms ease,opacity 200ms ease;}
-.network-row-shell:hover{background:@hover_bg;border-color:@glass_border;}
-.network-row-current{background:@panel_bg;border:1px solid @panel_border;box-shadow:inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 6px 18px rgba(0,0,0,0.14);}
-.network-row-body{min-height:42px;}
-.network-row-title{font-size:14px;font-weight:500;}
-.network-row-meta{font-size:12px;opacity:0.78;}
-.network-row-icon,.network-row-status,.network-icon-button-label{font-size:18px;}
-.network-empty{padding:8px 2px;font-size:13px;opacity:0.78;}
-button.network-icon-button{min-width:28px;min-height:28px;padding:0;border-radius:9px;}
-button.network-row-button.bluetooth-pair-button{min-width:56px;min-height:28px;padding:0 10px;border-radius:9px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);}
-button.network-row-button.bluetooth-pair-button:hover{background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.18);}
-button.network-row-button.bluetooth-pair-button:active{background:rgba(255,255,255,0.15);}
-button.network-row-button.bluetooth-pair-button:disabled{opacity:0.55;}
-.bluetooth-pair-button-label{font-size:12px;font-weight:600;}
+.bar-shell > box {
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  border: none;
+}
 
-scrolledwindow{margin:4px 0;}
-scrollbar.vertical,scrollbar.vertical:hover,scrollbar.vertical:active{min-width:10px;min-height:0;}
-scrollbar.vertical trough,scrollbar.vertical:hover trough,scrollbar.vertical:active trough{min-width:10px;background:transparent;border:none;box-shadow:none;}
-scrollbar.vertical slider,scrollbar.vertical:hover slider,scrollbar.vertical:active slider{background:rgba(255,255,255,0.1);border-radius:10px;min-width:4px;margin:0 3px;border:none;box-shadow:none;}
-.network-password-box{background:rgba(14,18,26,0.50);padding:12px;border-radius:12px;margin-bottom:10px;}
-entry{background:rgba(28,34,46,0.56);border:1px solid @panel_border;border-radius:8px;padding:6px 10px;color:@fg;margin:4px 0;}
-.network-notice{margin:2px 4px 0;padding:0;}
+revealer.widget-popup-revealer > widget,
+revealer.widget-popup-revealer > box,
+revealer.widget-popup-revealer > contents,
+scrollbar.vertical,
+.center-slot,
+.left-player-inline,
+entry.launcher-search > text,
+.launcher-list-wrap,
+button.wallpaper-card:hover,
+button.wallpaper-card:active {
+  background: transparent;
+}
 
-.section-player-meta{min-width:0;padding-left:6px;padding-right:6px;}
-.left-player-controls{margin-left:3px;}
-.left-player-meta{margin-left:3px;min-width:200px;}
-.section-player-controls{min-width:112px;padding-left:4px;padding-right:4px;}
-.player-main-button{min-height:30px;min-width:0;padding:0 8px;border-radius:10px;}
-.left-player-meta,.section-player-meta,.player-main-button,.player-main-content{min-width:200px;}
-.player-transport-button{min-width:30px;min-height:30px;padding:0 6px;border-radius:10px;}
-.player-transport-primary,.volume-percent,.brightness-percent{min-width:34px;}
-.app-launcher-trigger,menubutton.app-launcher-trigger,menubutton.app-launcher-trigger > button.toggle,menubutton.app-launcher-trigger button.toggle{min-width:28px;min-height:28px;padding:0 4px;border-radius:10px;border:none;outline:none;box-shadow:none;transition:background-color 160ms ease,opacity 160ms ease;background:transparent;background-image:none;border-color:transparent;outline-color:transparent;}
-.app-launcher-trigger:hover,.app-launcher-trigger:active,menubutton.app-launcher-trigger:hover,menubutton.app-launcher-trigger:active,menubutton.app-launcher-trigger > button.toggle:hover,menubutton.app-launcher-trigger > button.toggle:active,menubutton.app-launcher-trigger > button.toggle:checked,menubutton.app-launcher-trigger button.toggle:hover,menubutton.app-launcher-trigger button.toggle:active,menubutton.app-launcher-trigger button.toggle:checked{background:@hover_bg;background-image:none;border-color:transparent;box-shadow:none;}
-.app-launcher-trigger:focus,.app-launcher-trigger:focus-visible,menubutton.app-launcher-trigger:focus,menubutton.app-launcher-trigger:focus-visible,menubutton.app-launcher-trigger > button.toggle:focus,menubutton.app-launcher-trigger > button.toggle:focus-visible,menubutton.app-launcher-trigger button.toggle:focus,menubutton.app-launcher-trigger button.toggle:focus-visible{background:transparent;background-image:none;border-color:transparent;outline:none;box-shadow:none;}
-.launcher-popover{min-width:420px;}
-.launcher-list-wrap{padding-right:0;}
-.launcher-list-content{padding-right:12px;}
-.launcher-list-wrap scrollbar.vertical,.launcher-list-wrap scrollbar.vertical:hover,.launcher-list-wrap scrollbar.vertical:active{margin-left:8px;margin-right:0;}
-.launcher-search-shell{min-height:38px;padding:0 10px;border-radius:14px;background:rgba(28,34,46,0.58);border:1px solid rgba(255,255,255,0.10);box-shadow:inset 0 1px 0 rgba(255,255,255,0.08),inset 0 -1px 0 rgba(0,0,0,0.06);}
-.launcher-material-icon,.launcher-app-fallback,.launcher-trigger-icon,.wallpaper-trigger-icon,.wallpaper-header-icon,.wallpaper-refresh-icon,.wallpaper-empty-icon{font-family:"Material Design Icons";font-style:normal;font-weight:400;font-feature-settings:normal;letter-spacing:0;}
+.inline-revealer,
+.left-module-shell,
+.pinned-player-meta,
+.pinned-player-meta .player-main-content,
+.pinned-player-meta .player-main-label,
+.pinned-player-meta .player-main-button,
+.battery-percent,
+.left-status-shell,
+.player-main-content,
+.player-main-button,
+.player-main-label,
+.wallpaper-grid-row,
+.center-slot,
+.player-main-content-centered {
+  min-width: 0;
+}
 
-entry.launcher-search{background:transparent;border:none;box-shadow:none;padding:0;min-height:34px;}
-.launcher-header{padding:0 2px 0 2px;}
-.launcher-title,.launcher-app-title{font-size:13px;font-weight:600;}
+.section {
+  background: @section_bg;
+  color: @fg;
+  margin: 5px 3px;
+  padding: 0 6px;
+  border: 1px solid @section_border;
+  border-radius: 13px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 4px 12px rgba(0,0,0,0.10);
+}
 
-.launcher-hidden-toggle,.launcher-app-side-button{background:rgba(28,34,46,0.50);border:1px solid rgba(255,255,255,0.08);box-shadow:none;}
-.launcher-hidden-toggle{min-height:26px;padding:0 10px;border-radius:999px;}
-.launcher-hidden-toggle:hover{background:rgba(255,255,255,0.08);border-color:@glass_border;}
-.launcher-hidden-toggle:active{background:rgba(255,255,255,0.12);border-color:rgba(220,232,255,0.20);}
-.launcher-app-card{min-height:56px;padding:0 6px 0 0;border-radius:12px;background:@panel_bg;border:1px solid @panel_border;box-shadow:inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 6px 18px rgba(0,0,0,0.12);transition:background-color 140ms ease,border-color 140ms ease;}
-.launcher-app-card:hover{background:rgba(255,255,255,0.08);border-color:@glass_border;}
-.launcher-app-card:active{background:rgba(255,255,255,0.12);border-color:rgba(220,232,255,0.20);}
-.launcher-app-main{min-height:56px;padding:4px 4px 4px 10px;border:none;border-radius:12px;background:transparent;box-shadow:none;}
-.launcher-app-main:hover,.launcher-app-main:active,.launcher-app-main:focus,.launcher-app-main:focus-visible{background:transparent;border:none;box-shadow:none;outline:none;}
-.launcher-app-side-button{min-width:36px;min-height:36px;margin:10px 0;padding:0;border-radius:10px;background:transparent;border:none;box-shadow:none;}
-.launcher-app-side-button:hover{background:rgba(255,255,255,0.10);border:none;box-shadow:none;}
-.launcher-app-side-button:active{background:rgba(255,255,255,0.14);border:none;box-shadow:none;}
-.launcher-side-icon{font-size:18px;opacity:0.92;}
-.launcher-app-row{min-height:54px;margin:0;}
-.launcher-app-icon-wrap{min-width:44px;min-height:44px;margin:0 6px 0 0;padding:0;background:transparent;border:none;box-shadow:none;}
-.launcher-app-icon-wrap image,.launcher-app-icon{-gtk-icon-size:40px;margin:0;padding:0;}
-.launcher-app-fallback{min-width:24px;font-size:24px;opacity:0.86;}
-.launcher-app-content{min-height:54px;padding:0;margin:10px 0 0 0;}
-.launcher-app-meta,.launcher-notice{font-size:11px;opacity:0.78;}
+/* Left modules and player */
+.left-side-wrap {
+  background: transparent;
+  margin-left: 0;
+}
 
-.launcher-notice{padding:7px 9px;border-radius:10px;background:rgba(255,120,120,0.10);border:1px solid rgba(255,120,120,0.18);color:@danger_fg;opacity:1;}
-.wallpaper-widget-trigger,menubutton.wallpaper-widget-trigger,menubutton.wallpaper-widget-trigger > button.toggle,menubutton.wallpaper-widget-trigger button.toggle{min-width:22px;min-height:22px;padding:0 2px;margin:0;border-radius:8px;border:none;outline:none;box-shadow:none;transition:background-color 160ms ease,opacity 160ms ease;background:transparent;background-image:none;border-color:transparent;outline-color:transparent;}
-.wallpaper-widget-trigger:hover,.wallpaper-widget-trigger:active,menubutton.wallpaper-widget-trigger:hover,menubutton.wallpaper-widget-trigger:active,menubutton.wallpaper-widget-trigger > button.toggle:hover,menubutton.wallpaper-widget-trigger > button.toggle:active,menubutton.wallpaper-widget-trigger > button.toggle:checked,menubutton.wallpaper-widget-trigger button.toggle:hover,menubutton.wallpaper-widget-trigger button.toggle:active,menubutton.wallpaper-widget-trigger button.toggle:checked{background:rgba(255,255,255,0.05);background-image:none;border-color:transparent;box-shadow:none;}
-.wallpaper-trigger-icon{min-width:14px;font-size:14px;}
-popover.wallpaper-popover-window,.wallpaper-popover{min-width:472px;}
-.wallpaper-header{min-height:28px;}
-.wallpaper-list-wrap scrollbar,.wallpaper-list-wrap scrollbar.vertical,.wallpaper-list-wrap scrollbar.horizontal{opacity:0;min-width:0;min-height:0;margin:0;}
-.wallpaper-list-wrap scrollbar slider,.wallpaper-list-wrap scrollbar.vertical slider,.wallpaper-list-wrap scrollbar.horizontal slider{min-width:0;min-height:0;background:transparent;border:none;box-shadow:none;}
-.wallpaper-header-icon{min-width:18px;font-size:17px;opacity:0.9;}
-.wallpaper-path,.wallpaper-empty-meta,.wallpaper-notice-label{font-size:12px;opacity:0.76;}
-.wallpaper-path{margin-top:1px;}
-button.wallpaper-refresh-button{min-width:28px;min-height:28px;padding:0 5px;border-radius:10px;background:transparent;border:none;box-shadow:none;}
-button.wallpaper-refresh-button:hover{background:rgba(255,255,255,0.05);}
-button.wallpaper-refresh-button:active{background:rgba(255,255,255,0.09);}
-button.wallpaper-refresh-button:focus,button.wallpaper-refresh-button:focus-visible,button.wallpaper-refresh-button:checked{background:rgba(255,255,255,0.05);box-shadow:none;outline:none;}
-button.wallpaper-refresh-button.wallpaper-refresh-button-active,button.wallpaper-refresh-button.wallpaper-refresh-button-active:hover,button.wallpaper-refresh-button.wallpaper-refresh-button-active:active,button.wallpaper-refresh-button.wallpaper-refresh-button-active:focus,button.wallpaper-refresh-button.wallpaper-refresh-button-active:focus-visible{background:rgba(255,255,255,0.09);box-shadow:none;outline:none;}
-.wallpaper-gallery-frame{min-width:448px;padding:10px;border-radius:18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);}
-.wallpaper-list-wrap{min-width:448px;min-height:0;}
-.wallpaper-grid-rows{min-width:448px;padding:0;}
-.wallpaper-empty-wrap{min-width:448px;min-height:216px;}
-button.wallpaper-card{min-width:144px;min-height:84px;border-spacing:0;padding:0;margin:0;border:none;border-radius:12px;background:transparent;box-shadow:none;outline:none;}
-button.wallpaper-card:focus,button.wallpaper-card:focus-visible,button.wallpaper-card:checked{background:transparent;box-shadow:none;outline:none;}
-.wallpaper-thumb-wrap{min-width:144px;min-height:84px;padding:0;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);transition:none;}
-.wallpaper-thumb-wrap-hover{background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.08);}
-.wallpaper-thumb-wrap-active{background:rgba(210,225,255,0.12);border-color:rgba(235,243,255,0.26);}
-.wallpaper-thumb-wrap-active.wallpaper-thumb-wrap-hover{background:rgba(210,225,255,0.18);border-color:rgba(235,243,255,0.26);}
-.wallpaper-thumb{min-width:144px;min-height:84px;border-radius:12px;background:transparent;transition:none;}
-.wallpaper-thumb-hover{opacity:0.78;}
-.wallpaper-thumb-active.wallpaper-thumb-hover{opacity:0.80;}
-.wallpaper-empty{min-height:216px;}
-.wallpaper-empty-icon{font-size:28px;opacity:0.8;}
-button.wallpaper-refresh-button:disabled,button.wallpaper-card:disabled{opacity:1;box-shadow:none;background:transparent;background-image:none;border:none;}
-.wallpaper-header-actions{min-height:0;}
-.wallpaper-notice-wrap{min-width:0;min-height:0;padding:4px 8px;border-radius:8px;background:rgba(28,34,46,0.42);border:1px solid rgba(255,255,255,0.07);}
-.wallpaper-notice-label{min-width:0;min-height:0;}
+.pinned-player-shell {
+  min-height: 30px;
+  min-width: 0;
+  margin-left: 3px;
+  padding: 0 6px;
+}
 
-window.osd-window,.osd-placement,.osd-revealer{background:transparent;background-image:none;border:none;box-shadow:none;}
+.pinned-player-inline {
+  background: transparent;
+  min-width: 0;
+}
 
-.layout-label{min-width:22px;font-size:13px;font-weight:400;letter-spacing:0.06em;}
-.module-percent{font-size:12px;font-weight:700;min-width:32px;}
-frame.osd-frame{min-width:300px;background:@popup_surface_bg;color:@fg;border:1px solid @popup_surface_border;border-radius:18px;box-shadow:none;}
-.osd-body{padding:12px 16px 14px 16px;background:transparent;}
-.osd-icon{min-width:20px;font-family:"Material Design Icons";font-size:18px;font-style:normal;font-weight:400;}
-.osd-percent{min-width:48px;}
-scale.osd-slider,scale.osd-slider:disabled,scale.osd-slider:hover,scale.osd-slider:active,scale.osd-slider:focus,scale.osd-slider:focus-within{min-width:264px;min-height:16px;padding:0;margin:0 2px 2px 2px;background:transparent;background-image:none;border:none;box-shadow:none;outline:none;opacity:1;}
-scale.osd-slider trough,scale.osd-slider > trough{min-height:8px;background:rgba(255,255,255,0.16);border-radius:999px;}
-scale.osd-slider highlight,scale.osd-slider fill,scale.osd-slider > trough > highlight,scale.osd-slider > trough > fill{min-height:8px;background:rgba(255,255,255,0.96);border-radius:999px;}
-scale.osd-slider slider,scale.osd-slider > trough > slider{min-width:8px;min-height:8px;opacity:0;background:transparent;border:none;box-shadow:none;}
+.pinned-player-controls {
+  min-width: 0;
+  margin-right: 3px;
+}
 
-.workspace-indicator-shell{min-height:30px;margin:5px 3px;padding:0 10px;border-radius:999px;}
-.workspace-indicator{min-height:30px;padding:0;}
-button.workspace-chip{min-width:18px;min-height:18px;padding:0;margin:0;border-radius:999px;border:none;background:transparent;box-shadow:none;opacity:0.96;transition:background-color 160ms ease,transform 160ms ease,opacity 160ms ease;}
-button.workspace-chip:hover{background:rgba(255,255,255,0.06);}
-button.workspace-chip:active{transform:scale(0.94);}
-button.workspace-chip.active,button.workspace-chip.focused{background:rgba(210,225,255,0.08);}
-button.workspace-chip.urgent{background:rgba(120,24,24,0.16);}
-.workspace-chip-core{min-width:6px;min-height:6px;border-radius:999px;background:rgba(255,255,255,0.24);border:none;outline:none;box-shadow:none;transition:min-width 180ms ease,min-height 180ms ease,background-color 180ms ease,opacity 180ms ease;opacity:0.88;}
-.workspace-chip-core.occupied{min-width:7px;min-height:7px;background:rgba(255,255,255,0.42);opacity:0.96;}
-.workspace-chip-core.active,.workspace-chip-core.focused{min-width:10px;min-height:10px;background:rgba(244,247,255,0.98);opacity:1.0;box-shadow:none;}
-.workspace-chip-core.focused{background:rgba(255,255,255,1.0);box-shadow:none;}
-.workspace-chip-core.urgent{background:rgba(255,120,120,0.92);box-shadow:none;opacity:1.0;}
+.pinned-player-meta .player-main-button,
+.section-center {
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+/* Left module buttons */
+.left-module-button,
+menubutton.left-module-button,
+menubutton.left-module-button > button.toggle,
+menubutton.left-module-button button.toggle {
+  min-height: 30px;
+  padding: 0 8px;
+  margin: 0;
+  border-radius: 10px;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+  background-image: none;
+  border-color: transparent;
+  outline-color: transparent;
+}
+
+.left-module-content {
+  min-width: 0;
+  min-height: 30px;
+  margin: 0;
+  padding: 0;
+}
+
+.left-module-label,
+.clock,
+.inline-panel .brightness-icon,
+.power-action-label,
+.player-main-label,
+.osd-title,
+.osd-percent {
+  font-size: 14px;
+}
+
+.clock-icon,
+.wallpaper-refresh-icon {
+  min-width: 16px;
+  font-size: 16px;
+}
+
+.clock {
+  min-height: 30px;
+  padding: 0;
+}
+
+.battery-indicator,
+.inline-control,
+.layout-indicator {
+  min-height: 30px;
+}
+
+.left-status-content {
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 8px;
+}
+
+.right-side-wrap,
+.wallpaper-list-wrap viewport {
+  margin-right: 0;
+}
+
+/* Tray and right controls */
+.tray-capsule,
+.power-panel {
+  padding: 0 4px;
+}
+
+.tray-item {
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0 4px;
+  margin: 0;
+  border-radius: 10px;
+}
+
+.tray-item:hover,
+.quick-toggle:hover,
+.panel-icon-button:hover,
+.power-action:hover,
+button.bluetooth-trigger:hover,
+menubutton.bluetooth-trigger > button.toggle:hover,
+.network-trigger:hover,
+menubutton.network-trigger > button.toggle:hover,
+button.network-icon-button:hover,
+.player-main-button:hover,
+.player-transport-button:hover {
+  background: @hover_bg;
+}
+
+.tray-item image {
+  -gtk-icon-size: 21px;
+}
+
+/* Right-side control sizing */
+.controls-shell {
+  margin: 5px 2px;
+  padding: 0 1px;
+}
+
+.section-right-main {
+  padding-left: 1px;
+  padding-right: 1px;
+}
+
+.launcher-shell,
+.network-shell,
+.quick-control,
+.inline-control {
+  margin: 0;
+  padding: 0;
+  min-height: 28px;
+  background: transparent;
+}
+
+.controls-shell .app-launcher-trigger,
+.controls-shell .bluetooth-trigger,
+.controls-shell .network-trigger,
+.controls-shell .quick-toggle,
+.controls-shell .power-toggle,
+.controls-shell .panel-icon-button {
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0 3px;
+  border-radius: 9px;
+}
+
+.controls-shell .module-icon,
+.controls-shell .launcher-trigger-icon {
+  min-width: 18px;
+  min-height: 18px;
+  margin: -1px 0 0 0;
+  padding: 0;
+  font-size: 17px;
+}
+
+.quick-control {
+  margin: 0;
+}
+
+.inline-panel {
+  min-height: 30px;
+  padding: 0 7px;
+  border-radius: 12px;
+  background: @panel_bg;
+  border: 1px solid @panel_border;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 6px 18px rgba(0,0,0,0.14);
+  transition: background-color 180ms ease,border-color 180ms ease,opacity 180ms ease;
+}
+
+.slider-panel {
+  min-width: 210px;
+}
+
+.module-icon,
+.player-main-icon,
+.player-transport-icon {
+  min-width: 18px;
+  font-size: 16px;
+}
+
+button.quick-toggle .module-icon,
+menubutton.network-trigger > button.toggle .module-icon,
+menubutton.bluetooth-trigger > button.toggle .module-icon,
+button.panel-icon-button .module-icon,
+button.power-action .module-icon,
+.launcher-trigger-icon {
+  min-width: 20px;
+  font-size: 18px;
+}
+
+.controls-shell button.quick-toggle .brightness-icon,
+.controls-shell button.network-trigger .network-trigger-icon {
+  font-size: 16px;
+}
+
+.slider-value {
+  min-width: 44px;
+  font-size: 14px;
+}
+
+button.icon-button,
+button.panel-icon-button,
+button.quick-toggle,
+button.power-action,
+button.network-trigger,
+button.network-icon-button,
+button.network-row-button,
+button.network-password-action,
+button.bluetooth-trigger,
+menubutton.network-trigger > button.toggle,
+menubutton.bluetooth-trigger > button.toggle,
+.player-main-button,
+.player-transport-button {
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  outline: none;
+}
+
+button.icon-button:hover,
+button.panel-icon-button:hover,
+button.quick-toggle:hover,
+button.power-action:hover,
+button.network-trigger:hover,
+button.network-icon-button:hover,
+button.network-row-button:hover,
+button.network-password-action:hover,
+button.icon-button:active,
+button.panel-icon-button:active,
+button.quick-toggle:active,
+button.power-action:active,
+button.network-trigger:active,
+button.network-icon-button:active,
+button.network-row-button:active,
+button.network-password-action:active {
+  background-image: none;
+  box-shadow: none;
+}
+
+.icon-button {
+  padding: 0;
+  min-width: 16px;
+  min-height: 16px;
+}
+
+menubutton.network-trigger,
+menubutton.bluetooth-trigger {
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.quick-toggle,
+button.bluetooth-trigger,
+menubutton.bluetooth-trigger > button.toggle,
+.network-trigger,
+menubutton.network-trigger > button.toggle {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0 4px;
+  border-radius: 10px;
+  transition: background-color 160ms ease,opacity 160ms ease;
+}
+
+.quick-toggle:active,
+.panel-icon-button:active,
+.power-action:active,
+button.bluetooth-trigger:active,
+menubutton.bluetooth-trigger > button.toggle:active,
+menubutton.bluetooth-trigger > button.toggle:checked,
+.network-trigger:active,
+menubutton.network-trigger > button.toggle:active,
+menubutton.network-trigger > button.toggle:checked,
+button.network-icon-button:active,
+.player-main-button:active,
+.player-transport-button:active {
+  background: @active_bg;
+}
+
+.panel-icon-button {
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: 8px;
+  transition: background-color 160ms ease,opacity 160ms ease;
+}
+
+.wallpaper-thumb-active {
+  opacity: 0.92;
+}
+
+/* Sliders */
+scale.slider-control {
+  min-width: 128px;
+  min-height: 20px;
+  padding: 4px 0;
+  margin: 0;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+}
+
+scale.slider-control trough,
+scale.slider-control > trough {
+  min-height: 8px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.16);
+  background-image: none;
+  box-shadow: none;
+}
+
+scale.slider-control highlight,
+scale.slider-control fill,
+scale.slider-control > trough > highlight,
+scale.slider-control > trough > fill {
+  min-height: 8px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.92);
+  background-image: none;
+  box-shadow: none;
+}
+
+scale.slider-control slider,
+scale.slider-control > trough > slider {
+  min-width: 8px;
+  min-height: 8px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  opacity: 0;
+}
+
+scale.slider-control:hover slider,
+scale.slider-control:hover > trough > slider,
+scale.slider-control:active slider,
+scale.slider-control:active > trough > slider {
+  background: transparent;
+  box-shadow: none;
+  opacity: 0;
+}
+
+/* Power menu */
+.power-toggle {
+  min-width: 32px;
+}
+
+.power-action {
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 10px;
+}
+
+.power-action box {
+  margin: 0 1px;
+}
+
+.power-action-icon {
+  min-width: 16px;
+}
+
+/* Popup surfaces */
+popover.bluetooth-popover-window contents,
+popover.network-popover-window contents,
+popover.launcher-popover-window contents,
+popover.wallpaper-popover-window contents,
+popover.tray-menu-popover-window contents {
+  background: @popup_surface_bg;
+  border: 1px solid @popup_surface_border;
+  border-radius: 18px;
+  background-clip: padding-box;
+  padding: 12px;
+  box-shadow: none;
+  animation: none;
+}
+
+window.widget-popup-window,
+.widget-popup-root,
+.widget-popup-placement,
+.widget-popup-revealer {
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  border: none;
+}
+
+box.widget-popup-frame,
+.widget-popup-frame,
+.network-popover-window,
+.bluetooth-popover-window,
+.launcher-popover-window,
+.wallpaper-popover-window {
+  padding: 12px;
+  background: @popup_surface_bg;
+  color: @fg;
+  border: 1px solid @popup_surface_border;
+  border-radius: 18px;
+  background-clip: padding-box;
+  box-shadow: none;
+}
+
+window.widget-popup-window box.widget-popup-frame,
+window.widget-popup-window .widget-popup-frame {
+  background: @popup_surface_bg;
+  border: 1px solid @popup_surface_border;
+  border-radius: 18px;
+  background-clip: padding-box;
+  box-shadow: none;
+}
+
+window.wallpaper-popup-window box.widget-popup-frame,
+window.wallpaper-popup-window .widget-popup-frame,
+box.widget-popup-frame.wallpaper-popover-window,
+.wallpaper-popover-window.widget-popup-frame,
+.wallpaper-popover-window {
+  background: @popup_surface_bg;
+  border: 1px solid @popup_surface_border;
+  background-clip: padding-box;
+  box-shadow: none;
+}
+
+.wallpaper-popover-window,
+.wallpaper-popover,
+.wallpaper-gallery-frame,
+.wallpaper-count,
+.wallpaper-notice-wrap,
+.wallpaper-notice-label,
+.wallpaper-path,
+.wallpaper-thumb-wrap,
+button.wallpaper-refresh-button,
+button.wallpaper-card {
+  transition: none;
+  background-image: none;
+}
+
+popover.network-popover-window > arrow,
+popover.bluetooth-popover-window > arrow,
+popover.launcher-popover-window > arrow,
+popover.wallpaper-popover-window > arrow,
+popover.tray-menu-popover-window > arrow {
+  min-width: 0;
+  min-height: 0;
+  opacity: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+popover.tray-menu-popover-window contents modelbutton,
+popover.tray-menu-popover-window contents button {
+  min-height: 30px;
+  margin: 2px 0;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+}
+
+popover.tray-menu-popover-window contents modelbutton:hover,
+popover.tray-menu-popover-window contents button:hover,
+popover.tray-menu-popover-window contents modelbutton:active,
+popover.tray-menu-popover-window contents button:active,
+popover.tray-menu-popover-window contents modelbutton:checked,
+popover.tray-menu-popover-window contents button:checked {
+  background: @hover_bg;
+  background-image: none;
+  box-shadow: none;
+}
+
+/* Network and Bluetooth popups */
+.bluetooth-popover,
+.network-popover {
+  min-width: 350px;
+}
+
+.wallpaper-header-top,
+.osd-header {
+  min-height: 24px;
+}
+
+.wallpaper-count {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(28,34,46,0.50);
+  border: 1px solid rgba(255,255,255,0.08);
+  font-size: 12px;
+  opacity: 0.86;
+}
+
+.launcher-empty-title,
+.wallpaper-empty-title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Network widget */
+.network-shell {
+  margin: 0;
+  padding: 0;
+  min-height: 28px;
+}
+
+.network-trigger.widget-trigger-open,
+.bluetooth-trigger.widget-trigger-open,
+.app-launcher-trigger.widget-trigger-open,
+.wallpaper-widget-trigger.widget-trigger-open {
+  background: @active_bg;
+  background-image: none;
+  box-shadow: none;
+}
+
+.network-header {
+  min-height: 34px;
+  padding: 2px 2px 6px 2px;
+  margin-bottom: 8px;
+}
+
+.network-header-actions {
+  min-height: 28px;
+}
+
+.network-header-title,
+.wallpaper-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.network-header-meta {
+  font-size: 13px;
+  opacity: 0.82;
+}
+
+switch.network-toggle,
+switch.bluetooth-device-switch {
+  min-width: 38px;
+  min-height: 20px;
+  padding: 2px;
+  border-radius: 999px;
+  background: @glass_toggle_bg;
+  border: 1px solid @glass_toggle_border;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08),inset 0 -1px 0 rgba(0,0,0,0.10);
+  transition: background-color 180ms ease,border-color 180ms ease,opacity 180ms ease;
+}
+
+switch.network-toggle:hover,
+switch.bluetooth-device-switch:hover {
+  background: rgba(255,255,255,0.11);
+  border-color: rgba(255,255,255,0.18);
+}
+
+switch.network-toggle slider,
+switch.bluetooth-device-switch slider {
+  min-width: 14px;
+  min-height: 14px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.92);
+  border: 1px solid rgba(18,22,30,0.34);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.45),0 2px 8px rgba(0,0,0,0.18);
+}
+
+switch.network-toggle:checked,
+switch.bluetooth-device-switch:checked {
+  background: @glass_toggle_on_bg;
+  border-color: @glass_toggle_on_border;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12),inset 0 -1px 0 rgba(0,0,0,0.08),0 0 0 1px rgba(255,255,255,0.03);
+}
+
+switch.network-toggle:checked slider,
+switch.bluetooth-device-switch:checked slider {
+  background: rgba(255,255,255,0.98);
+  border-color: rgba(205,220,245,0.42);
+}
+
+gtkswitch.network-toggle:disabled,
+gtkswitch.bluetooth-device-switch:disabled,
+switch.network-toggle:disabled,
+switch.bluetooth-device-switch:disabled {
+  opacity: 0.55;
+}
+
+.network-section-title {
+  padding-top: 2px;
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.78;
+  margin: 8px 0 4px 4px;
+}
+
+.network-row-shell {
+  min-height: 42px;
+  padding: 0 10px;
+  margin: 2px 0;
+  border-radius: 12px;
+  background: @panel_bg;
+  border: 1px solid @panel_border;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 6px 18px rgba(0,0,0,0.14);
+  transition: background-color 200ms ease,border-color 200ms ease,opacity 200ms ease;
+}
+
+.network-row-shell:hover {
+  background: @hover_bg;
+  border-color: @glass_border;
+}
+
+.network-row-current {
+  background: @panel_bg;
+  border: 1px solid @panel_border;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 6px 18px rgba(0,0,0,0.14);
+}
+
+.network-row-body {
+  min-height: 42px;
+}
+
+.network-row-title {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.network-row-meta {
+  font-size: 12px;
+  opacity: 0.78;
+}
+
+.network-row-icon,
+.network-row-status,
+.network-icon-button-label {
+  font-size: 18px;
+}
+
+.network-empty {
+  padding: 8px 2px;
+  font-size: 13px;
+  opacity: 0.78;
+}
+
+button.network-icon-button {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 9px;
+}
+
+button.network-row-button.bluetooth-pair-button {
+  min-width: 56px;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 9px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+button.network-row-button.bluetooth-pair-button:hover {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.18);
+}
+
+button.network-row-button.bluetooth-pair-button:active {
+  background: rgba(255,255,255,0.15);
+}
+
+button.network-row-button.bluetooth-pair-button:disabled {
+  opacity: 0.55;
+}
+
+.bluetooth-pair-button-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+scrolledwindow {
+  margin: 4px 0;
+}
+
+scrollbar.vertical,
+scrollbar.vertical:hover,
+scrollbar.vertical:active {
+  min-width: 10px;
+  min-height: 0;
+}
+
+scrollbar.vertical trough,
+scrollbar.vertical:hover trough,
+scrollbar.vertical:active trough {
+  min-width: 10px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+scrollbar.vertical slider,
+scrollbar.vertical:hover slider,
+scrollbar.vertical:active slider {
+  background: rgba(255,255,255,0.1);
+  border-radius: 10px;
+  min-width: 4px;
+  margin: 0 3px;
+  border: none;
+  box-shadow: none;
+}
+
+.network-password-box {
+  background: rgba(14,18,26,0.50);
+  padding: 12px;
+  border-radius: 12px;
+  margin-bottom: 10px;
+}
+
+entry {
+  background: rgba(28,34,46,0.56);
+  border: 1px solid @panel_border;
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: @fg;
+  margin: 4px 0;
+}
+
+.network-notice {
+  margin: 2px 4px 0;
+  padding: 0;
+}
+
+.section-player-meta {
+  min-width: 0;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.left-player-controls {
+  margin-left: 3px;
+}
+
+.left-player-meta {
+  margin-left: 3px;
+  min-width: 200px;
+}
+
+.section-player-controls {
+  min-width: 112px;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.player-main-button {
+  min-height: 30px;
+  min-width: 0;
+  padding: 0 8px;
+  border-radius: 10px;
+}
+
+.left-player-meta,
+.section-player-meta,
+.player-main-button,
+.player-main-content {
+  min-width: 200px;
+}
+
+.player-transport-button {
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0 6px;
+  border-radius: 10px;
+}
+
+.player-transport-primary,
+.volume-percent,
+.brightness-percent {
+  min-width: 34px;
+}
+
+.app-launcher-trigger,
+menubutton.app-launcher-trigger,
+menubutton.app-launcher-trigger > button.toggle,
+menubutton.app-launcher-trigger button.toggle {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0 4px;
+  border-radius: 10px;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  transition: background-color 160ms ease,opacity 160ms ease;
+  background: transparent;
+  background-image: none;
+  border-color: transparent;
+  outline-color: transparent;
+}
+
+.app-launcher-trigger:hover,
+.app-launcher-trigger:active,
+menubutton.app-launcher-trigger:hover,
+menubutton.app-launcher-trigger:active,
+menubutton.app-launcher-trigger > button.toggle:hover,
+menubutton.app-launcher-trigger > button.toggle:active,
+menubutton.app-launcher-trigger > button.toggle:checked,
+menubutton.app-launcher-trigger button.toggle:hover,
+menubutton.app-launcher-trigger button.toggle:active,
+menubutton.app-launcher-trigger button.toggle:checked {
+  background: @hover_bg;
+  background-image: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.app-launcher-trigger:focus,
+.app-launcher-trigger:focus-visible,
+menubutton.app-launcher-trigger:focus,
+menubutton.app-launcher-trigger:focus-visible,
+menubutton.app-launcher-trigger > button.toggle:focus,
+menubutton.app-launcher-trigger > button.toggle:focus-visible,
+menubutton.app-launcher-trigger button.toggle:focus,
+menubutton.app-launcher-trigger button.toggle:focus-visible {
+  background: transparent;
+  background-image: none;
+  border-color: transparent;
+  outline: none;
+  box-shadow: none;
+}
+
+.launcher-popover {
+  min-width: 420px;
+}
+
+.launcher-list-wrap {
+  padding-right: 0;
+}
+
+.launcher-list-content {
+  padding-right: 12px;
+}
+
+.launcher-list-wrap scrollbar.vertical,
+.launcher-list-wrap scrollbar.vertical:hover,
+.launcher-list-wrap scrollbar.vertical:active {
+  margin-left: 8px;
+  margin-right: 0;
+}
+
+.launcher-search-shell {
+  min-height: 38px;
+  padding: 0 10px;
+  border-radius: 14px;
+  background: rgba(28,34,46,0.58);
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08),inset 0 -1px 0 rgba(0,0,0,0.06);
+}
+
+.launcher-material-icon,
+.launcher-app-fallback,
+.launcher-trigger-icon,
+.wallpaper-trigger-icon,
+.wallpaper-header-icon,
+.wallpaper-refresh-icon,
+.wallpaper-empty-icon {
+  font-family: "Material Design Icons";
+  font-style: normal;
+  font-weight: 400;
+  font-feature-settings: normal;
+  letter-spacing: 0;
+}
+
+/* App launcher */
+entry.launcher-search {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  min-height: 34px;
+}
+
+.launcher-header {
+  padding: 0 2px 0 2px;
+}
+
+.launcher-title,
+.launcher-app-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.launcher-hidden-toggle,
+.launcher-app-side-button {
+  background: rgba(28,34,46,0.50);
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: none;
+}
+
+.launcher-hidden-toggle {
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+}
+
+.launcher-hidden-toggle:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: @glass_border;
+}
+
+.launcher-hidden-toggle:active {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(220,232,255,0.20);
+}
+
+.launcher-app-card {
+  min-height: 56px;
+  padding: 0 6px 0 0;
+  border-radius: 12px;
+  background: @panel_bg;
+  border: 1px solid @panel_border;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 6px 18px rgba(0,0,0,0.12);
+  transition: background-color 140ms ease,border-color 140ms ease;
+}
+
+.launcher-app-card:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: @glass_border;
+}
+
+.launcher-app-card:active {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(220,232,255,0.20);
+}
+
+.launcher-app-main {
+  min-height: 56px;
+  padding: 4px 4px 4px 10px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.launcher-app-main:hover,
+.launcher-app-main:active,
+.launcher-app-main:focus,
+.launcher-app-main:focus-visible {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  outline: none;
+}
+
+.launcher-app-side-button {
+  min-width: 36px;
+  min-height: 36px;
+  margin: 10px 0;
+  padding: 0;
+  border-radius: 10px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.launcher-app-side-button:hover {
+  background: rgba(255,255,255,0.10);
+  border: none;
+  box-shadow: none;
+}
+
+.launcher-app-side-button:active {
+  background: rgba(255,255,255,0.14);
+  border: none;
+  box-shadow: none;
+}
+
+.launcher-side-icon {
+  font-size: 18px;
+  opacity: 0.92;
+}
+
+.launcher-app-row {
+  min-height: 54px;
+  margin: 0;
+}
+
+.launcher-app-icon-wrap {
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0 6px 0 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.launcher-app-icon-wrap image,
+.launcher-app-icon {
+  -gtk-icon-size: 40px;
+  margin: 0;
+  padding: 0;
+}
+
+.launcher-app-fallback {
+  min-width: 24px;
+  font-size: 24px;
+  opacity: 0.86;
+}
+
+.launcher-app-content {
+  min-height: 54px;
+  padding: 0;
+  margin: 10px 0 0 0;
+}
+
+.launcher-app-meta,
+.launcher-notice {
+  font-size: 11px;
+  opacity: 0.78;
+}
+
+.launcher-notice {
+  padding: 7px 9px;
+  border-radius: 10px;
+  background: rgba(255,120,120,0.10);
+  border: 1px solid rgba(255,120,120,0.18);
+  color: @danger_fg;
+  opacity: 1;
+}
+
+/* Wallpaper picker */
+.wallpaper-widget-trigger,
+menubutton.wallpaper-widget-trigger,
+menubutton.wallpaper-widget-trigger > button.toggle,
+menubutton.wallpaper-widget-trigger button.toggle {
+  min-width: 22px;
+  min-height: 22px;
+  padding: 0 2px;
+  margin: 0;
+  border-radius: 8px;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  transition: background-color 160ms ease,opacity 160ms ease;
+  background: transparent;
+  background-image: none;
+  border-color: transparent;
+  outline-color: transparent;
+}
+
+.wallpaper-widget-trigger:hover,
+.wallpaper-widget-trigger:active,
+menubutton.wallpaper-widget-trigger:hover,
+menubutton.wallpaper-widget-trigger:active,
+menubutton.wallpaper-widget-trigger > button.toggle:hover,
+menubutton.wallpaper-widget-trigger > button.toggle:active,
+menubutton.wallpaper-widget-trigger > button.toggle:checked,
+menubutton.wallpaper-widget-trigger button.toggle:hover,
+menubutton.wallpaper-widget-trigger button.toggle:active,
+menubutton.wallpaper-widget-trigger button.toggle:checked {
+  background: rgba(255,255,255,0.05);
+  background-image: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.wallpaper-trigger-icon {
+  min-width: 14px;
+  font-size: 14px;
+}
+
+popover.wallpaper-popover-window,
+.wallpaper-popover {
+  min-width: 472px;
+}
+
+.wallpaper-header {
+  min-height: 28px;
+}
+
+.wallpaper-list-wrap scrollbar,
+.wallpaper-list-wrap scrollbar.vertical,
+.wallpaper-list-wrap scrollbar.horizontal {
+  opacity: 0;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+}
+
+.wallpaper-list-wrap scrollbar slider,
+.wallpaper-list-wrap scrollbar.vertical slider,
+.wallpaper-list-wrap scrollbar.horizontal slider {
+  min-width: 0;
+  min-height: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.wallpaper-header-icon {
+  min-width: 18px;
+  font-size: 17px;
+  opacity: 0.9;
+}
+
+.wallpaper-path,
+.wallpaper-empty-meta,
+.wallpaper-notice-label {
+  font-size: 12px;
+  opacity: 0.76;
+}
+
+.wallpaper-path {
+  margin-top: 1px;
+}
+
+button.wallpaper-refresh-button {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+button.wallpaper-refresh-button:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+button.wallpaper-refresh-button:active {
+  background: rgba(255,255,255,0.09);
+}
+
+button.wallpaper-refresh-button:focus,
+button.wallpaper-refresh-button:focus-visible,
+button.wallpaper-refresh-button:checked {
+  background: rgba(255,255,255,0.05);
+  box-shadow: none;
+  outline: none;
+}
+
+button.wallpaper-refresh-button.wallpaper-refresh-button-active,
+button.wallpaper-refresh-button.wallpaper-refresh-button-active:hover,
+button.wallpaper-refresh-button.wallpaper-refresh-button-active:active,
+button.wallpaper-refresh-button.wallpaper-refresh-button-active:focus,
+button.wallpaper-refresh-button.wallpaper-refresh-button-active:focus-visible {
+  background: rgba(255,255,255,0.09);
+  box-shadow: none;
+  outline: none;
+}
+
+.wallpaper-gallery-frame {
+  min-width: 448px;
+  padding: 10px;
+  border-radius: 18px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.wallpaper-list-wrap {
+  min-width: 448px;
+  min-height: 0;
+}
+
+.wallpaper-grid-rows {
+  min-width: 448px;
+  padding: 0;
+}
+
+.wallpaper-empty-wrap {
+  min-width: 448px;
+  min-height: 216px;
+}
+
+button.wallpaper-card {
+  min-width: 144px;
+  min-height: 84px;
+  border-spacing: 0;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
+button.wallpaper-card:focus,
+button.wallpaper-card:focus-visible,
+button.wallpaper-card:checked {
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
+.wallpaper-thumb-wrap {
+  min-width: 144px;
+  min-height: 84px;
+  padding: 0;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  transition: none;
+}
+
+.wallpaper-thumb-wrap-hover {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.08);
+}
+
+.wallpaper-thumb-wrap-active {
+  background: rgba(210,225,255,0.12);
+  border-color: rgba(235,243,255,0.26);
+}
+
+.wallpaper-thumb-wrap-active.wallpaper-thumb-wrap-hover {
+  background: rgba(210,225,255,0.18);
+  border-color: rgba(235,243,255,0.26);
+}
+
+.wallpaper-thumb {
+  min-width: 144px;
+  min-height: 84px;
+  border-radius: 12px;
+  background: transparent;
+  transition: none;
+}
+
+.wallpaper-thumb-hover {
+  opacity: 0.78;
+}
+
+.wallpaper-thumb-active.wallpaper-thumb-hover {
+  opacity: 0.80;
+}
+
+.wallpaper-empty {
+  min-height: 216px;
+}
+
+.wallpaper-empty-icon {
+  font-size: 28px;
+  opacity: 0.8;
+}
+
+button.wallpaper-refresh-button:disabled,
+button.wallpaper-card:disabled {
+  opacity: 1;
+  box-shadow: none;
+  background: transparent;
+  background-image: none;
+  border: none;
+}
+
+.wallpaper-header-actions {
+  min-height: 0;
+}
+
+.wallpaper-notice-wrap {
+  min-width: 0;
+  min-height: 0;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(28,34,46,0.42);
+  border: 1px solid rgba(255,255,255,0.07);
+}
+
+.wallpaper-notice-label {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* OSD */
+window.osd-window,
+.osd-placement,
+.osd-revealer {
+  background: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+}
+
+.layout-label {
+  min-width: 22px;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+}
+
+.module-percent {
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 32px;
+}
+
+frame.osd-frame {
+  min-width: 300px;
+  background: @popup_surface_bg;
+  color: @fg;
+  border: 1px solid @popup_surface_border;
+  border-radius: 18px;
+  box-shadow: none;
+}
+
+.osd-body {
+  padding: 12px 16px 14px 16px;
+  background: transparent;
+}
+
+.osd-icon {
+  min-width: 20px;
+  font-family: "Material Design Icons";
+  font-size: 18px;
+  font-style: normal;
+  font-weight: 400;
+}
+
+.osd-percent {
+  min-width: 48px;
+}
+
+scale.osd-slider,
+scale.osd-slider:disabled,
+scale.osd-slider:hover,
+scale.osd-slider:active,
+scale.osd-slider:focus,
+scale.osd-slider:focus-within {
+  min-width: 264px;
+  min-height: 16px;
+  padding: 0;
+  margin: 0 2px 2px 2px;
+  background: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  outline: none;
+  opacity: 1;
+}
+
+scale.osd-slider trough,
+scale.osd-slider > trough {
+  min-height: 8px;
+  background: rgba(255,255,255,0.16);
+  border-radius: 999px;
+}
+
+scale.osd-slider highlight,
+scale.osd-slider fill,
+scale.osd-slider > trough > highlight,
+scale.osd-slider > trough > fill {
+  min-height: 8px;
+  background: rgba(255,255,255,0.96);
+  border-radius: 999px;
+}
+
+scale.osd-slider slider,
+scale.osd-slider > trough > slider {
+  min-width: 8px;
+  min-height: 8px;
+  opacity: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+/* Workspace indicator */
+.workspace-indicator-shell {
+  min-height: 30px;
+  margin: 5px 3px;
+  padding: 0 10px;
+  border-radius: 999px;
+}
+
+.workspace-indicator {
+  min-height: 30px;
+  padding: 0;
+}
+
+button.workspace-chip {
+  min-width: 18px;
+  min-height: 18px;
+  padding: 0;
+  margin: 0;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  opacity: 0.96;
+  transition: background-color 160ms ease,transform 160ms ease,opacity 160ms ease;
+}
+
+button.workspace-chip:hover {
+  background: rgba(255,255,255,0.06);
+}
+
+button.workspace-chip:active {
+  transform: scale(0.94);
+}
+
+button.workspace-chip.active,
+button.workspace-chip.focused {
+  background: rgba(210,225,255,0.08);
+}
+
+button.workspace-chip.urgent {
+  background: rgba(120,24,24,0.16);
+}
+
+.workspace-chip-core {
+  min-width: 6px;
+  min-height: 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.24);
+  border: none;
+  outline: none;
+  box-shadow: none;
+  transition: min-width 180ms ease,min-height 180ms ease,background-color 180ms ease,opacity 180ms ease;
+  opacity: 0.88;
+}
+
+.workspace-chip-core.occupied {
+  min-width: 7px;
+  min-height: 7px;
+  background: rgba(255,255,255,0.42);
+  opacity: 0.96;
+}
+
+.workspace-chip-core.active,
+.workspace-chip-core.focused {
+  min-width: 10px;
+  min-height: 10px;
+  background: rgba(244,247,255,0.98);
+  opacity: 1.0;
+  box-shadow: none;
+}
+
+.workspace-chip-core.focused {
+  background: rgba(255,255,255,1.0);
+  box-shadow: none;
+}
+
+.workspace-chip-core.urgent {
+  background: rgba(255,120,120,0.92);
+  box-shadow: none;
+  opacity: 1.0;
+}
+
+/* Audio output picker */
+window.widget-popup-window box.widget-popup-frame.audio-popover-window,
+.audio-popover-window {
+  padding: 12px;
+  background: @popup_surface_bg;
+  color: @fg;
+  border: 1px solid @popup_surface_border;
+  border-radius: 18px;
+  background-clip: padding-box;
+  box-shadow: none;
+}
+
+.audio-popover {
+  min-width: 392px;
+}
+
+.audio-header {
+  min-height: 34px;
+  padding: 2px 2px 6px 2px;
+  margin-bottom: 8px;
+}
+
+.audio-header-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.audio-header-meta {
+  font-size: 13px;
+  opacity: 0.82;
+}
+
+.audio-list-scroller {
+  margin: 4px 0;
+}
+
+.audio-list-inner {
+  padding: 0;
+}
+
+.audio-sink-row {
+  min-height: 42px;
+  padding: 0 6px 0 10px;
+  margin: 2px 0;
+  border-radius: 12px;
+  background: @panel_bg;
+  border: 1px solid @panel_border;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 6px 18px rgba(0,0,0,0.14);
+  transition: background-color 200ms ease,border-color 200ms ease,opacity 200ms ease;
+}
+
+.audio-sink-row:hover {
+  background: @hover_bg;
+  border-color: @glass_border;
+}
+
+.audio-sink-row:active {
+  background: @active_bg;
+  border-color: @glass_border;
+}
+
+.audio-sink-current {
+  background: @panel_bg;
+  border-color: @panel_border;
+}
+
+.audio-sink-current:hover {
+  background: @hover_bg;
+  border-color: @glass_border;
+}
+
+.audio-sink-main {
+  min-width: 0;
+  min-height: 42px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+}
+
+.audio-sink-main:hover,
+.audio-sink-main:active,
+.audio-sink-main:focus,
+.audio-sink-main:focus-visible {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  outline: none;
+}
+
+.audio-sink-body {
+  min-height: 42px;
+  min-width: 0;
+}
+
+.audio-sink-content {
+  min-height: 42px;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.audio-sink-icon {
+  min-width: 22px;
+  font-size: 18px;
+  opacity: 0.92;
+}
+
+.audio-sink-status {
+  min-width: 18px;
+  font-size: 18px;
+}
+
+.audio-sink-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.audio-sink-meta {
+  font-size: 12px;
+  opacity: 0.78;
+}
+
+button.audio-sink-side-button {
+  min-width: 28px;
+  min-height: 28px;
+  margin: 0;
+  padding: 0;
+  border-radius: 9px;
+  background: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  opacity: 1;
+}
+
+button.audio-sink-side-button:hover {
+  background: @hover_bg;
+  border: none;
+  box-shadow: none;
+}
+
+button.audio-sink-side-button:active {
+  background: @active_bg;
+  border: none;
+  box-shadow: none;
+}
+
+.audio-trigger.widget-trigger-open {
+  background: @active_bg;
+  background-image: none;
+  box-shadow: none;
+}

@@ -1078,14 +1078,32 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
     setTriggerOpen(false)
   }
 
+  const isPopupRevealed = () => Boolean(popupRevealer?.get_reveal_child())
+
+  const resetStalePopupState = (reason: string) => {
+    console.warn(`[popup:${popupRegistryId}] reset stale state: ${reason}`)
+    finishClosePopup()
+  }
+
   const closePopup = () => {
-    if (closingPopup || !windowVisible()) return
+    if (!windowVisible()) {
+      closingPopup = false
+      setTriggerOpen(false)
+      return
+    }
+
+    if (closingPopup) {
+      finishClosePopup()
+      return
+    }
 
     closingPopup = true
 
-    if (popupRevealer?.get_reveal_child()) {
-      popupRevealer.revealChild = false
+    if (isPopupRevealed()) {
+      popupRevealer!.revealChild = false
+      clearCloseTimeout()
       closeTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, WALLPAPER_POPOVER_REVEAL_DURATION_MS, () => {
+        closeTimeoutId = 0
         finishClosePopup()
         return GLib.SOURCE_REMOVE
       })
@@ -1099,8 +1117,11 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
 
   const openPopup = () => {
     if (windowVisible()) {
-      syncPopupPosition()
-      return
+      if (closingPopup || !isPopupRevealed()) resetStalePopupState("open requested while visible but not revealed")
+      else {
+        syncPopupPosition()
+        return
+      }
     }
 
     closeOtherPopups(popupRegistryId)
@@ -1109,16 +1130,34 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
     setWindowVisible(true)
     setTriggerOpen(true)
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+      if (!windowVisible() || closingPopup) return GLib.SOURCE_REMOVE
       syncPopupPosition()
       if (popupRevealer) popupRevealer.revealChild = true
+      else resetStalePopupState("revealer missing after open")
       popupRoot?.grab_focus()
       return GLib.SOURCE_REMOVE
     })
   }
 
   const togglePopup = () => {
-    if (windowVisible()) closePopup()
-    else openPopup()
+    if (closingPopup) {
+      resetStalePopupState("toggle requested while closing")
+      openPopup()
+      return
+    }
+
+    if (windowVisible()) {
+      if (!isPopupRevealed()) {
+        resetStalePopupState("toggle requested while visible but not revealed")
+        openPopup()
+        return
+      }
+
+      closePopup()
+      return
+    }
+
+    openPopup()
   }
 
   const popupWindow = (

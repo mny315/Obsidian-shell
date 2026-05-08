@@ -135,6 +135,7 @@ export function RightModules({
       />
 
       <AudioControl
+        monitor={monitor}
         onToggle={() => toggleRevealer(audioRevealer)}
         bindRevealer={(self) => (audioRevealer = self)}
       />

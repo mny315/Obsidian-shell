@@ -514,14 +514,32 @@ export function NetworkControl({
     setTriggerOpen(false)
   }
 
+  const isPopupRevealed = () => Boolean(popupRevealer?.get_reveal_child())
+
+  const resetStalePopupState = (reason: string) => {
+    console.warn(`[popup:${popupRegistryId}] reset stale state: ${reason}`)
+    finishClosePopup()
+  }
+
   const closePopup = () => {
-    if (closingPopup || !windowVisible()) return
+    if (!windowVisible()) {
+      closingPopup = false
+      setTriggerOpen(false)
+      return
+    }
+
+    if (closingPopup) {
+      finishClosePopup()
+      return
+    }
 
     closingPopup = true
 
-    if (popupRevealer?.get_reveal_child()) {
-      popupRevealer.revealChild = false
+    if (isPopupRevealed()) {
+      popupRevealer!.revealChild = false
+      clearCloseTimeout()
       closeTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, POPOVER_REVEAL_DURATION_MS, () => {
+        closeTimeoutId = 0
         finishClosePopup()
         return GLib.SOURCE_REMOVE
       })
@@ -534,7 +552,10 @@ export function NetworkControl({
   const unregisterPopupController = registerPopupController(popupRegistryId, { close: closePopup })
 
   const openPopup = () => {
-    if (windowVisible()) return
+    if (windowVisible()) {
+      if (closingPopup || !isPopupRevealed()) resetStalePopupState("open requested while visible but not revealed")
+      else return
+    }
 
     closeOtherPopups(popupRegistryId)
     clearCloseTimeout()
@@ -545,15 +566,33 @@ export function NetworkControl({
     scheduleRefresh(0)
 
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+      if (!windowVisible() || closingPopup) return GLib.SOURCE_REMOVE
       if (popupRevealer) popupRevealer.revealChild = true
+      else resetStalePopupState("revealer missing after open")
       popupRoot?.grab_focus()
       return GLib.SOURCE_REMOVE
     })
   }
 
   const togglePopup = () => {
-    if (windowVisible()) closePopup()
-    else openPopup()
+    if (closingPopup) {
+      resetStalePopupState("toggle requested while closing")
+      openPopup()
+      return
+    }
+
+    if (windowVisible()) {
+      if (!isPopupRevealed()) {
+        resetStalePopupState("toggle requested while visible but not revealed")
+        openPopup()
+        return
+      }
+
+      closePopup()
+      return
+    }
+
+    openPopup()
   }
 
   const clearStatusTimer = () => {

@@ -1327,14 +1327,22 @@ export function Notifications({ monitor }: { monitor: number }) {
     setTriggerOpen(false)
   }
 
+  const isPopupRevealed = () => Boolean(popupSlideRevealer?.get_reveal_child())
+
+  const resetStalePopupState = (reason: string) => {
+    console.warn(`[popup:${popupRegistryId}] reset stale state: ${reason}`)
+    finishClosePopup()
+  }
+
   const setPopupOpen = (open: boolean) => {
     clearPopupAnimationTimeouts()
 
     if (open) {
       GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-        if (disposed) return GLib.SOURCE_REMOVE
+        if (disposed || !windowVisible() || closingPopup) return GLib.SOURCE_REMOVE
         if (popupSlideRevealer) popupSlideRevealer.revealChild = true
-      popupRoot?.grab_focus()
+        else resetStalePopupState("revealer missing after open")
+        popupRoot?.grab_focus()
         return GLib.SOURCE_REMOVE
       })
       return
@@ -1344,15 +1352,25 @@ export function Notifications({ monitor }: { monitor: number }) {
   }
 
   const closePopup = () => {
-    if (closingPopup || !windowVisible()) return
+    if (!windowVisible()) {
+      closingPopup = false
+      setTriggerOpen(false)
+      return
+    }
+
+    if (closingPopup) {
+      finishClosePopup()
+      return
+    }
 
     closingPopup = true
 
-    if (popupSlideRevealer?.get_reveal_child()) {
+    if (isPopupRevealed()) {
       setPopupOpen(false)
+      clearCloseTimeout()
       closeTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, HISTORY_REVEAL_DURATION_MS, () => {
+        closeTimeoutId = 0
         if (!disposed) finishClosePopup()
-        else closeTimeoutId = 0
         return GLib.SOURCE_REMOVE
       })
       return
@@ -1364,7 +1382,10 @@ export function Notifications({ monitor }: { monitor: number }) {
   const unregisterPopupController = registerPopupController(popupRegistryId, { close: closePopup })
 
   const openPopup = () => {
-    if (windowVisible()) return
+    if (windowVisible()) {
+      if (closingPopup || !isPopupRevealed()) resetStalePopupState("open requested while visible but not revealed")
+      else return
+    }
 
     closeOtherPopups(popupRegistryId)
     clearCloseTimeout()
@@ -1423,8 +1444,24 @@ export function Notifications({ monitor }: { monitor: number }) {
   ignoredManagerCloseRequest = () => { if (!disposed) setIgnoredOpen(false) }
 
   const togglePopup = () => {
-    if (windowVisible()) closePopup()
-    else openPopup()
+    if (closingPopup) {
+      resetStalePopupState("toggle requested while closing")
+      openPopup()
+      return
+    }
+
+    if (windowVisible()) {
+      if (!isPopupRevealed()) {
+        resetStalePopupState("toggle requested while visible but not revealed")
+        openPopup()
+        return
+      }
+
+      closePopup()
+      return
+    }
+
+    openPopup()
   }
 
   const unresolvedCount = history((items) => items.filter((entry) => Boolean(getLiveNotification(entry.id))).length)
