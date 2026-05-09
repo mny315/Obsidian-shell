@@ -13,7 +13,7 @@ import { attachEscapeKey } from "./EscapeKey"
 import { playerPinned, togglePlayerPinned } from "./PlayerPinState"
 import { FLOATING_POPUP_ANCHOR, isPointInsideWidget, placePopupFromTrigger } from "./FloatingPopup"
 import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
-import { debugPopupLog, debugPopupSnapshot } from "./DebugPopupLog"
+import { debugPopupLog, debugPopupSnapshot, debugWidgetSnapshot } from "./DebugPopupLog"
 
 type WallpaperItem = {
   name: string
@@ -1058,6 +1058,35 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
     closeTimeoutId,
   })
 
+  const debugRootForGeometry = () => (popupRoot ?? popupPlacement?.get_parent?.() ?? null) as Gtk.Widget | null
+
+  const debugGeometry = (reason: string, extra: Record<string, unknown> = {}) => {
+    // DEBUG_POPUP_LOG: temporary geometry/input diagnostics for invisible wallpaper popup.
+    const root = debugRootForGeometry()
+    debugPopupLog(popupRegistryId, `geometry ${reason}`, {
+      ...extra,
+      state: debugState(),
+      root: debugWidgetSnapshot(popupRoot, root),
+      placement: debugWidgetSnapshot(popupPlacement, root),
+      revealer: debugWidgetSnapshot(popupRevealer, root),
+      frame: debugWidgetSnapshot(popupFrame, root),
+      trigger: debugWidgetSnapshot(trigger, trigger?.get_root?.() as Gtk.Widget | null),
+    })
+  }
+
+  const watchPopupWidget = (name: string, widget: Gtk.Widget | null) => {
+    // DEBUG_POPUP_LOG: temporary map/unmap/visible hooks. Remove with debug logger.
+    if (!widget) return
+
+    debugGeometry(`${name} ready`)
+
+    for (const signal of ["map", "unmap", "realize", "unrealize", "notify::visible", "notify::mapped"] as const) {
+      try {
+        ;(widget as any).connect(signal, () => debugGeometry(`${name} ${signal}`))
+      } catch {}
+    }
+  }
+
   const clearApplyingCleanupTimeout = () => {
     if (applyingCleanupTimeoutId !== 0) {
       GLib.source_remove(applyingCleanupTimeoutId)
@@ -1093,6 +1122,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
     setWindowVisible(false)
     setTriggerOpen(false)
     debugPopupLog(popupRegistryId, "finishClose after", debugState())
+    debugGeometry("finishClose after")
   }
 
   const isPopupRevealed = () => Boolean(popupRevealer?.get_reveal_child())
@@ -1158,6 +1188,15 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       else resetStalePopupState("revealer missing after open")
       popupRoot?.grab_focus()
       debugPopupLog(popupRegistryId, "open idle done", debugState())
+      debugGeometry("open idle done")
+      GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+        debugGeometry("open second idle")
+        return GLib.SOURCE_REMOVE
+      })
+      GLib.timeout_add(GLib.PRIORITY_DEFAULT, 80, () => {
+        debugGeometry("open +80ms")
+        return GLib.SOURCE_REMOVE
+      })
       return GLib.SOURCE_REMOVE
     })
   }
@@ -1194,7 +1233,14 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       keymode={Astal.Keymode.ON_DEMAND}
       anchor={FLOATING_POPUP_ANCHOR}
       $={(self) => {
+        // DEBUG_POPUP_LOG: temporary window mapping diagnostics.
+        for (const signal of ["map", "unmap", "realize", "unrealize", "notify::visible", "notify::mapped"] as const) {
+          try {
+            ;(self as any).connect(signal, () => debugGeometry(`window ${signal}`, { window: debugWidgetSnapshot(self as any, self as any) }))
+          } catch {}
+        }
         self.connect("destroy", () => {
+          debugGeometry("window destroy")
           unregisterPopupController()
           popupPlacement = null
           popupRevealer = null
@@ -1207,13 +1253,27 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
         popupRoot = self
         self.set_focusable(true)
         attachEscapeKey(self, closePopup)
+        watchPopupWidget("root", self)
       }}>
         <Gtk.GestureClick
           button={0}
           propagationPhase={Gtk.PropagationPhase.CAPTURE}
-          onReleased={(_, _nPress, x, y) => {
+          onReleased={(_, nPress, x, y) => {
             const root = popupPlacement?.get_parent?.() as Gtk.Widget | null
-            if (isPointInsideWidget(popupFrame, root, x, y)) return
+            const inside = isPointInsideWidget(popupFrame, root, x, y)
+            debugPopupLog(popupRegistryId, "root gesture released", {
+              nPress,
+              x,
+              y,
+              inside,
+              state: debugState(),
+              root: debugWidgetSnapshot(root, root),
+              frame: debugWidgetSnapshot(popupFrame, root),
+              placement: debugWidgetSnapshot(popupPlacement, root),
+              revealer: debugWidgetSnapshot(popupRevealer, root),
+            })
+            if (inside) return
+            debugPopupLog(popupRegistryId, "outside-click")
             closePopup()
           }}
         />
@@ -1224,6 +1284,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
           valign={Gtk.Align.START}
           $={(self) => {
             popupPlacement = self
+            watchPopupWidget("placement", self)
           }}
         >
           <revealer
@@ -1233,6 +1294,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
             transitionDuration={WALLPAPER_POPOVER_REVEAL_DURATION_MS}
             $={(self) => {
               popupRevealer = self
+              watchPopupWidget("revealer", self)
             }}
           >
             <box
@@ -1240,6 +1302,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
               widthRequest={POPOVER_WIDTH}
               $={(self) => {
                 popupFrame = self
+                watchPopupWidget("frame", self)
               }}
             >
               {createPopoverContent()}
@@ -1262,6 +1325,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       }}
       $={(self) => {
         trigger = self
+        watchPopupWidget("trigger", self)
 
         void syncActiveWallpaper()
         self.connect("destroy", () => {

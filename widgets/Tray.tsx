@@ -2,9 +2,10 @@ import { createBinding, For } from "ags"
 
 import Gdk from "gi://Gdk?version=4.0"
 import Gtk from "gi://Gtk?version=4.0"
+import GLib from "gi://GLib?version=2.0"
 import AstalTray from "gi://AstalTray?version=0.1"
 
-import { debugPopupLog } from "./DebugPopupLog"
+import { debugPopupLog, debugWidgetSnapshot } from "./DebugPopupLog"
 
 // DEBUG_POPUP_LOG: temporary tray diagnostics. Safe to remove together with
 // widgets/DebugPopupLog.ts after the intermittent click/popup bug is found.
@@ -27,7 +28,18 @@ function trayItemSnapshot(item: any, menu: Gtk.PopoverMenu | null, image: Gtk.Im
   try { hasActionGroup = Boolean(item.actionGroup ?? item.action_group) } catch {}
   try { visible = image?.visible } catch {}
 
-  return { id, title, tooltip, iconName, hasGicon, hasMenuModel, hasActionGroup, imageVisible: visible }
+  return {
+    id,
+    title,
+    tooltip,
+    iconName,
+    hasGicon,
+    hasMenuModel,
+    hasActionGroup,
+    imageVisible: visible,
+    menu: debugWidgetSnapshot(menu, (menu as any)?.get_parent?.() ?? undefined),
+    image: debugWidgetSnapshot(image, (image as any)?.get_root?.() ?? undefined),
+  }
 }
 
 function TrayItem({ item }: { item: any }) {
@@ -103,6 +115,14 @@ function TrayItem({ item }: { item: any }) {
           try {
             menu?.popup()
             debugPopupLog("tray", "secondary menu popup ok", trayItemSnapshot(item, menu, image))
+            GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+              debugPopupLog("tray", "secondary menu popup idle", trayItemSnapshot(item, menu, image))
+              return GLib.SOURCE_REMOVE
+            })
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 80, () => {
+              debugPopupLog("tray", "secondary menu popup +80ms", trayItemSnapshot(item, menu, image))
+              return GLib.SOURCE_REMOVE
+            })
           } catch (error) {
             debugPopupLog("tray", "secondary menu popup failed", { ...trayItemSnapshot(item, menu, image), error: String(error) })
           }
@@ -116,6 +136,12 @@ function TrayItem({ item }: { item: any }) {
           self.set_has_arrow(false)
           self.set_offset(0, 5)
           debugPopupLog("tray", "popover ready", trayItemSnapshot(item, menu, image))
+          // DEBUG_POPUP_LOG: temporary popover mapping diagnostics; remove with DebugPopupLog.
+          for (const signal of ["map", "unmap", "realize", "unrealize", "closed", "notify::visible", "notify::mapped"] as const) {
+            try {
+              ;(self as any).connect(signal, () => debugPopupLog("tray", `popover ${signal}`, trayItemSnapshot(item, menu, image)))
+            } catch {}
+          }
         }}
       />
 
