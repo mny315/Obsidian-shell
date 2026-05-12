@@ -3,14 +3,14 @@ import Pango from "gi://Pango"
 import Mpris from "gi://AstalMpris"
 
 import { With, createBinding, createComputed, createState } from "ags"
-
+import { attachShellTooltip } from "./ShellTooltip"
 
 const mpris = Mpris.get_default()
 
-type AnyPlayer = any
+type Player = any
 
 type PlayerInlineProps = {
-  player: AnyPlayer
+  player: Player
   rootClass?: string
   controlsClass?: string
   metaClass?: string
@@ -33,74 +33,78 @@ type ActivePlayerWatcherProps = {
   showMainIcon: boolean
   textCharLimit?: number
   fillWidth: boolean
-  visibleWhen?: (player: AnyPlayer | null) => boolean
-  header?: any
 }
 
-function playerList(): AnyPlayer[] {
-  try {
-    if (typeof mpris.get_players === "function") {
-      const players = mpris.get_players()
-      if (Array.isArray(players)) return players
-    }
-  } catch {}
+type PlayerAction = "previous" | "play_pause" | "next" | "raise"
 
+function players() {
   try {
-    if (Array.isArray((mpris as any).players)) return (mpris as any).players
-  } catch {}
-
-  return []
+    const list = mpris.get_players()
+    return Array.isArray(list) ? list.filter(Boolean) : []
+  } catch (error) {
+    console.error(error)
+    return []
+  }
 }
 
-function readStatus(player: AnyPlayer): unknown {
+function playbackStatus(player: Player) {
   try {
-    if (typeof player.get_playback_status === "function") return player.get_playback_status()
-  } catch {}
-
-  try {
-    return player.playbackStatus ?? player.playback_status ?? player["playback-status"]
-  } catch {}
-
-  return null
-}
-
-function normalizeStatus(status: unknown) {
-  if (status === 0) return "playing"
-  if (status === 1) return "paused"
-  if (status === 2) return "stopped"
-  return `${status ?? ""}`.toLowerCase()
+    return player.get_playback_status()
+  } catch {
+    return null
+  }
 }
 
 function isPlayingStatus(status: unknown) {
-  return normalizeStatus(status).includes("playing")
+  return status === Mpris.PlaybackStatus.PLAYING || `${status ?? ""}`.toLowerCase() === "playing"
 }
 
-function playerRank(player: AnyPlayer) {
-  const status = normalizeStatus(readStatus(player))
-  if (status.includes("playing")) return 3
-  if (status.includes("paused")) return 2
-  return 1
+function isPausedStatus(status: unknown) {
+  return status === Mpris.PlaybackStatus.PAUSED || `${status ?? ""}`.toLowerCase() === "paused"
 }
 
-function pickActivePlayer() {
-  const players = playerList()
-  let bestPlayer: AnyPlayer | null = null
-  let bestRank = -1
-
-  for (const player of players) {
-    try {
-      const available = player.available ?? player.get_available?.() ?? true
-      if (!available) continue
-
-      const rank = playerRank(player)
-      if (rank > bestRank) {
-        bestPlayer = player
-        bestRank = rank
-      }
-    } catch {}
+function isAvailable(player: Player) {
+  try {
+    return Boolean(player.get_available())
+  } catch {
+    return false
   }
+}
 
-  return bestPlayer
+function busName(player: Player) {
+  try {
+    return `${player.get_bus_name() ?? ""}`
+  } catch {
+    return ""
+  }
+}
+
+function samePlayer(left: Player | null, right: Player | null) {
+  if (!left || !right) return false
+  if (left === right) return true
+
+  const leftBusName = busName(left)
+  const rightBusName = busName(right)
+  return Boolean(leftBusName && rightBusName && leftBusName === rightBusName)
+}
+
+function currentVersionOf(player: Player | null, list: Player[]) {
+  if (!player) return null
+  return list.find((candidate) => samePlayer(candidate, player)) ?? null
+}
+
+function pickActivePlayer(previousPlayer: Player | null = null) {
+  const list = players().filter(isAvailable)
+  const previous = currentVersionOf(previousPlayer, list)
+
+  if (previous && isPlayingStatus(playbackStatus(previous))) return previous
+
+  const playing = list.find((player) => isPlayingStatus(playbackStatus(player)))
+  if (playing) return playing
+
+  if (previous && isPausedStatus(playbackStatus(previous))) return previous
+
+  return list.find((player) => isPausedStatus(playbackStatus(player))) ?? null
 }
 
 function truncateText(value: string, limit?: number) {
@@ -110,18 +114,28 @@ function truncateText(value: string, limit?: number) {
   return `${value.slice(0, limit - 1)}…`
 }
 
-function invoke(player: AnyPlayer, methods: string[]) {
-  for (const method of methods) {
-    try {
-      if (typeof player?.[method] === "function") {
-        player[method]()
-        return
-      }
-    } catch (error) {
-      console.error(error)
-      return
-    }
+function callPlayer(player: Player, action: PlayerAction) {
+  try {
+    player[action]()
+  } catch (error) {
+    console.error(error)
   }
+}
+
+function connectSignal(object: Player, signal: string, callback: () => void) {
+  try {
+    return object.connect(signal, callback)
+  } catch {
+    return 0
+  }
+}
+
+function disconnectSignal(object: Player, id: number) {
+  if (!id) return
+
+  try {
+    object.disconnect(id)
+  } catch {}
 }
 
 function ActivePlayerWatcher({
@@ -135,10 +149,9 @@ function ActivePlayerWatcher({
   showMainIcon,
   textCharLimit,
   fillWidth,
-  visibleWhen = (player) => Boolean(player),
-  header,
 }: ActivePlayerWatcherProps) {
-  const [activePlayer, setActivePlayer] = createState<AnyPlayer | null>(pickActivePlayer())
+  const initialPlayer = pickActivePlayer()
+  const [activePlayer, setActivePlayer] = createState<Player | null>(initialPlayer)
 
   return (
     <box
@@ -147,39 +160,35 @@ function ActivePlayerWatcher({
       spacing={0}
       hexpand={fillWidth}
       halign={fillWidth ? Gtk.Align.FILL : Gtk.Align.START}
-      visible={activePlayer((player) => visibleWhen(player))}
+      visible={activePlayer((player) => Boolean(player))}
       $={(self) => {
-        const managerSignalIds: Array<number> = []
-        const playerSignalIds: Array<[AnyPlayer, number]> = []
-
-        const disconnectPlayers = () => {
-          for (const [player, id] of playerSignalIds.splice(0)) {
-            try {
-              player.disconnect(id)
-            } catch {}
-          }
-        }
+        const managerSignalIds: number[] = []
+        const playerSignalIds: Array<[Player, number]> = []
+        let lastActivePlayer: Player | null = initialPlayer
 
         const sync = () => {
-          setActivePlayer(pickActivePlayer())
+          const nextPlayer = pickActivePlayer(lastActivePlayer)
+          lastActivePlayer = nextPlayer
+          setActivePlayer(nextPlayer)
+        }
+
+        const disconnectPlayers = () => {
+          for (const [player, id] of playerSignalIds.splice(0)) disconnectSignal(player, id)
         }
 
         const watchPlayers = () => {
           disconnectPlayers()
 
-          for (const player of playerList()) {
+          for (const player of players()) {
             for (const signal of [
-              "notify::playback-status",
               "notify::available",
-              "notify::title",
-              "notify::artist",
+              "notify::playback-status",
+              "notify::can-control",
               "notify::can-go-next",
               "notify::can-go-previous",
-              "notify::can-control",
             ]) {
-              try {
-                playerSignalIds.push([player, player.connect(signal, sync)])
-              } catch {}
+              const id = connectSignal(player, signal, sync)
+              if (id) playerSignalIds.push([player, id])
             }
           }
 
@@ -187,25 +196,18 @@ function ActivePlayerWatcher({
         }
 
         for (const signal of ["notify::players", "player-added", "player-closed", "items-changed"]) {
-          try {
-            managerSignalIds.push(mpris.connect(signal, watchPlayers))
-          } catch {}
+          const id = connectSignal(mpris, signal, watchPlayers)
+          if (id) managerSignalIds.push(id)
         }
 
         watchPlayers()
 
         self.connect("destroy", () => {
           disconnectPlayers()
-          for (const id of managerSignalIds) {
-            try {
-              mpris.disconnect(id)
-            } catch {}
-          }
+          for (const id of managerSignalIds) disconnectSignal(mpris, id)
         })
       }}
     >
-      {header}
-
       <With value={activePlayer}>
         {(player) => (
           player ? (
@@ -228,7 +230,7 @@ function ActivePlayerWatcher({
   )
 }
 
-export function PlayerInline({
+function PlayerInline({
   player,
   rootClass = "left-player-inline",
   controlsClass = "section section-center section-player-controls left-player-controls",
@@ -246,7 +248,7 @@ export function PlayerInline({
   const canGoPrevious = createBinding(player, "can-go-previous")
   const canGoNext = createBinding(player, "can-go-next")
   const canControl = createBinding(player, "can-control")
-  const playbackStatus = createBinding(player, "playback-status")
+  const playbackStatusBinding = createBinding(player, "playback-status")
 
   const verticalLayout = layout === "vertical"
 
@@ -263,7 +265,7 @@ export function PlayerInline({
   })
 
   const displayMeta = createComputed(() => truncateText(meta(), textCharLimit))
-  const playPauseGlyph = playbackStatus((status) => isPlayingStatus(status) ? "󰏤" : "󰐊")
+  const playPauseGlyph = playbackStatusBinding((status) => isPlayingStatus(status) ? "󰏤" : "󰐊")
 
   return (
     <box
@@ -284,7 +286,7 @@ export function PlayerInline({
           <button
             class="flat player-transport-button"
             sensitive={canGoPrevious((value) => Boolean(value))}
-            onClicked={() => invoke(player, ["previous"])}
+            onClicked={() => callPlayer(player, "previous")}
           >
             <label class="player-transport-icon" label={"󰒮"} />
           </button>
@@ -292,7 +294,7 @@ export function PlayerInline({
           <button
             class="flat player-transport-button player-transport-primary"
             sensitive={canControl((value) => Boolean(value))}
-            onClicked={() => invoke(player, ["play_pause"])}
+            onClicked={() => callPlayer(player, "play_pause")}
           >
             <label class="player-transport-icon" label={playPauseGlyph} />
           </button>
@@ -300,7 +302,7 @@ export function PlayerInline({
           <button
             class="flat player-transport-button"
             sensitive={canGoNext((value) => Boolean(value))}
-            onClicked={() => invoke(player, ["next"])}
+            onClicked={() => callPlayer(player, "next")}
           >
             <label class="player-transport-icon" label={"󰒭"} />
           </button>
@@ -318,8 +320,8 @@ export function PlayerInline({
           widthRequest={fillWidth ? -1 : (buttonWidth ?? -1)}
           hexpand={fillWidth}
           halign={fillWidth ? Gtk.Align.FILL : centerText ? Gtk.Align.CENTER : Gtk.Align.START}
-          tooltipText={meta}
-          onClicked={() => invoke(player, ["raise"])}
+          onClicked={() => callPlayer(player, "raise")}
+          $={(self) => attachShellTooltip(self, meta)}
         >
           <box
             class={centerText ? "player-main-content player-main-content-centered" : "player-main-content"}

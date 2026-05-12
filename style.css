@@ -1,4 +1,3 @@
-/* Theme tokens */
 @define-color fg rgba(255,255,255,1.00);
 @define-color glass_bg rgba(14,18,26,0.58);
 @define-color popup_surface_bg rgba(11,15,22,0.46);
@@ -16,7 +15,23 @@
 @define-color glass_toggle_on_border rgba(235,243,255,0.26);
 @define-color danger_fg rgba(255,120,120,1.00);
 
-/* Base */
+window,
+window.background,
+window.widget-popup-window,
+window.widget-popup-window.background,
+window.bar-window,
+window.bar-window.background,
+window.osd-window,
+window.osd-window.background,
+window.shell-tooltip-window,
+window.shell-tooltip-window.background {
+  background: transparent;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  border: none;
+}
+
 * {
   border: none;
   font-family: "Lexend";
@@ -54,13 +69,15 @@
   font-family: "Material Design Icons";
 }
 
-/* Bar */
 window.bar-window {
   background-color: transparent;
 }
 
-/* Shared layout helpers */
 revealer.bar-revealer,
+revealer.bar-revealer > contents,
+window.bar-window > widget,
+window.bar-window > box,
+window.bar-window > contents,
 revealer.inline-revealer,
 revealer.widget-popup-revealer,
 .right-side-wrap,
@@ -77,7 +94,7 @@ revealer.widget-popup-revealer,
 }
 
 .bar-shell {
-  margin: 8px 12px 0 12px;
+  margin: 0;
   padding: 0 3px;
   min-height: 40px;
   background: @glass_bg;
@@ -85,7 +102,7 @@ revealer.widget-popup-revealer,
   border: 1px solid @glass_border;
   border-radius: 18px;
   background-clip: padding-box;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(255,255,255,0.03),0 6px 18px rgba(0,0,0,0.18);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(255,255,255,0.03);
   transition: background-color 180ms ease,border-color 180ms ease,opacity 180ms ease;
 }
 
@@ -136,7 +153,6 @@ button.wallpaper-card:active {
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 4px 12px rgba(0,0,0,0.10);
 }
 
-/* Left modules and player */
 .left-side-wrap {
   background: transparent;
   margin-left: 0;
@@ -165,7 +181,6 @@ button.wallpaper-card:active {
   padding-right: 4px;
 }
 
-/* Left module buttons */
 .left-module-button,
 menubutton.left-module-button,
 menubutton.left-module-button > button.toggle,
@@ -211,10 +226,46 @@ menubutton.left-module-button button.toggle {
   padding: 0;
 }
 
+.clock-trigger {
+  transition: background-color 160ms ease,opacity 160ms ease;
+}
+
+.clock-trigger:hover,
+.clock-trigger:active {
+  background: @hover_bg;
+  background-image: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.clock-trigger-content {
+  min-height: 30px;
+  background: transparent;
+}
+
 .battery-indicator,
 .inline-control,
 .layout-indicator {
   min-height: 30px;
+}
+
+button.layout-indicator,
+button.layout-indicator:focus,
+button.layout-indicator:focus-visible {
+  background: transparent;
+  background-image: none;
+  border: none;
+  outline: none;
+  box-shadow: none;
+}
+
+button.layout-indicator:hover,
+button.layout-indicator:active {
+  background: @hover_bg;
+  background-image: none;
+  border: none;
+  outline: none;
+  box-shadow: none;
 }
 
 .left-status-content {
@@ -228,7 +279,6 @@ menubutton.left-module-button button.toggle {
   margin-right: 0;
 }
 
-/* Tray and right controls */
 .tray-capsule,
 .power-panel {
   padding: 0 4px;
@@ -260,7 +310,6 @@ button.network-icon-button:hover,
   -gtk-icon-size: 21px;
 }
 
-/* Right-side control sizing */
 .controls-shell {
   margin: 5px 2px;
   padding: 0 1px;
@@ -438,7 +487,6 @@ button.network-icon-button:active,
   opacity: 0.92;
 }
 
-/* Sliders */
 scale.slider-control {
   min-width: 128px;
   min-height: 20px;
@@ -498,7 +546,6 @@ scale.slider-control:active > trough > slider {
   opacity: 0;
 }
 
-/* Power menu */
 .power-toggle {
   min-width: 32px;
 }
@@ -517,7 +564,6 @@ scale.slider-control:active > trough > slider {
   min-width: 16px;
 }
 
-/* Popup surfaces */
 popover.bluetooth-popover-window contents,
 popover.network-popover-window contents,
 popover.launcher-popover-window contents,
@@ -533,13 +579,25 @@ popover.tray-menu-popover-window contents {
 }
 
 window.widget-popup-window,
+window.widget-popup-window.background,
+window.widget-popup-window > box,
 .widget-popup-root,
 .widget-popup-placement,
 .widget-popup-revealer {
+  margin: 0;
+  padding: 0;
   background: transparent;
+  background-color: transparent;
   background-image: none;
   box-shadow: none;
   border: none;
+}
+
+.widget-popup-root,
+.widget-popup-placement,
+.widget-popup-revealer {
+  min-width: 0;
+  min-height: 0;
 }
 
 box.widget-popup-frame,
@@ -547,7 +605,8 @@ box.widget-popup-frame,
 .network-popover-window,
 .bluetooth-popover-window,
 .launcher-popover-window,
-.wallpaper-popover-window {
+.wallpaper-popover-window,
+.calendar-popover-window {
   padding: 12px;
   background: @popup_surface_bg;
   color: @fg;
@@ -581,14 +640,97 @@ box.widget-popup-frame.wallpaper-popover-window,
 .wallpaper-popover,
 .wallpaper-gallery-frame,
 .wallpaper-count,
-.wallpaper-notice-wrap,
-.wallpaper-notice-label,
 .wallpaper-path,
 .wallpaper-thumb-wrap,
 button.wallpaper-refresh-button,
+button.network-vless-button,
 button.wallpaper-card {
   transition: none;
   background-image: none;
+}
+
+.calendar-popover {
+  min-width: 292px;
+  background: transparent;
+}
+
+.calendar-header {
+  min-height: 34px;
+  padding: 2px 2px 4px 2px;
+}
+
+.calendar-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.calendar-date {
+  font-size: 13px;
+  opacity: 0.82;
+}
+
+calendar.calendar-widget,
+.calendar-widget {
+  padding: 8px;
+  border-radius: 14px;
+  background: rgba(28,34,46,0.44);
+  border: 1px solid rgba(255,255,255,0.09);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.07),inset 0 -1px 0 rgba(0,0,0,0.06);
+}
+
+calendar.calendar-widget > header,
+.calendar-widget > header {
+  min-height: 30px;
+  margin-bottom: 4px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+calendar.calendar-widget button,
+.calendar-widget button {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 9px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+calendar.calendar-widget button:hover,
+.calendar-widget button:hover {
+  background: @hover_bg;
+  box-shadow: none;
+}
+
+calendar.calendar-widget grid label,
+.calendar-widget grid label {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 9px;
+  font-size: 13px;
+}
+
+calendar.calendar-widget grid label.today,
+.calendar-widget grid label.today {
+  background: @active_bg;
+  color: @fg;
+  font-weight: 600;
+}
+
+calendar.calendar-widget grid label.other-month,
+.calendar-widget grid label.other-month,
+calendar.calendar-widget grid label.week-number,
+.calendar-widget grid label.week-number {
+  opacity: 0.46;
+}
+
+calendar.calendar-widget grid label.day-name,
+.calendar-widget grid label.day-name {
+  opacity: 0.76;
+  font-weight: 500;
 }
 
 popover.network-popover-window > arrow,
@@ -602,6 +744,42 @@ popover.tray-menu-popover-window > arrow {
   background: transparent;
   border: none;
   box-shadow: none;
+}
+
+tooltip,
+tooltip.background {
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+}
+
+tooltip > box,
+window.shell-tooltip-window > box.shell-tooltip-frame,
+window.shell-tooltip-window .shell-tooltip-frame,
+.shell-tooltip-frame {
+  padding: 7px 10px;
+  margin: 0;
+  min-height: 0;
+  background: @popup_surface_bg;
+  background-color: @popup_surface_bg;
+  background-image: none;
+  border: 1px solid @popup_surface_border;
+  border-radius: 12px;
+  background-clip: padding-box;
+  box-shadow: none;
+}
+
+tooltip label,
+.shell-tooltip-label {
+  color: @fg;
+  background: transparent;
+  background-color: transparent;
+  background-image: none;
+  text-shadow: none;
 }
 
 popover.tray-menu-popover-window contents modelbutton,
@@ -626,7 +804,6 @@ popover.tray-menu-popover-window contents button:checked {
   box-shadow: none;
 }
 
-/* Network and Bluetooth popups */
 .bluetooth-popover,
 .network-popover {
   min-width: 350px;
@@ -652,7 +829,6 @@ popover.tray-menu-popover-window contents button:checked {
   font-weight: 500;
 }
 
-/* Network widget */
 .network-shell {
   margin: 0;
   padding: 0;
@@ -662,7 +838,8 @@ popover.tray-menu-popover-window contents button:checked {
 .network-trigger.widget-trigger-open,
 .bluetooth-trigger.widget-trigger-open,
 .app-launcher-trigger.widget-trigger-open,
-.wallpaper-widget-trigger.widget-trigger-open {
+.wallpaper-widget-trigger.widget-trigger-open,
+.clock-trigger.widget-trigger-open {
   background: @active_bg;
   background-image: none;
   box-shadow: none;
@@ -798,6 +975,46 @@ button.network-icon-button {
   min-height: 28px;
   padding: 0;
   border-radius: 9px;
+}
+
+button.network-vless-button {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.network-vless-icon {
+  font-size: 13px;
+}
+
+button.network-vless-button:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+button.network-vless-button:active {
+  background: rgba(255,255,255,0.09);
+}
+
+button.network-vless-button:focus,
+button.network-vless-button:focus-visible,
+button.network-vless-button:checked {
+  background: rgba(255,255,255,0.05);
+  box-shadow: none;
+  outline: none;
+}
+
+button.network-vless-button.network-vless-button-active,
+button.network-vless-button.network-vless-button-active:hover,
+button.network-vless-button.network-vless-button-active:active,
+button.network-vless-button.network-vless-button-active:focus,
+button.network-vless-button.network-vless-button-active:focus-visible {
+  background: rgba(255,255,255,0.09);
+  box-shadow: none;
+  outline: none;
 }
 
 button.network-row-button.bluetooth-pair-button {
@@ -1018,7 +1235,6 @@ menubutton.app-launcher-trigger button.toggle:focus-visible {
   letter-spacing: 0;
 }
 
-/* App launcher */
 entry.launcher-search {
   background: transparent;
   border: none;
@@ -1176,7 +1392,6 @@ entry.launcher-search {
   opacity: 1;
 }
 
-/* Wallpaper picker */
 .wallpaper-widget-trigger,
 menubutton.wallpaper-widget-trigger,
 menubutton.wallpaper-widget-trigger > button.toggle,
@@ -1252,8 +1467,7 @@ popover.wallpaper-popover-window,
 }
 
 .wallpaper-path,
-.wallpaper-empty-meta,
-.wallpaper-notice-label {
+.wallpaper-empty-meta {
   font-size: 12px;
   opacity: 0.76;
 }
@@ -1405,21 +1619,6 @@ button.wallpaper-card:disabled {
   min-height: 0;
 }
 
-.wallpaper-notice-wrap {
-  min-width: 0;
-  min-height: 0;
-  padding: 4px 8px;
-  border-radius: 8px;
-  background: rgba(28,34,46,0.42);
-  border: 1px solid rgba(255,255,255,0.07);
-}
-
-.wallpaper-notice-label {
-  min-width: 0;
-  min-height: 0;
-}
-
-/* OSD */
 window.osd-window,
 .osd-placement,
 .osd-revealer {
@@ -1442,12 +1641,13 @@ window.osd-window,
   min-width: 32px;
 }
 
-frame.osd-frame {
+box.osd-frame {
   min-width: 300px;
   background: @popup_surface_bg;
   color: @fg;
   border: 1px solid @popup_surface_border;
   border-radius: 18px;
+  background-clip: padding-box;
   box-shadow: none;
 }
 
@@ -1512,7 +1712,6 @@ scale.osd-slider > trough > slider {
   box-shadow: none;
 }
 
-/* Workspace indicator */
 .workspace-indicator-shell {
   min-height: 30px;
   margin: 5px 3px;
@@ -1594,7 +1793,6 @@ button.workspace-chip.urgent {
   opacity: 1.0;
 }
 
-/* Audio output picker */
 window.widget-popup-window box.widget-popup-frame.audio-popover-window,
 .audio-popover-window {
   padding: 12px;
@@ -1608,6 +1806,7 @@ window.widget-popup-window box.widget-popup-frame.audio-popover-window,
 
 .audio-popover {
   min-width: 392px;
+  transition: none;
 }
 
 .audio-header {
@@ -1628,6 +1827,24 @@ window.widget-popup-window box.widget-popup-frame.audio-popover-window,
 
 .audio-list-scroller {
   margin: 4px 0;
+  min-height: 96px;
+}
+
+.audio-list-scroller scrollbar,
+.audio-list-scroller scrollbar.vertical,
+.audio-list-scroller scrollbar.horizontal {
+  min-width: 0;
+  min-height: 0;
+  opacity: 0;
+}
+
+.audio-list-scroller scrollbar slider,
+.audio-list-scroller scrollbar.vertical slider,
+.audio-list-scroller scrollbar.horizontal slider {
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  opacity: 0;
 }
 
 .audio-list-inner {
@@ -1635,14 +1852,14 @@ window.widget-popup-window box.widget-popup-frame.audio-popover-window,
 }
 
 .audio-sink-row {
-  min-height: 42px;
-  padding: 0 6px 0 10px;
-  margin: 2px 0;
+  min-height: 48px;
+  padding: 2px 8px 2px 10px;
+  margin: 3px 0;
   border-radius: 12px;
   background: @panel_bg;
   border: 1px solid @panel_border;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 6px 18px rgba(0,0,0,0.14);
-  transition: background-color 200ms ease,border-color 200ms ease,opacity 200ms ease;
+  box-shadow: none;
+  transition: background-color 120ms ease,border-color 120ms ease;
 }
 
 .audio-sink-row:hover {
@@ -1667,7 +1884,7 @@ window.widget-popup-window box.widget-popup-frame.audio-popover-window,
 
 .audio-sink-main {
   min-width: 0;
-  min-height: 42px;
+  min-height: 48px;
   padding: 0;
   margin: 0;
   border: none;
@@ -1688,14 +1905,14 @@ window.widget-popup-window box.widget-popup-frame.audio-popover-window,
 }
 
 .audio-sink-body {
-  min-height: 42px;
+  min-height: 48px;
   min-width: 0;
 }
 
 .audio-sink-content {
-  min-height: 42px;
+  min-height: 48px;
   min-width: 0;
-  padding: 0;
+  padding: 1px 0 0 0;
   margin: 0;
 }
 

@@ -4,6 +4,7 @@ import GLib from "gi://GLib"
 import Gtk from "gi://Gtk?version=4.0"
 
 import { For, createState } from "ags"
+import { attachShellTooltip } from "./ShellTooltip"
 
 
 type WorkspaceChip = {
@@ -690,9 +691,9 @@ export function WorkspaceIndicator({ monitor }: { monitor: number }) {
           {(item) => (
             <button
               class={item.className}
-              tooltipText={item.tooltip}
               valign={Gtk.Align.CENTER}
               onClicked={item.onActivate}
+              $={(self) => attachShellTooltip(self, () => item.tooltip)}
             >
               <box class={item.coreClassName} valign={Gtk.Align.CENTER} halign={Gtk.Align.CENTER} />
             </button>

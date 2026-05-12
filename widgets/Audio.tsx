@@ -9,13 +9,19 @@ import { execAsync } from "ags/process"
 import { VOLUME_STEP, clamp } from "../config"
 import { suppressVolumeOsd } from "./Osd"
 import { attachEscapeKey } from "./EscapeKey"
-import { FLOATING_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, TOP_BAR_POPUP_MARGIN_TOP, isPointInsideWidget } from "./FloatingPopup"
+import {
+  DEFAULT_POPUP_Y,
+  RIGHT_TOP_POPUP_ANCHOR,
+  POPUP_SCREEN_RIGHT,
+  attachPopupFocusDismiss,
+  clipRoundedWidget,
+  placeLayerWindowAtTopRight,
+} from "./FloatingPopup"
 import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
-import { debugPopupLog, debugPopupSnapshot } from "./DebugPopupLog"
+import { attachShellTooltip } from "./ShellTooltip"
 
 const AUDIO_POPOVER_WIDTH = 392
-const AUDIO_LIST_MAX_HEIGHT = 220
-const AUDIO_POPUP_MARGIN_END = POPUP_SCREEN_RIGHT
+const AUDIO_LIST_MAX_HEIGHT = 242
 const POPOVER_REVEAL_DURATION_MS = 165
 const STATE_HOME = (() => {
   const configured = GLib.getenv("XDG_STATE_HOME")?.trim() ?? ""
@@ -31,12 +37,20 @@ const AUDIO_RESTORE_ICON = "󰗡"
 type SinkInfo = {
   id: string
   key: string
+  keys: string[]
+  persistKeys: string[]
   name: string
   rawName: string
   meta: string
   current: boolean
   icon: string
 }
+
+type ParsedSinkInfo = Omit<SinkInfo, "key" | "keys" | "persistKeys"> & {
+  nodeName: string
+}
+
+type WpctlProperties = Record<string, string>
 
 function pickIcon(volume: number, muted: boolean) {
   if (muted) return "󰖁"
@@ -82,13 +96,59 @@ function cleanupSinkName(raw: string) {
   return simplified || withoutVolume.trim() || raw.trim()
 }
 
-function buildSinkKey(id: string, rawName: string) {
-  return `${id}:${cleanupSinkName(rawName).toLowerCase()}`
+function normalizeSinkKeyPart(value: string) {
+  return value
+    .replace(/\s*\[vol:[^\]]*\]\s*/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
 }
 
-function parseSinks(status: string): SinkInfo[] {
+function stableSinkKeyBase(rawName: string) {
+  return normalizeSinkKeyPart(cleanupSinkName(rawName)) || normalizeSinkKeyPart(rawName)
+}
+
+function buildSinkKey(rawName: string, duplicateIndex: number) {
+  const base = stableSinkKeyBase(rawName)
+  return duplicateIndex > 1 ? `${base}#${duplicateIndex}` : base
+}
+
+function migrateLegacySinkKey(key: string) {
+  return key.replace(/^\d+:/, "")
+}
+
+function normalizeHiddenSinkKeys(keys: string[]) {
+  return [...new Set(keys.map((key) => migrateLegacySinkKey(key).trim()).filter(Boolean))].sort()
+}
+
+function sameStringList(left: string[], right: string[]) {
+  if (left.length !== right.length) return false
+  return left.every((item, index) => item === right[index])
+}
+
+function sinkHiddenByKeys(sink: SinkInfo, hidden: string[]) {
+  const hiddenSet = new Set(hidden)
+  return sink.keys.some((key) => hiddenSet.has(key))
+}
+
+function expandHiddenSinkKeysForCurrentSinks(hidden: string[], sinks: SinkInfo[]) {
+  const next = new Set(hidden)
+  for (const sink of sinks) {
+    if (!sinkHiddenByKeys(sink, hidden)) continue
+    for (const key of sink.persistKeys) next.add(key)
+  }
+  return [...next].sort()
+}
+
+type ParsedWpctlSinkLine = {
+  id: string
+  rawName: string
+  current: boolean
+}
+
+function parseWpctlSinkLines(status: string): ParsedWpctlSinkLine[] {
   const lines = status.split("\n")
-  const sinks: SinkInfo[] = []
+  const sinks: ParsedWpctlSinkLine[] = []
   let inSinks = false
 
   for (const line of lines) {
@@ -103,25 +163,128 @@ function parseSinks(status: string): SinkInfo[] {
     if (!match) continue
 
     const [, star = "", id = "", rawName = ""] = match
-    const name = cleanupSinkName(rawName)
-    sinks.push({
-      id,
-      key: buildSinkKey(id, rawName),
-      name,
-      rawName,
-      meta: sinkTypeText(rawName || name),
-      current: star === "*",
-      icon: sinkIcon(rawName || name),
-    })
+    sinks.push({ id, rawName: rawName.trim(), current: star === "*" })
   }
 
-  const counts = new Map<string, number>()
-  for (const sink of sinks) counts.set(sink.name, (counts.get(sink.name) ?? 0) + 1)
+  return sinks
+}
 
-  return sinks.map((sink) => ({
-    ...sink,
-    meta: (counts.get(sink.name) ?? 0) > 1 ? `${sink.meta} · ID ${sink.id}` : sink.meta,
-  }))
+function parseSinksFromStatus(status: string, nameStatus = ""): ParsedSinkInfo[] {
+  const namedById = new Map(parseWpctlSinkLines(nameStatus).map((sink) => [sink.id, sink.rawName]))
+
+  return parseWpctlSinkLines(status).map((sink) => {
+    const name = cleanupSinkName(sink.rawName)
+    const nodeName = namedById.get(sink.id) ?? ""
+    return {
+      id: sink.id,
+      name,
+      rawName: sink.rawName,
+      nodeName,
+      meta: sinkTypeText(sink.rawName || name),
+      current: sink.current,
+      icon: sinkIcon(sink.rawName || name),
+    }
+  })
+}
+
+function parseWpctlProperties(output: string): WpctlProperties {
+  const properties: WpctlProperties = {}
+
+  for (const line of output.split("\n")) {
+    const match = line.match(/^\s*(?:\*\s*)?([A-Za-z0-9_.:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|(.*?))\s*$/)
+    if (!match) continue
+    const [, key = "", doubleQuoted = "", singleQuoted = "", plain = ""] = match
+    const value = (doubleQuoted || singleQuoted || plain).trim()
+    if (key && value) properties[key] = value
+  }
+
+  return properties
+}
+
+async function getSinkProperties(id: string): Promise<WpctlProperties> {
+  try {
+    return parseWpctlProperties(String(await execAsync(["bash", "-lc", `wpctl inspect -a ${id}`])))
+  } catch {
+    return {}
+  }
+}
+
+function normalizedPropertyValue(value: string) {
+  return value
+    .replace(/\s*\[vol:[^\]]*\]\s*/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+}
+
+function sinkIdentityCandidates(sink: ParsedSinkInfo, properties: WpctlProperties) {
+  const stableKeys: string[] = []
+  const legacyKeys: string[] = []
+  const pushStable = (kind: string, value: string) => {
+    const normalized = normalizedPropertyValue(value)
+    if (normalized) stableKeys.push(`${kind}:${normalized}`)
+  }
+  const pushLegacy = (value: string) => {
+    const normalized = stableSinkKeyBase(value)
+    if (normalized) legacyKeys.push(normalized)
+  }
+
+  const nodeName = properties["node.name"] || sink.nodeName || ""
+  const deviceName = properties["device.name"] ?? ""
+  const alsaPath = properties["api.alsa.path"] ?? ""
+  const alsaCardName = properties["alsa.card_name"] ?? properties["device.product.name"] ?? ""
+  const profile = properties["device.profile.name"] ?? properties["api.alsa.pcm.stream"] ?? ""
+  const bluezAddress = properties["api.bluez5.address"] ?? properties["bluez5.address"] ?? ""
+  const deviceSerial = properties["device.serial"] ?? ""
+  const busId = properties["device.bus-id"] ?? properties["device.bus-path"] ?? properties["device.bus_path"] ?? ""
+
+  pushStable("node", nodeName)
+  if (deviceName) pushStable("device-node", [deviceName, profile || nodeName].filter(Boolean).join("|"))
+  if (alsaPath) pushStable("alsa-path", [alsaPath, profile || nodeName || alsaCardName].filter(Boolean).join("|"))
+  if (bluezAddress) pushStable("bluez", [bluezAddress, profile || nodeName].filter(Boolean).join("|"))
+  if (deviceSerial && nodeName) pushStable("serial-node", `${deviceSerial}|${nodeName}`)
+  if (busId && nodeName) pushStable("bus-node", `${busId}|${nodeName}`)
+  pushLegacy(sink.rawName)
+
+  return {
+    stableKeys: [...new Set(stableKeys.filter(Boolean))],
+    legacyKeys: [...new Set(legacyKeys.filter(Boolean))],
+  }
+}
+
+async function parseSinks(status: string, nameStatus = ""): Promise<SinkInfo[]> {
+  const sinks = parseSinksFromStatus(status, nameStatus)
+  const sinkProperties = await Promise.all(sinks.map((sink) => getSinkProperties(sink.id)))
+  const nameCounts = new Map<string, number>()
+  const legacyKeyCounts = new Map<string, number>()
+  const stableCandidateCounts = new Map<string, number>()
+  const rawCandidates = sinks.map((sink, index) => sinkIdentityCandidates(sink, sinkProperties[index] ?? {}))
+
+  for (const sink of sinks) nameCounts.set(sink.name, (nameCounts.get(sink.name) ?? 0) + 1)
+  for (const candidates of rawCandidates) {
+    for (const candidate of candidates.stableKeys) stableCandidateCounts.set(candidate, (stableCandidateCounts.get(candidate) ?? 0) + 1)
+  }
+
+  return sinks.map((sink, index) => {
+    const legacyKeyBase = stableSinkKeyBase(sink.rawName)
+    const duplicateIndex = (legacyKeyCounts.get(legacyKeyBase) ?? 0) + 1
+    legacyKeyCounts.set(legacyKeyBase, duplicateIndex)
+
+    const candidates = rawCandidates[index] ?? { stableKeys: [], legacyKeys: [] }
+    const stableKeys = candidates.stableKeys.filter((key) => (stableCandidateCounts.get(key) ?? 0) === 1)
+    const legacyKey = buildSinkKey(sink.rawName, duplicateIndex)
+    const legacyKeys = [...new Set([...candidates.legacyKeys, legacyKey].filter(Boolean))]
+    const persistKeys = stableKeys.length > 0 ? stableKeys : legacyKeys
+    const keys = [...new Set([...persistKeys, ...legacyKeys].filter(Boolean))]
+
+    return {
+      ...sink,
+      key: keys[0] ?? legacyKey,
+      keys,
+      persistKeys,
+      meta: (nameCounts.get(sink.name) ?? 0) > 1 ? `${sink.meta} · ${sink.nodeName || sink.id}` : sink.meta,
+    }
+  })
 }
 
 function parseActiveStreams(status: string) {
@@ -143,9 +306,9 @@ function parseActiveStreams(status: string) {
   return ids
 }
 
-async function getWpctlStatus() {
+async function getWpctlStatus(useNodeNames = false) {
   try {
-    return String(await execAsync(["bash", "-lc", "wpctl status"])).trim()
+    return String(await execAsync(["bash", "-lc", useNodeNames ? "wpctl status -n" : "wpctl status"])).trim()
   } catch {
     return ""
   }
@@ -192,6 +355,7 @@ export function AudioControl({
   const [windowVisible, setWindowVisible] = createState(false)
 
   let flashTimeoutId: number | null = null
+  let popupWindowRef: Gtk.Window | null = null
   let popupRevealer: Gtk.Revealer | null = null
   let popupFrame: Gtk.Box | null = null
   let popupRoot: Gtk.Box | null = null
@@ -203,22 +367,13 @@ export function AudioControl({
 
   const popupRegistryId = `audio-devices-${monitor}`
 
-  // DEBUG_POPUP_LOG: temporary state snapshot for the intermittent dead-button bug.
-  const debugState = () => debugPopupSnapshot({
-    windowVisible: windowVisible(),
-    closingPopup,
-    revealed: popupRevealer?.get_reveal_child?.(),
-    hasRoot: Boolean(popupRoot),
-    hasPlacement: Boolean(popupPlacement),
-    hasFrame: Boolean(popupFrame),
-    hasRevealer: Boolean(popupRevealer),
-    hasTrigger: Boolean(trigger),
-    triggerOpen: (trigger as any)?.has_css_class?.("widget-trigger-open"),
-    closeTimeoutId,
-    extra: { current: current(), muted: muted(), sinks: allSinks().length },
-  })
-
   const isOpen = () => Boolean(windowVisible())
+
+  const setTriggerOpen = (open: boolean) => {
+    if (!trigger) return
+    if (open) trigger.add_css_class("widget-trigger-open")
+    else trigger.remove_css_class("widget-trigger-open")
+  }
 
   const clearCloseTimeout = () => {
     if (closeTimeoutId !== 0) {
@@ -227,32 +382,29 @@ export function AudioControl({
     }
   }
 
-  const setTriggerOpen = (open: boolean) => {
-    if (!trigger) return
-    if (open) trigger.add_css_class("widget-trigger-open")
-    else trigger.remove_css_class("widget-trigger-open")
+  const syncDevicesPopupPosition = () => {
+    placeLayerWindowAtTopRight(popupWindowRef, {
+      top: DEFAULT_POPUP_Y,
+      right: POPUP_SCREEN_RIGHT,
+    })
   }
 
   const finishCloseDevicesPopup = () => {
-    debugPopupLog(popupRegistryId, "finishClose before", debugState())
     clearCloseTimeout()
     closingPopup = false
     setWindowVisible(false)
     setTriggerOpen(false)
     setShowHidden(false)
-    debugPopupLog(popupRegistryId, "finishClose after", debugState())
   }
 
   const isDevicesPopupRevealed = () => Boolean(popupRevealer?.get_reveal_child())
 
   const resetStaleDevicesPopupState = (reason: string) => {
-    debugPopupLog(popupRegistryId, "reset stale", { reason, ...debugState() })
     console.warn(`[popup:${popupRegistryId}] reset stale state: ${reason}`)
     finishCloseDevicesPopup()
   }
 
   const closeDevicesPopup = () => {
-    debugPopupLog(popupRegistryId, "close requested", debugState())
     if (!windowVisible()) {
       closingPopup = false
       setTriggerOpen(false)
@@ -291,15 +443,15 @@ export function AudioControl({
   }
 
   const syncSinks = async () => {
-    const [status, hidden] = await Promise.all([getWpctlStatus(), readHiddenSinkKeys()])
-    const parsedSinks = parseSinks(status)
-    const validKeys = new Set(parsedSinks.map((sink) => sink.key))
-    const validHidden = hidden.filter((key) => validKeys.has(key))
+    const [status, nameStatus, hidden] = await Promise.all([getWpctlStatus(), getWpctlStatus(true), readHiddenSinkKeys()])
+    const parsedSinks = await parseSinks(status, nameStatus)
+    const normalizedHidden = normalizeHiddenSinkKeys(hidden)
+    const expandedHidden = expandHiddenSinkKeysForCurrentSinks(normalizedHidden, parsedSinks)
 
     setAllSinks(parsedSinks)
-    setHiddenSinkKeys(validHidden)
+    setHiddenSinkKeys(expandedHidden)
     setStatusText(parsedSinks.length > 0 ? `${parsedSinks.length} outputs` : "No sinks found")
-    if (validHidden.length !== hidden.length) await writeHiddenSinkKeys(validHidden)
+    if (!sameStringList(expandedHidden, normalizeHiddenSinkKeys(hidden))) await writeHiddenSinkKeys(expandedHidden)
   }
 
   const syncVolume = async () => {
@@ -322,10 +474,10 @@ export function AudioControl({
   const visibleSinks = createComputed(() => {
     const hidden = hiddenSinkKeys()
     const list = allSinks()
-    if (showHidden()) return list.filter((sink) => hidden.includes(sink.key) && !sink.current)
-    return list.filter((sink) => !hidden.includes(sink.key) || sink.current)
+    if (showHidden()) return list.filter((sink) => sinkHiddenByKeys(sink, hidden))
+    return list.filter((sink) => !sinkHiddenByKeys(sink, hidden))
   })
-  const hiddenCount = createComputed(() => allSinks().filter((sink) => hiddenSinkKeys().includes(sink.key) && !sink.current).length)
+  const hiddenCount = createComputed(() => allSinks().filter((sink) => sinkHiddenByKeys(sink, hiddenSinkKeys())).length)
   const hiddenToggleVisible = createComputed(() => hiddenCount() > 0 || showHidden())
   const hiddenToggleLabel = createComputed(() => showHidden() ? "Back" : `Hidden ${hiddenCount()}`)
   const listTitle = createComputed(() => showHidden() ? `Hidden outputs ${hiddenCount()}` : "Audio outputs")
@@ -374,7 +526,8 @@ export function AudioControl({
   }
 
   const restoreSink = async (sink: SinkInfo) => {
-    const next = hiddenSinkKeys().filter((key) => key !== sink.key)
+    const sinkKeys = new Set(sink.keys)
+    const next = normalizeHiddenSinkKeys(hiddenSinkKeys().filter((key) => !sinkKeys.has(key)))
     setHiddenSinkKeys(next)
     await writeHiddenSinkKeys(next).catch(console.error)
     await syncSinks()
@@ -382,44 +535,42 @@ export function AudioControl({
 
   const hideSink = async (sink: SinkInfo) => {
     if (sink.current) return
-    const next = [...new Set([...hiddenSinkKeys(), sink.key])]
+    const next = normalizeHiddenSinkKeys([...hiddenSinkKeys(), ...sink.persistKeys])
     setHiddenSinkKeys(next)
     await writeHiddenSinkKeys(next).catch(console.error)
     await syncSinks()
   }
 
   const openDevicesPopup = () => {
-    debugPopupLog(popupRegistryId, "open requested", debugState())
     if (windowVisible()) {
       if (closingPopup || !isDevicesPopupRevealed()) resetStaleDevicesPopupState("open requested while visible but not revealed")
-      else return
+      else {
+        syncDevicesPopupPosition()
+        return
+      }
     }
 
     closeOtherPopups(popupRegistryId)
     clearCloseTimeout()
     closingPopup = false
+    syncDevicesPopupPosition()
     setWindowVisible(true)
     setTriggerOpen(true)
     setShowHidden(false)
     void refresh()
-    debugPopupLog(popupRegistryId, "open state set", debugState())
 
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-      debugPopupLog(popupRegistryId, "open idle", debugState())
       if (!windowVisible() || closingPopup) return GLib.SOURCE_REMOVE
+      syncDevicesPopupPosition()
       if (popupRevealer) popupRevealer.revealChild = true
       else resetStaleDevicesPopupState("revealer missing after open")
       popupRoot?.grab_focus()
-      debugPopupLog(popupRegistryId, "open idle done", debugState())
       return GLib.SOURCE_REMOVE
     })
   }
 
   const toggleDevicesPopup = () => {
-    debugPopupLog(popupRegistryId, "right-click/toggle-devices", debugState())
     if (closingPopup) {
-      resetStaleDevicesPopupState("toggle requested while closing")
-      openDevicesPopup()
       return
     }
 
@@ -463,9 +614,10 @@ export function AudioControl({
           <Gtk.ScrolledWindow
             class="network-list-scroller audio-list-scroller"
             hscrollbarPolicy={Gtk.PolicyType.NEVER}
-            vscrollbarPolicy={Gtk.PolicyType.AUTOMATIC}
+            vscrollbarPolicy={Gtk.PolicyType.NEVER}
             kineticScrolling
             propagateNaturalHeight
+            minContentHeight={96}
             maxContentHeight={AUDIO_LIST_MAX_HEIGHT}
           >
             <box class="network-list-inner audio-list-inner" orientation={Gtk.Orientation.VERTICAL} spacing={0}>
@@ -489,10 +641,10 @@ export function AudioControl({
                   </button>
                   <button
                     class="flat network-icon-button audio-sink-side-button"
-                    tooltipText={showHidden() ? "Restore output" : "Hide output"}
                     visible={showHidden() || !sink.current}
                     onClicked={() => (showHidden() ? restoreSink(sink) : hideSink(sink))}
                     valign={Gtk.Align.CENTER}
+                    $={(self) => attachShellTooltip(self, () => showHidden() ? "Restore output" : "Hide output")}
                   >
                     <label class="network-icon-button-label" label={showHidden() ? AUDIO_RESTORE_ICON : AUDIO_HIDE_ICON} />
                   </button>
@@ -519,13 +671,21 @@ export function AudioControl({
     <window
       visible={windowVisible}
       monitor={monitor}
+      defaultWidth={-1}
+      defaultHeight={-1}
+      resizable={false}
       namespace="obsidian-shell-audio-devices"
       class="widget-popup-window audio-popup-window"
       exclusivity={Astal.Exclusivity.IGNORE}
       keymode={Astal.Keymode.ON_DEMAND}
-      anchor={FLOATING_POPUP_ANCHOR}
+      anchor={RIGHT_TOP_POPUP_ANCHOR}
       $={(self) => {
+        popupWindowRef = self
+        try {
+          self.set_default_size(-1, -1)
+        } catch {}
         self.connect("destroy", () => {
+          popupWindowRef = null
           popupRevealer = null
           popupFrame = null
           popupRoot = null
@@ -533,29 +693,18 @@ export function AudioControl({
         })
       }}
     >
-      <box class="widget-popup-root" hexpand vexpand $={(self) => {
+      <box class="widget-popup-root" $={(self) => {
         popupRoot = self
         self.set_focusable(true)
+        attachPopupFocusDismiss(self, closeDevicesPopup)
         attachEscapeKey(self, closeDevicesPopup)
       }}>
-        <Gtk.GestureClick
-          button={0}
-          propagationPhase={Gtk.PropagationPhase.CAPTURE}
-          onReleased={(_, _nPress, x, y) => {
-            const root = popupPlacement?.get_parent?.() as Gtk.Widget | null
-            if (isPointInsideWidget(popupFrame, root, x, y)) return
-            closeDevicesPopup()
-          }}
-        />
-
         <box
           class="widget-popup-placement"
-          halign={Gtk.Align.END}
+          halign={Gtk.Align.START}
           valign={Gtk.Align.START}
           $={(self) => {
             popupPlacement = self
-            self.set_margin_top(TOP_BAR_POPUP_MARGIN_TOP)
-            self.set_margin_end(AUDIO_POPUP_MARGIN_END)
           }}
         >
           <revealer
@@ -565,7 +714,10 @@ export function AudioControl({
             transitionDuration={POPOVER_REVEAL_DURATION_MS}
             $={(self) => (popupRevealer = self)}
           >
-            <box class="widget-popup-frame network-popover-window audio-popover-window" widthRequest={AUDIO_POPOVER_WIDTH} $={(self) => (popupFrame = self)}>
+            <box class="widget-popup-frame network-popover-window audio-popover-window" widthRequest={AUDIO_POPOVER_WIDTH} $={(self) => {
+              clipRoundedWidget(self)
+              popupFrame = self
+            }}>
               {popupContent}
             </box>
           </revealer>
@@ -591,9 +743,9 @@ export function AudioControl({
         })
         self.connect("destroy", () => {
           unregisterPopupController()
-          clearCloseTimeout()
           if (refreshTimer) GLib.source_remove(refreshTimer)
           if (flashTimeoutId) GLib.source_remove(flashTimeoutId)
+          clearCloseTimeout()
           closingPopup = false
           setWindowVisible(false)
           setTriggerOpen(false)
@@ -611,7 +763,7 @@ export function AudioControl({
         $={bindRevealer}
       >
         <box class="inline-panel slider-panel" spacing={8} hexpand={false} halign={Gtk.Align.START} valign={Gtk.Align.CENTER}>
-          <button class="icon-button panel-icon-button flat" valign={Gtk.Align.CENTER} tooltipText={muteTooltip} onClicked={toggleMute}>
+          <button class="icon-button panel-icon-button flat" valign={Gtk.Align.CENTER} onClicked={toggleMute} $={(self) => attachShellTooltip(self, muteTooltip)}>
             <label class="module-icon" label={icon} />
           </button>
           <slider class="slider-control" hexpand min={0} max={1} step={0.01} value={current} onChangeValue={({ value }) => setVolume(value)} />
@@ -619,10 +771,12 @@ export function AudioControl({
         </box>
       </revealer>
 
-      <button class="icon-button quick-toggle audio-trigger flat" valign={Gtk.Align.CENTER} tooltipText={triggerTooltip} onClicked={() => {
-        debugPopupLog(popupRegistryId, "left-click volume toggle", debugState())
+      <button class="icon-button quick-toggle audio-trigger flat" valign={Gtk.Align.CENTER} onClicked={() => {
         onToggle()
-      }} $={(self) => (trigger = self)}>
+      }} $={(self) => {
+        trigger = self
+        attachShellTooltip(self, triggerTooltip)
+      }}>
         <Gtk.GestureClick button={3} propagationPhase={Gtk.PropagationPhase.CAPTURE} onReleased={toggleDevicesPopup} />
         <Gtk.EventControllerScroll
           flags={Gtk.EventControllerScrollFlags.VERTICAL}

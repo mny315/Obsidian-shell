@@ -3,6 +3,7 @@ import Gtk from "gi://Gtk?version=4.0"
 
 import { createState } from "ags"
 import { execAsync } from "ags/process"
+import { attachShellTooltip } from "./ShellTooltip"
 
 type BatterySnapshot = {
   available: boolean
@@ -56,8 +57,8 @@ export function BatteryStatus() {
       spacing={0}
       visible={visible}
       valign={Gtk.Align.CENTER}
-      tooltipText={tooltip}
       $={(self) => {
+        attachShellTooltip(self, tooltip)
         const syncBattery = async () => {
           try {
             const snapshot = await readBatterySnapshot()

@@ -7,9 +7,9 @@ import { Astal } from "ags/gtk4"
 import { For, With, createBinding, createComputed, createState } from "ags"
 import { timeout } from "ags/time"
 import { attachEscapeKey } from "./EscapeKey"
-import { FLOATING_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, TOP_BAR_POPUP_MARGIN_TOP, isPointInsideWidget } from "./FloatingPopup"
+import { RIGHT_TOP_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, attachPopupFocusDismiss, clipRoundedWidget, placeLayerWindowAtTopRight } from "./FloatingPopup"
 import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
-import { debugPopupLog, debugPopupSnapshot } from "./DebugPopupLog"
+import { attachShellTooltip } from "./ShellTooltip"
 
 const bluetooth = Bluetooth.get_default()
 
@@ -17,12 +17,12 @@ const BLUEZ_SERVICE = "org.bluez"
 const BLUEZ_AGENT_MANAGER_PATH = "/org/bluez"
 const BLUEZ_AGENT_MANAGER_IFACE = "org.bluez.AgentManager1"
 const BLUEZ_DEVICE_IFACE = "org.bluez.Device1"
+const DBUS_PROPERTIES_IFACE = "org.freedesktop.DBus.Properties"
 const BLUEZ_AGENT_PATH = "/io/astal/BluetoothAgent"
 const BLUEZ_AGENT_CAPABILITY = "NoInputNoOutput"
 
 const POPOVER_REVEAL_DURATION_MS = 165
 const BLUETOOTH_POPOVER_WIDTH = 392
-const BLUETOOTH_POPUP_MARGIN_END = POPUP_SCREEN_RIGHT + 10
 const BLUETOOTH_DISCOVERY_TIMEOUT_MS = 10000
 
 const BLUEZ_AGENT_XML = `
@@ -185,6 +185,35 @@ async function waitForConnectionState(device: Bluetooth.Device, expected: boolea
   return Boolean(device.connected) === expected
 }
 
+async function waitForStableConnectionState(device: Bluetooth.Device, expected: boolean, timeoutMs = 8000, stableMs = 2000, intervalMs = 150) {
+  const deadline = Date.now() + timeoutMs
+  let stableSince = 0
+
+  while (Date.now() < deadline) {
+    if (Boolean(device.connected) === expected) {
+      if (stableSince === 0) stableSince = Date.now()
+      if (Date.now() - stableSince >= stableMs) return true
+    } else {
+      stableSince = 0
+    }
+
+    await sleep(intervalMs)
+  }
+
+  return false
+}
+
+async function waitForPairState(device: Bluetooth.Device, timeoutMs = 5000, intervalMs = 150) {
+  const deadline = Date.now() + timeoutMs
+
+  while (Date.now() < deadline) {
+    if (canConnectWithoutPair(device)) return true
+    await sleep(intervalMs)
+  }
+
+  return canConnectWithoutPair(device)
+}
+
 function deviceSortScore(device: Bluetooth.Device) {
   if (device.connected) return 0
   if (isKnownDevice(device)) return 1
@@ -208,7 +237,6 @@ type NoticeOptions = {
 }
 
 type PairableDevice = Bluetooth.Device & {
-  pair?: () => Promise<void> | void
   pair_device?: () => Promise<void> | void
   bonded?: boolean
 }
@@ -300,12 +328,25 @@ async function callBluezAgentManager(method: string, parameters: GLib.Variant) {
   })
 }
 
-function isAlreadyExistsError(error: unknown) {
+function hasDbusError(error: unknown, name: string, messagePattern?: RegExp) {
   const remoteName = getDbusRemoteErrorName(error)
-  if (remoteName === "org.bluez.Error.AlreadyExists") return true
+  if (remoteName === name) return true
 
-  const message = getReadableDbusErrorMessage(error)
-  return message.includes("AlreadyExists") || message.includes("already exists")
+  if (!messagePattern) return false
+  return messagePattern.test(getReadableDbusErrorMessage(error))
+}
+
+function isAlreadyExistsError(error: unknown) {
+  return hasDbusError(error, "org.bluez.Error.AlreadyExists", /AlreadyExists|already exists/)
+}
+
+function isAlreadyConnectedError(error: unknown) {
+  return hasDbusError(error, "org.bluez.Error.AlreadyConnected", /AlreadyConnected|already connected/)
+}
+
+function isTransientConnectError(error: unknown) {
+  const remoteName = getDbusRemoteErrorName(error)
+  return remoteName === "org.bluez.Error.InProgress" || remoteName === "org.bluez.Error.NotReady" || remoteName === "org.bluez.Error.Failed"
 }
 
 async function ensureBluetoothAgent() {
@@ -336,9 +377,7 @@ async function ensureBluetoothAgent() {
           "RequestDefaultAgent",
           new GLib.Variant("(o)", [BLUEZ_AGENT_PATH]),
         )
-      } catch {
-
-      }
+      } catch {}
 
       bluetoothAgentState.lastHardError = null
       return null
@@ -368,7 +407,7 @@ function deviceObjectPath(device: Bluetooth.Device) {
   return `${adapterPath}/dev_${address}`
 }
 
-function callBluezDeviceMethod(device: Bluetooth.Device, method: string, parameters: GLib.Variant | null = null) {
+function callBluezObjectMethod(device: Bluetooth.Device, iface: string, method: string, parameters: GLib.Variant | null = null) {
   const objectPath = deviceObjectPath(device)
   if (!objectPath) return Promise.reject(new Error(`Could not resolve BlueZ object path for ${deviceName(device)}`))
 
@@ -376,7 +415,7 @@ function callBluezDeviceMethod(device: Bluetooth.Device, method: string, paramet
     connection.call(
       BLUEZ_SERVICE,
       objectPath,
-      BLUEZ_DEVICE_IFACE,
+      iface,
       method,
       parameters,
       null,
@@ -394,12 +433,52 @@ function callBluezDeviceMethod(device: Bluetooth.Device, method: string, paramet
   }))
 }
 
+function callBluezDeviceMethod(device: Bluetooth.Device, method: string, parameters: GLib.Variant | null = null) {
+  return callBluezObjectMethod(device, BLUEZ_DEVICE_IFACE, method, parameters)
+}
+
+async function setBluezDeviceProperty(device: Bluetooth.Device, property: string, signature: string, value: unknown) {
+  await callBluezObjectMethod(
+    device,
+    DBUS_PROPERTIES_IFACE,
+    "Set",
+    new GLib.Variant("(ssv)", [BLUEZ_DEVICE_IFACE, property, new GLib.Variant(signature, value)]),
+  )
+}
+
 async function connectDeviceAsync(device: Bluetooth.Device) {
   await callBluezDeviceMethod(device, "Connect")
 }
 
 async function disconnectDeviceAsync(device: Bluetooth.Device) {
   await callBluezDeviceMethod(device, "Disconnect")
+}
+
+async function trustDevice(device: Bluetooth.Device) {
+  if (device.trusted) return
+  await setBluezDeviceProperty(device, "Trusted", "b", true)
+}
+
+async function connectDeviceWithRetry(device: Bluetooth.Device, forceConnect = false) {
+  let lastError: unknown = null
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      if (forceConnect || !device.connected) await connectDeviceAsync(device)
+      lastError = null
+    } catch (error) {
+      if (!isAlreadyConnectedError(error)) {
+        lastError = error
+        if (!isTransientConnectError(error) && attempt >= 1) throw error
+      }
+    }
+
+    if (await waitForStableConnectionState(device, true, 6500, 2200)) return true
+    await sleep(700)
+  }
+
+  if (lastError) throw lastError
+  return false
 }
 
 async function pairDevice(device: Bluetooth.Device) {
@@ -418,11 +497,13 @@ function BluetoothDeviceRow({
   getAdapter,
   setNotice,
   requestDeviceRefresh,
+  requestAdapterRefresh,
 }: {
   device: Bluetooth.Device
   getAdapter: () => Bluetooth.Adapter | null
   setNotice: (v: Notice | null, options?: NoticeOptions) => void
   requestDeviceRefresh: (delay?: number) => void
+  requestAdapterRefresh: (delay?: number) => void
 }) {
   const alias = createBinding(device, "alias")
   const icon = createBinding(device, "icon")
@@ -439,7 +520,6 @@ function BluetoothDeviceRow({
   const busy = createComputed(() => pairing() || connecting() || pendingConnected() !== null)
   const removable = createComputed(() => Boolean(device.address))
   const known = createComputed(() => Boolean(connected() || paired() || trusted() || isBonded(device)))
-  const canConnect = createComputed(() => Boolean(connected() || paired() || isBonded(device)))
   const showPairButton = createComputed(() => !connected() && !paired() && !isBonded(device))
 
   const meta = createComputed(() => {
@@ -457,22 +537,6 @@ function BluetoothDeviceRow({
     if (b) parts.push(b)
     return parts.join(" • ")
   })
-
-  const pairOnly = async () => {
-    try {
-      setPairing(true)
-      await ensureBluetoothAgent()
-      await pairDevice(device)
-      requestDeviceRefresh(150)
-      await sleep(900)
-      requestDeviceRefresh(0)
-    } catch (e) {
-      setNotice({ text: formatError(e) })
-      requestDeviceRefresh()
-    } finally {
-      setPairing(false)
-    }
-  }
 
   const toggleConnection = async (targetConnected = !connected(), onSettled?: () => void) => {
     try {
@@ -494,24 +558,31 @@ function BluetoothDeviceRow({
 
       await ensureBluetoothAgent()
 
+      const adapter = getAdapter()
+      if (adapter?.discovering) {
+        adapter.stop_discovery()
+        requestAdapterRefresh(0)
+      }
+
       const needsPair = !canConnectWithoutPair(device)
 
       if (needsPair) {
         setPairing(true)
         await pairDevice(device)
         requestDeviceRefresh(150)
-        await sleep(900)
+        await waitForPairState(device)
+        await trustDevice(device)
+        requestDeviceRefresh(150)
+        await sleep(700)
+      } else {
+        await trustDevice(device).catch(() => null)
       }
 
-      if (!device.connected) {
-        await connectDeviceAsync(device)
-      }
-
+      const didConnect = await connectDeviceWithRetry(device, needsPair)
       requestDeviceRefresh(120)
 
-      const didConnect = await waitForConnectionState(device, true, 3000)
       if (!didConnect) {
-        setNotice({ text: `${deviceName(device)} did not connect` })
+        setNotice({ text: needsPair ? `${deviceName(device)} paired, but did not stay connected` : `${deviceName(device)} did not stay connected` })
         requestDeviceRefresh()
       }
     } catch (e) {
@@ -550,11 +621,11 @@ function BluetoothDeviceRow({
           visible={showPairButton}
           sensitive={busy((v) => !v)}
           valign={Gtk.Align.CENTER}
+          $={(self) => {
+            self.set_focusable(false)
+          }}
           onClicked={() => {
-            GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-              void pairOnly()
-              return GLib.SOURCE_REMOVE
-            })
+            runDetachedConnection(true)
           }}
         >
           <label class="bluetooth-pair-button-label" label={pairing((v) => v ? "Pairing…" : "Pair")} />
@@ -640,28 +711,13 @@ export function BluetoothControl({
   monitor: 0,
 }) {
   let trigger: Gtk.Button | null = null
-  let popupPlacement: Gtk.Box | null = null
+  let popupWindowRef: Gtk.Window | null = null
   let popupRevealer: Gtk.Revealer | null = null
-  let popupFrame: Gtk.Box | null = null
   let popupRoot: Gtk.Box | null = null
   let closeTimeoutId = 0
   let closingPopup = false
   const [windowVisible, setWindowVisible] = createState(false)
   const popupRegistryId = `bluetooth:${monitor}`
-
-  // DEBUG_POPUP_LOG: temporary state snapshot for the intermittent dead-button bug.
-  const debugState = () => debugPopupSnapshot({
-    windowVisible: windowVisible(),
-    closingPopup,
-    revealed: popupRevealer?.get_reveal_child?.(),
-    hasRoot: Boolean(popupRoot),
-    hasPlacement: Boolean(popupPlacement),
-    hasFrame: Boolean(popupFrame),
-    hasRevealer: Boolean(popupRevealer),
-    hasTrigger: Boolean(trigger),
-    triggerOpen: (trigger as any)?.has_css_class?.("widget-trigger-open"),
-    closeTimeoutId,
-  })
 
   let deviceRefreshTimer: { cancel: () => void } | null = null
   let adapterRefreshTimer: { cancel: () => void } | null = null
@@ -786,25 +842,27 @@ export function BluetoothControl({
     else trigger.remove_css_class("widget-trigger-open")
   }
 
+  const syncPopupPosition = () => {
+    placeLayerWindowAtTopRight(popupWindowRef, {
+      right: POPUP_SCREEN_RIGHT + 10,
+    })
+  }
+
   const finishClosePopup = () => {
-    debugPopupLog(popupRegistryId, "finishClose before", debugState())
     clearCloseTimeout()
     closingPopup = false
     setWindowVisible(false)
     setTriggerOpen(false)
-    debugPopupLog(popupRegistryId, "finishClose after", debugState())
   }
 
   const isPopupRevealed = () => Boolean(popupRevealer?.get_reveal_child())
 
   const resetStalePopupState = (reason: string) => {
-    debugPopupLog(popupRegistryId, "reset stale", { reason, ...debugState() })
     console.warn(`[popup:${popupRegistryId}] reset stale state: ${reason}`)
     finishClosePopup()
   }
 
   const closePopup = () => {
-    debugPopupLog(popupRegistryId, "close requested", debugState())
     if (!windowVisible()) {
       closingPopup = false
       setTriggerOpen(false)
@@ -835,10 +893,12 @@ export function BluetoothControl({
   const unregisterPopupController = registerPopupController(popupRegistryId, { close: closePopup })
 
   const openPopup = () => {
-    debugPopupLog(popupRegistryId, "open requested", debugState())
     if (windowVisible()) {
       if (closingPopup || !isPopupRevealed()) resetStalePopupState("open requested while visible but not revealed")
-      else return
+      else {
+        syncPopupPosition()
+        return
+      }
     }
 
     closeOtherPopups(popupRegistryId)
@@ -851,23 +911,18 @@ export function BluetoothControl({
     requestDeviceRefresh(0)
     requestAdapterRefresh(0)
     scheduleDiscoveryTimeout(readAdapters()[0] ?? null)
-    debugPopupLog(popupRegistryId, "open state set", debugState())
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-      debugPopupLog(popupRegistryId, "open idle", debugState())
       if (!windowVisible() || closingPopup) return GLib.SOURCE_REMOVE
+      syncPopupPosition()
       if (popupRevealer) popupRevealer.revealChild = true
       else resetStalePopupState("revealer missing after open")
       popupRoot?.grab_focus()
-      debugPopupLog(popupRegistryId, "open idle done", debugState())
       return GLib.SOURCE_REMOVE
     })
   }
 
   const togglePopup = () => {
-    debugPopupLog(popupRegistryId, "bar-click/toggle", debugState())
     if (closingPopup) {
-      resetStalePopupState("toggle requested while closing")
-      openPopup()
       return
     }
 
@@ -1008,6 +1063,7 @@ export function BluetoothControl({
                     getAdapter={() => adapterList()[0] ?? null}
                     setNotice={presentNotice}
                     requestDeviceRefresh={requestDeviceRefresh}
+                    requestAdapterRefresh={requestAdapterRefresh}
                   />
                 )}
               </For>
@@ -1018,7 +1074,7 @@ export function BluetoothControl({
 
       <With value={notice}>
         {(value) => value && (
-          <label class="network-section-title network-notice" xalign={0} tooltipText={value.text} ellipsize={Pango.EllipsizeMode.END} maxWidthChars={42} lines={1} wrap={false} label={value.text} />
+          <label class="network-section-title network-notice" xalign={0} ellipsize={Pango.EllipsizeMode.END} maxWidthChars={42} lines={1} wrap={false} label={value.text} $={(self) => attachShellTooltip(self, () => value.text)} />
         )}
       </With>
     </box>
@@ -1028,44 +1084,36 @@ export function BluetoothControl({
     <window
       visible={windowVisible}
       monitor={monitor}
+      defaultWidth={-1}
+      defaultHeight={-1}
+      resizable={false}
       namespace="obsidian-shell-bluetooth"
       class="widget-popup-window bluetooth-popup-window"
       exclusivity={Astal.Exclusivity.IGNORE}
       keymode={Astal.Keymode.ON_DEMAND}
-      anchor={FLOATING_POPUP_ANCHOR}
+      anchor={RIGHT_TOP_POPUP_ANCHOR}
       $={(self) => {
+        popupWindowRef = self
+        try {
+          self.set_default_size(-1, -1)
+        } catch {}
         self.connect("destroy", () => {
-          popupPlacement = null
+          popupWindowRef = null
           popupRevealer = null
-          popupFrame = null
           popupRoot = null
         })
       }}
     >
-      <box class="widget-popup-root" hexpand vexpand $={(self) => {
+      <box class="widget-popup-root" $={(self) => {
         popupRoot = self
         self.set_focusable(true)
+        attachPopupFocusDismiss(self, closePopup)
         attachEscapeKey(self, closePopup)
       }}>
-        <Gtk.GestureClick
-          button={0}
-          propagationPhase={Gtk.PropagationPhase.CAPTURE}
-          onReleased={(_, _nPress, x, y) => {
-            const root = popupPlacement?.get_parent?.() as Gtk.Widget | null
-            if (isPointInsideWidget(popupFrame, root, x, y)) return
-            closePopup()
-          }}
-        />
-
         <box
           class="widget-popup-placement"
-          halign={Gtk.Align.END}
+          halign={Gtk.Align.START}
           valign={Gtk.Align.START}
-          $={(self) => {
-            popupPlacement = self
-            self.set_margin_top(TOP_BAR_POPUP_MARGIN_TOP)
-            self.set_margin_end(BLUETOOTH_POPUP_MARGIN_END)
-          }}
         >
           <revealer
             class="widget-popup-revealer"
@@ -1074,7 +1122,9 @@ export function BluetoothControl({
             transitionDuration={POPOVER_REVEAL_DURATION_MS}
             $={(self) => (popupRevealer = self)}
           >
-            <box class="widget-popup-frame bluetooth-popover-window" widthRequest={BLUETOOTH_POPOVER_WIDTH} $={(self) => (popupFrame = self)}>
+            <box class="widget-popup-frame bluetooth-popover-window" widthRequest={BLUETOOTH_POPOVER_WIDTH} $={(self) => {
+              clipRoundedWidget(self)
+            }}>
               {popoverContent}
             </box>
           </revealer>
@@ -1087,10 +1137,10 @@ export function BluetoothControl({
 
   return (
     <box class="network-shell" valign={Gtk.Align.CENTER}>
-      <button class="bluetooth-trigger" valign={Gtk.Align.CENTER} tooltipText={triggerTooltip} onClicked={() => {
-        debugPopupLog(popupRegistryId, "trigger onClicked", debugState())
+      <button class="bluetooth-trigger" valign={Gtk.Align.CENTER} onClicked={() => {
         togglePopup()
       }} $={(self) => {
+        attachShellTooltip(self, triggerTooltip)
         trigger = self
 
         void ensureBluetoothAgent()

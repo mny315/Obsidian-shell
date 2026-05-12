@@ -8,15 +8,19 @@ import { createComputed, createState } from "ags"
 import { execAsync } from "ags/process"
 import { timeout } from "ags/time"
 import { attachEscapeKey } from "./EscapeKey"
-import { FLOATING_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, TOP_BAR_POPUP_MARGIN_TOP, isPointInsideWidget } from "./FloatingPopup"
+import { RIGHT_TOP_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, attachPopupFocusDismiss, clipRoundedWidget, placeLayerWindowAtTopRight } from "./FloatingPopup"
 import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
-import { debugPopupLog, debugPopupSnapshot } from "./DebugPopupLog"
+import { attachShellTooltip } from "./ShellTooltip"
 
 const POPOVER_REVEAL_DURATION_MS = 165
 const NETWORK_POPOVER_WIDTH = 392
-const NETWORK_POPUP_MARGIN_END = POPUP_SCREEN_RIGHT
+const NETWORK_STARTUP_DELAY_MS = 700
+const WIFI_DEVICE_RETRY_DELAY_MS = 350
+const WIFI_DEVICE_RETRY_LIMIT = 12
+const WIFI_SCAN_SETTLE_DELAY_MS = 1600
 const BAR_WIFI_ICON = "󰤨"
 const BAR_WIFI_OFF_ICON = "󰖪"
+const VLESS_SERVICE_NAME = "sing-box.service"
 
 type WifiNetwork = {
   inUse: boolean
@@ -50,6 +54,42 @@ type NoticeOptions = {
 type SignalSource = {
   connect: (signal: string, callback: () => void) => number
   disconnect: (id: number) => void
+}
+
+type AstalAccessPoint = SignalSource & {
+  ssid?: string | null
+  strength?: number
+  requiresPassword?: boolean
+  requires_password?: boolean
+  bssid?: string
+  get_path?: () => string
+  getPath?: () => string
+}
+
+type AstalWifi = SignalSource & {
+  enabled?: boolean
+  accessPoints?: AstalAccessPoint[]
+  access_points?: AstalAccessPoint[]
+  activeAccessPoint?: AstalAccessPoint | null
+  active_access_point?: AstalAccessPoint | null
+  ssid?: string | null
+  strength?: number
+  scan?: () => void
+  get_access_points?: () => unknown
+  get_active_access_point?: () => AstalAccessPoint | null
+}
+
+type AstalNetworkService = SignalSource & {
+  client?: SignalSource
+  wifi?: AstalWifi | null
+  get_client?: () => SignalSource | null
+  get_wifi?: () => AstalWifi | null
+}
+
+function waitMs(ms: number) {
+  return new Promise<void>((resolve) => {
+    timeout(ms, () => resolve())
+  })
 }
 
 function errorText(error: unknown) {
@@ -87,35 +127,170 @@ async function isNetworkManagerReady() {
   return Boolean(await execText(["nmcli", "-t", "-f", "STATE", "general", "status"]))
 }
 
-async function getWifiEnabled() {
+async function getSystemdActiveState(unit: string) {
+  return (await execText(["systemctl", "show", unit, "--property=ActiveState", "--value"])).trim()
+}
+
+async function getVlessServiceActive() {
+  return (await getSystemdActiveState(VLESS_SERVICE_NAME)) === "active"
+}
+
+function appendServiceMeta(base: string, wireGuardActive: boolean, vlessActive: boolean) {
+  const markers = [vlessActive ? "VLESS" : "", wireGuardActive ? "WireGuard" : ""].filter(Boolean)
+  return markers.length > 0 ? `${base} • ${markers.join(" • ")}` : base
+}
+
+async function getNmcliWifiEnabled() {
   const out = (await execText(["nmcli", "-t", "-f", "WIFI", "general", "status"])).toLowerCase()
   return out === "enabled"
 }
 
-function nmSecurityText(value: string) {
-  const security = value.trim()
-  return !security || security === "--" ? "open" : "secured"
+function getAstalNetwork() {
+  try {
+    return AstalNetwork.get_default() as AstalNetworkService
+  } catch (error) {
+    console.warn(`AstalNetwork unavailable: ${errorText(error)}`)
+    return null
+  }
 }
 
-async function getWifiNetworks(savedConnections: Map<string, string[]>) {
-  const out = await execText(["nmcli", "-t", "-e", "yes", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "no"])
-  return uniqueWifiNetworks(out.split("\n").map((line) => {
-    const [active = "", ssid = "", signal = "0", security = ""] = splitNmcliEscaped(line)
+function getAstalWifi() {
+  const network = getAstalNetwork()
+  return network?.get_wifi?.() ?? network?.wifi ?? null
+}
+
+function getAstalClient() {
+  const network = getAstalNetwork()
+  return network?.get_client?.() ?? network?.client ?? null
+}
+
+function getAstalWifiEnabled(wifi = getAstalWifi()) {
+  if (!wifi || typeof wifi.enabled !== "boolean") return null
+  return wifi.enabled
+}
+
+async function getWifiEnabled() {
+  const astalEnabled = getAstalWifiEnabled()
+  if (astalEnabled !== null) return astalEnabled
+  return getNmcliWifiEnabled()
+}
+
+function setAstalWifiEnabled(enabled: boolean) {
+  const wifi = getAstalWifi()
+  if (!wifi) return false
+  try {
+    wifi.enabled = enabled
+    return true
+  } catch (error) {
+    console.warn(`Astal Wi‑Fi toggle failed: ${errorText(error)}`)
+    return false
+  }
+}
+
+function accessPointPath(accessPoint: AstalAccessPoint | null | undefined) {
+  if (!accessPoint) return ""
+  try {
+    return accessPoint.get_path?.() ?? accessPoint.getPath?.() ?? ""
+  } catch {
+    return ""
+  }
+}
+
+function accessPointSsid(accessPoint: AstalAccessPoint | null | undefined) {
+  return accessPoint?.ssid?.trim() ?? ""
+}
+
+function accessPointSignal(accessPoint: AstalAccessPoint | null | undefined) {
+  const strength = Number(accessPoint?.strength ?? 0)
+  if (!Number.isFinite(strength)) return 0
+  return Math.max(0, Math.min(100, Math.round(strength)))
+}
+
+function accessPointSecurityText(accessPoint: AstalAccessPoint | null | undefined) {
+  const requiresPassword = Boolean(accessPoint?.requiresPassword ?? accessPoint?.requires_password ?? false)
+  return requiresPassword ? "secured" : "open"
+}
+
+function getAstalActiveAccessPoint(wifi: AstalWifi | null | undefined) {
+  if (!wifi) return null
+  try {
+    return wifi.get_active_access_point?.() ?? wifi.activeAccessPoint ?? wifi.active_access_point ?? null
+  } catch {
+    return null
+  }
+}
+
+function asArray<T>(value: unknown) {
+  if (!value) return [] as T[]
+  if (Array.isArray(value)) return value as T[]
+  if (typeof (value as Iterable<T>)[Symbol.iterator] === "function") return Array.from(value as Iterable<T>)
+  return [] as T[]
+}
+
+function getAstalAccessPoints(wifi: AstalWifi | null | undefined) {
+  if (!wifi) return []
+  try {
+    const points = wifi.get_access_points?.() ?? wifi.accessPoints ?? wifi.access_points ?? []
+    return asArray<AstalAccessPoint>(points)
+  } catch (error) {
+    console.warn(`Astal Wi‑Fi access point read failed: ${errorText(error)}`)
+    return []
+  }
+}
+
+function getWifiNetworks(savedConnections: Map<string, string[]>) {
+  const wifi = getAstalWifi()
+  const activeAccessPoint = getAstalActiveAccessPoint(wifi)
+  const activePath = accessPointPath(activeAccessPoint)
+  const activeBssid = activeAccessPoint?.bssid ?? ""
+  const networks = getAstalAccessPoints(wifi).map((accessPoint) => {
+    const ssid = accessPointSsid(accessPoint)
+    const path = accessPointPath(accessPoint)
+    const bssid = accessPoint.bssid ?? ""
     return {
-      inUse: active === "*" || active.toLowerCase() === "yes",
+      inUse: Boolean(activeAccessPoint && (accessPoint === activeAccessPoint || (activePath && path === activePath) || (activeBssid && bssid === activeBssid))),
       ssid,
-      signal: Number.parseInt(signal, 10) || 0,
-      security: nmSecurityText(security),
+      signal: accessPointSignal(accessPoint),
+      security: accessPointSecurityText(accessPoint),
       saved: savedConnections.has(ssid),
     }
-  }))
+  })
+
+  const activeSsid = accessPointSsid(activeAccessPoint) || wifi?.ssid?.trim() || ""
+  if (activeSsid && !networks.some(network => network.inUse || network.ssid === activeSsid)) {
+    networks.push({
+      inUse: true,
+      ssid: activeSsid,
+      signal: accessPointSignal(activeAccessPoint) || accessPointSignal(wifi as unknown as AstalAccessPoint),
+      security: accessPointSecurityText(activeAccessPoint),
+      saved: savedConnections.has(activeSsid),
+    })
+  }
+
+  return uniqueWifiNetworks(networks)
+}
+
+function scanWifiNetworks() {
+  const wifi = getAstalWifi()
+  if (!wifi?.scan) return false
+  try {
+    wifi.scan()
+    return true
+  } catch (error) {
+    console.warn(`Astal Wi‑Fi scan failed: ${errorText(error)}`)
+    return false
+  }
 }
 
 async function getActiveWifiSsid() {
-  const out = await execText(["nmcli", "-t", "-e", "yes", "-f", "IN-USE,SSID", "device", "wifi", "list", "--rescan", "no"])
+  const wifi = getAstalWifi()
+  const activeSsid = accessPointSsid(getAstalActiveAccessPoint(wifi)) || wifi?.ssid?.trim() || ""
+  if (activeSsid) return activeSsid
+
+  const out = await execText(["nmcli", "-t", "-e", "yes", "-f", "NAME,TYPE", "connection", "show", "--active"])
   for (const line of out.split("\n")) {
-    const [active = "", ssid = ""] = splitNmcliEscaped(line)
-    if (active === "*" || active.toLowerCase() === "yes") return ssid
+    const [ssid = "", type = ""] = splitNmcliEscaped(line)
+    if (type === "802-11-wireless") return ssid
   }
   return ""
 }
@@ -200,7 +375,7 @@ function makeIconButton(
     sensitive,
     valign: Gtk.Align.CENTER,
   })
-  button.set_tooltip_text(tooltip)
+  attachShellTooltip(button, () => tooltip)
   addClasses(button, `flat ${classes}`)
   button.connect("clicked", onClick)
   return button
@@ -303,7 +478,7 @@ function makeRowButton(
     hexpand: true,
     halign: Gtk.Align.FILL,
   })
-  button.set_tooltip_text(title)
+  attachShellTooltip(button, () => title)
   addClasses(button, "flat network-row-shell")
   button.connect("clicked", onClick)
   return button
@@ -338,7 +513,7 @@ function makeRowWithAction(
       hexpand: true,
       halign: Gtk.Align.FILL,
     })
-    button.set_tooltip_text(title)
+    attachShellTooltip(button, () => title)
     addClasses(button, "flat")
     button.connect("clicked", onClick)
     main = button
@@ -381,10 +556,6 @@ function wifiSignalIcon(signal: number) {
   if (signal >= 40) return "󰤢"
   if (signal >= 20) return "󰤟"
   return "󰤮"
-}
-
-function securityText(flags: number) {
-  return flags === 0 ? "open" : "secured"
 }
 
 function configNameFromPath(path: string) {
@@ -451,8 +622,10 @@ export function NetworkControl({
   monitor: 0,
 }) {
   let trigger: Gtk.Button | null = null
+  let popupWindowRef: Gtk.Window | null = null
   let popupPlacement: Gtk.Box | null = null
   let wifiListBox: Gtk.Box | null = null
+  let wifiSectionBox: Gtk.Box | null = null
   let wgListBox: Gtk.Box | null = null
   let popupRevealer: Gtk.Revealer | null = null
   let popupFrame: Gtk.Box | null = null
@@ -468,34 +641,25 @@ export function NetworkControl({
   const [windowVisible, setWindowVisible] = createState(false)
   const popupRegistryId = `network:${monitor}`
 
-  // DEBUG_POPUP_LOG: temporary state snapshot for the intermittent dead-button bug.
-  const debugState = () => debugPopupSnapshot({
-    windowVisible: windowVisible(),
-    closingPopup,
-    revealed: popupRevealer?.get_reveal_child?.(),
-    hasRoot: Boolean(popupRoot),
-    hasPlacement: Boolean(popupPlacement),
-    hasFrame: Boolean(popupFrame),
-    hasRevealer: Boolean(popupRevealer),
-    hasTrigger: Boolean(trigger),
-    triggerOpen: (trigger as any)?.has_css_class?.("widget-trigger-open"),
-    closeTimeoutId,
-  })
-
   let wifiEnabled = false
   let syncingWifiSwitch = false
   let pendingSecureNetwork: WifiNetwork | null = null
   let refreshDebounce: { cancel: () => void } | null = null
   let statusTimer: { cancel: () => void } | null = null
   let networkSignalIds: Array<[SignalSource, number]> = []
+  let wifiSignalSource: SignalSource | null = null
   let startupRefreshId = 0
   let steadyRefreshId = 0
   let refreshInFlight = false
   let refreshAgain = false
+  let firstRefresh = true
+  let wifiDeviceRetryCount = 0
 
   const [icon, setIcon] = createState("󰖪")
   const [title, setTitle] = createState("Network")
   const [meta, setMeta] = createState("Loading…")
+  const [vlessActive, setVlessActive] = createState(false)
+  const [vlessBusy, setVlessBusy] = createState(false)
   const triggerTooltip = createComputed(() => `${title()} • ${meta()}`)
 
   const clearCloseTimeout = () => {
@@ -522,25 +686,27 @@ export function NetworkControl({
     else trigger.remove_css_class("widget-trigger-open")
   }
 
+  const syncPopupPosition = () => {
+    placeLayerWindowAtTopRight(popupWindowRef, {
+      right: POPUP_SCREEN_RIGHT,
+    })
+  }
+
   const finishClosePopup = () => {
-    debugPopupLog(popupRegistryId, "finishClose before", debugState())
     clearCloseTimeout()
     closingPopup = false
     setWindowVisible(false)
     setTriggerOpen(false)
-    debugPopupLog(popupRegistryId, "finishClose after", debugState())
   }
 
   const isPopupRevealed = () => Boolean(popupRevealer?.get_reveal_child())
 
   const resetStalePopupState = (reason: string) => {
-    debugPopupLog(popupRegistryId, "reset stale", { reason, ...debugState() })
     console.warn(`[popup:${popupRegistryId}] reset stale state: ${reason}`)
     finishClosePopup()
   }
 
   const closePopup = () => {
-    debugPopupLog(popupRegistryId, "close requested", debugState())
     if (!windowVisible()) {
       closingPopup = false
       setTriggerOpen(false)
@@ -571,10 +737,12 @@ export function NetworkControl({
   const unregisterPopupController = registerPopupController(popupRegistryId, { close: closePopup })
 
   const openPopup = () => {
-    debugPopupLog(popupRegistryId, "open requested", debugState())
     if (windowVisible()) {
       if (closingPopup || !isPopupRevealed()) resetStalePopupState("open requested while visible but not revealed")
-      else return
+      else {
+        syncPopupPosition()
+        return
+      }
     }
 
     closeOtherPopups(popupRegistryId)
@@ -584,24 +752,27 @@ export function NetworkControl({
     setTriggerOpen(true)
 
     scheduleRefresh(0)
-    debugPopupLog(popupRegistryId, "open state set", debugState())
+
+    deferAction(async () => {
+      if (!(await getWifiEnabled())) return
+      if (scanWifiNetworks()) {
+        presentStatus("Scanning networks…", { durationMs: WIFI_SCAN_SETTLE_DELAY_MS })
+        scheduleRefresh(WIFI_SCAN_SETTLE_DELAY_MS)
+      }
+    })
 
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-      debugPopupLog(popupRegistryId, "open idle", debugState())
       if (!windowVisible() || closingPopup) return GLib.SOURCE_REMOVE
+      syncPopupPosition()
       if (popupRevealer) popupRevealer.revealChild = true
       else resetStalePopupState("revealer missing after open")
       popupRoot?.grab_focus()
-      debugPopupLog(popupRegistryId, "open idle done", debugState())
       return GLib.SOURCE_REMOVE
     })
   }
 
   const togglePopup = () => {
-    debugPopupLog(popupRegistryId, "bar-click/toggle", debugState())
     if (closingPopup) {
-      resetStalePopupState("toggle requested while closing")
-      openPopup()
       return
     }
 
@@ -630,7 +801,6 @@ export function NetworkControl({
 
     if (statusLabel) {
       statusLabel.set_label(safeText)
-      statusLabel.set_tooltip_text(safeText)
       statusLabel.set_visible(Boolean(safeText))
     }
 
@@ -643,7 +813,6 @@ export function NetworkControl({
       statusTimer = null
       if (statusLabel && statusLabel.get_label() === safeText) {
         statusLabel.set_label("")
-        statusLabel.set_tooltip_text("")
         statusLabel.set_visible(false)
       }
     })
@@ -697,13 +866,11 @@ export function NetworkControl({
     })).sort((a, b) => a.active !== b.active ? (a.active ? -1 : 1) : a.name.localeCompare(b.name))
   }
 
-  const renderWifiList = (networks: WifiNetwork[], emptyText = "No networks found", disabledText = "Wi‑Fi is disabled") => {
+  const renderWifiList = (networks: WifiNetwork[], emptyText = "Scanning networks…") => {
     clearChildren(wifiListBox)
+    wifiSectionBox?.set_visible(wifiEnabled)
     if (!wifiListBox) return
-    if (!wifiEnabled) {
-      wifiListBox.append(makeLabel(disabledText, "network-empty"))
-      return
-    }
+    if (!wifiEnabled) return
     if (networks.length === 0) {
       wifiListBox.append(makeLabel(emptyText, "network-empty"))
       return
@@ -757,37 +924,71 @@ export function NetworkControl({
     refreshInFlight = true
 
     try {
+      if (firstRefresh) {
+        firstRefresh = false
+        await waitMs(NETWORK_STARTUP_DELAY_MS)
+      }
+
       const nmReady = await isNetworkManagerReady()
-      const [wgProfiles, savedConnections] = await Promise.all([getWireGuardProfiles(), getSavedWifiConnections()])
+      const [wgProfiles, savedConnections, serviceActive] = await Promise.all([getWireGuardProfiles(), getSavedWifiConnections(), getVlessServiceActive()])
       const wgActive = wgProfiles.some(p => p.active)
+      setVlessActive(serviceActive)
 
       if (!nmReady) {
+        wifiDeviceRetryCount = 0
         wifiEnabled = false
         syncWifiSwitch(false)
         rescanButton?.set_sensitive(false)
         setIcon(BAR_WIFI_OFF_ICON)
         setTitle("Network")
-        setMeta("NetworkManager starting…")
-        renderWifiList([], "No networks found", "NetworkManager is starting…")
+        setMeta(appendServiceMeta("NetworkManager starting…", wgActive, serviceActive))
+        renderWifiList([], "NetworkManager is starting…")
         renderWireGuardList(wgProfiles)
         return
       }
 
+      const wifi = getAstalWifi()
+
+      if (!wifi && wifiDeviceRetryCount < WIFI_DEVICE_RETRY_LIMIT) {
+        wifiDeviceRetryCount += 1
+        const enabled = await getWifiEnabled()
+        wifiEnabled = enabled
+        syncWifiSwitch(enabled)
+        rescanButton?.set_sensitive(false)
+        setIcon(enabled ? BAR_WIFI_ICON : BAR_WIFI_OFF_ICON)
+        setTitle(enabled ? "Wi‑Fi" : "Network")
+        setMeta(appendServiceMeta(enabled ? "Wi‑Fi device starting…" : "Wi‑Fi off", wgActive, serviceActive))
+        renderWifiList([], enabled ? "Wi‑Fi device starting…" : "Wi‑Fi off")
+        renderWireGuardList(wgProfiles)
+        scheduleRefresh(WIFI_DEVICE_RETRY_DELAY_MS)
+        return
+      }
+
       const [enabled, networks] = await Promise.all([getWifiEnabled(), getWifiNetworks(savedConnections)])
+      wifiDeviceRetryCount = wifi ? 0 : wifiDeviceRetryCount
       wifiEnabled = enabled
       syncWifiSwitch(enabled)
-      rescanButton?.set_sensitive(enabled)
+      rescanButton?.set_sensitive(enabled && Boolean(wifi?.scan))
+
+      if (!wifi) {
+        setIcon(BAR_WIFI_OFF_ICON)
+        setTitle("Network")
+        setMeta(appendServiceMeta("No Wi‑Fi device", wgActive, serviceActive))
+        renderWifiList([], "No Wi‑Fi device")
+        renderWireGuardList(wgProfiles)
+        return
+      }
 
       if (!enabled) {
         setIcon(BAR_WIFI_OFF_ICON)
         setTitle("Network")
-        setMeta(wgActive ? "Radio off • VPN" : "Radio off")
+        setMeta(appendServiceMeta("Wi‑Fi off", wgActive, serviceActive))
         renderWifiList([])
       } else {
         const current = networks.find(n => n.inUse)
         setIcon(current ? wifiSignalIcon(current.signal) : BAR_WIFI_ICON)
         setTitle(current?.ssid || "Wi‑Fi")
-        setMeta(`${current ? current.signal + "%" : "Ready"}${wgActive ? " • VPN" : ""}`)
+        setMeta(appendServiceMeta(current ? current.signal + "%" : "Ready", wgActive, serviceActive))
         renderWifiList(networks)
       }
 
@@ -814,14 +1015,36 @@ export function NetworkControl({
 
     const refreshNow = () => scheduleRefresh(100)
 
-    try {
-      const astalNetwork = AstalNetwork.get_default() as SignalSource & { client?: SignalSource, get_client?: () => SignalSource | null }
-      networkSignalIds.push([astalNetwork, astalNetwork.connect("notify", refreshNow)])
-
-      const client = astalNetwork.get_client?.() ?? astalNetwork.client
-      if (client) {
-        networkSignalIds.push([client, client.connect("notify", refreshNow)])
+    const connectSignal = (source: SignalSource | null | undefined, signal: string, callback = refreshNow) => {
+      if (!source) return
+      try {
+        networkSignalIds.push([source, source.connect(signal, callback)])
+      } catch (error) {
+        console.warn(`Network signal ${signal} setup failed: ${errorText(error)}`)
       }
+    }
+
+    const connectWifiSignals = () => {
+      const wifi = getAstalWifi()
+      if (!wifi || wifi === wifiSignalSource) return
+      wifiSignalSource = wifi
+      connectSignal(wifi, "access-point-added")
+      connectSignal(wifi, "access-point-removed")
+      connectSignal(wifi, "notify::access-points")
+      connectSignal(wifi, "notify::active-access-point")
+      connectSignal(wifi, "notify::enabled")
+      connectSignal(wifi, "notify::scanning")
+      connectSignal(wifi, "state-changed")
+    }
+
+    try {
+      const astalNetwork = getAstalNetwork()
+      connectSignal(astalNetwork, "notify", () => {
+        connectWifiSignals()
+        refreshNow()
+      })
+      connectSignal(getAstalClient(), "notify")
+      connectWifiSignals()
     } catch (error) {
       console.warn(`Network signal setup failed: ${errorText(error)}`)
     }
@@ -852,11 +1075,11 @@ export function NetworkControl({
       try {
         source.disconnect(id)
       } catch {
-        // Ignore stale signal ids during teardown.
       }
     }
 
     networkSignalIds = []
+    wifiSignalSource = null
 
     if (startupRefreshId !== 0) {
       GLib.source_remove(startupRefreshId)
@@ -926,12 +1149,51 @@ export function NetworkControl({
     scheduleRefresh(100)
   }
 
+  const toggleVless = async () => {
+    if (vlessBusy()) return
+
+    setVlessBusy(true)
+    try {
+      const active = await getVlessServiceActive()
+      setVlessActive(active)
+      presentStatus(active ? "Stopping VLESS…" : "Starting VLESS…", { durationMs: 0 })
+
+      const result = await execResult(["systemctl", "--no-ask-password", active ? "stop" : "start", VLESS_SERVICE_NAME])
+      if (!result.ok) {
+        presentStatus(result.text || "Failed to change VLESS state")
+        await refresh()
+        return
+      }
+
+      presentStatus("")
+      await refresh()
+    } finally {
+      setVlessBusy(false)
+    }
+  }
+
+  const vlessBtn = (
+    <button
+      class={vlessActive((active) => active
+        ? "flat network-icon-button network-vless-button network-vless-button-active"
+        : "flat network-icon-button network-vless-button")}
+      onClicked={() => deferAction(toggleVless)}
+      $={(self) => {
+        self.set_focus_on_click(false)
+        self.set_focusable(false)
+        attachShellTooltip(self, () => vlessBusy() ? "Switching VLESS…" : vlessActive() ? "Stop VLESS" : "Start VLESS")
+      }}
+    >
+      <label class="network-icon-button-label network-vless-icon" label={vlessActive((active) => active ? "󰌾" : "󰌿")} />
+    </button>
+  )
+
   const rescanBtn = makeIconButton("󰑐", "network-icon-button", "Rescan", () => {
     if (wifiEnabled) {
       deferAction(async () => {
-        presentStatus("Scanning…", { durationMs: 1200 })
-        await execResult(["nmcli", "device", "wifi", "rescan"])
-        timeout(1200, () => { presentStatus(""); scheduleRefresh(0) })
+        presentStatus("Scanning networks…", { durationMs: WIFI_SCAN_SETTLE_DELAY_MS })
+        if (!scanWifiNetworks()) await execResult(["nmcli", "device", "wifi", "rescan"])
+        timeout(WIFI_SCAN_SETTLE_DELAY_MS, () => { presentStatus(""); scheduleRefresh(0) })
       })
     }
   })
@@ -944,6 +1206,7 @@ export function NetworkControl({
           <label class="network-header-meta" xalign={0} label={meta} />
         </box>
         {rescanBtn}
+        {vlessBtn}
         <Gtk.Switch class="network-toggle" valign={Gtk.Align.CENTER} halign={Gtk.Align.END} $={(self) => {
           wifiSwitch = self
           self.connect("notify::active", () => {
@@ -952,9 +1215,23 @@ export function NetworkControl({
             const enabled = self.get_active()
             wifiEnabled = enabled
             rescanButton?.set_sensitive(enabled)
+            if (!enabled) {
+              hidePasswordPrompt()
+              setIcon(BAR_WIFI_OFF_ICON)
+              setTitle("Network")
+              setMeta("Wi‑Fi off")
+              presentStatus("")
+            } else {
+              setIcon(BAR_WIFI_ICON)
+              setTitle("Wi‑Fi")
+              setMeta("Scanning networks…")
+            }
+            renderWifiList([], "Scanning networks…")
 
             deferAction(async () => {
-              const result = await execResult(["nmcli", "radio", "wifi", enabled ? "on" : "off"])
+              const result = setAstalWifiEnabled(enabled)
+                ? { ok: true, text: "" }
+                : await execResult(["nmcli", "radio", "wifi", enabled ? "on" : "off"])
               if (!result.ok) presentStatus(result.text || "Failed to change Wi‑Fi state")
               scheduleRefresh(100)
             })
@@ -974,7 +1251,10 @@ export function NetworkControl({
         </box>
       </box>
 
-      <box orientation={Gtk.Orientation.VERTICAL} spacing={6}>
+      <box orientation={Gtk.Orientation.VERTICAL} spacing={6} $={(self) => {
+        wifiSectionBox = self
+        self.set_visible(wifiEnabled)
+      }}>
         <label class="network-section-title" label="Wi‑Fi" xalign={0} />
         <box class="network-list-capsule" orientation={Gtk.Orientation.VERTICAL}>
           <Gtk.ScrolledWindow
@@ -1006,6 +1286,7 @@ export function NetworkControl({
         visible={false}
         $={(self) => {
           statusLabel = self
+          attachShellTooltip(self, () => self.get_label())
           self.set_single_line_mode(true)
           self.set_wrap(false)
           self.set_max_width_chars(42)
@@ -1020,13 +1301,21 @@ export function NetworkControl({
     <window
       visible={windowVisible}
       monitor={monitor}
+      defaultWidth={-1}
+      defaultHeight={-1}
+      resizable={false}
       namespace="obsidian-shell-network"
       class="widget-popup-window network-popup-window"
       exclusivity={Astal.Exclusivity.IGNORE}
       keymode={Astal.Keymode.ON_DEMAND}
-      anchor={FLOATING_POPUP_ANCHOR}
+      anchor={RIGHT_TOP_POPUP_ANCHOR}
       $={(self) => {
+        popupWindowRef = self
+        try {
+          self.set_default_size(-1, -1)
+        } catch {}
         self.connect("destroy", () => {
+          popupWindowRef = null
           popupPlacement = null
           popupRevealer = null
           popupFrame = null
@@ -1034,29 +1323,18 @@ export function NetworkControl({
         })
       }}
     >
-      <box class="widget-popup-root" hexpand vexpand $={(self) => {
+      <box class="widget-popup-root" $={(self) => {
         popupRoot = self
         self.set_focusable(true)
+        attachPopupFocusDismiss(self, closePopup)
         attachEscapeKey(self, closePopup)
       }}>
-        <Gtk.GestureClick
-          button={0}
-          propagationPhase={Gtk.PropagationPhase.CAPTURE}
-          onReleased={(_, _nPress, x, y) => {
-            const root = popupPlacement?.get_parent?.() as Gtk.Widget | null
-            if (isPointInsideWidget(popupFrame, root, x, y)) return
-            closePopup()
-          }}
-        />
-
         <box
           class="widget-popup-placement"
-          halign={Gtk.Align.END}
+          halign={Gtk.Align.START}
           valign={Gtk.Align.START}
           $={(self) => {
             popupPlacement = self
-            self.set_margin_top(TOP_BAR_POPUP_MARGIN_TOP)
-            self.set_margin_end(NETWORK_POPUP_MARGIN_END)
           }}
         >
           <revealer
@@ -1066,7 +1344,10 @@ export function NetworkControl({
             transitionDuration={POPOVER_REVEAL_DURATION_MS}
             $={(self) => (popupRevealer = self)}
           >
-            <box class="widget-popup-frame network-popover-window" widthRequest={NETWORK_POPOVER_WIDTH} $={(self) => (popupFrame = self)}>
+            <box class="widget-popup-frame network-popover-window" widthRequest={NETWORK_POPOVER_WIDTH} $={(self) => {
+              clipRoundedWidget(self)
+              popupFrame = self
+            }}>
               {popoverContent}
             </box>
           </revealer>
@@ -1084,10 +1365,10 @@ export function NetworkControl({
       connectNetworkSignals()
       void refresh()
     }}>
-      <button class="network-trigger" valign={Gtk.Align.CENTER} tooltipText={triggerTooltip} onClicked={() => {
-        debugPopupLog(popupRegistryId, "trigger onClicked", debugState())
+      <button class="network-trigger" valign={Gtk.Align.CENTER} onClicked={() => {
         togglePopup()
       }} $={(self) => {
+        attachShellTooltip(self, triggerTooltip)
         trigger = self
 
         self.connect("destroy", () => {

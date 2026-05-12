@@ -9,9 +9,9 @@ import { For, createComputed, createState } from "ags"
 import { execAsync } from "ags/process"
 
 import { attachEscapeKey } from "./EscapeKey"
-import { FLOATING_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, TOP_BAR_POPUP_MARGIN_TOP, isPointInsideWidget } from "./FloatingPopup"
+import { LEFT_TOP_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, attachPopupFocusDismiss, clipRoundedWidget, placeLayerWindowAtTopEdge } from "./FloatingPopup"
 import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
-import { debugPopupLog, debugPopupSnapshot } from "./DebugPopupLog"
+import { attachShellTooltip } from "./ShellTooltip"
 
 type LaunchableApp = {
   key: string
@@ -170,7 +170,6 @@ function readApps(): LaunchableApp[] {
 const APP_LIST_REFRESH_DEBOUNCE_MS = 180
 const LAUNCHER_POPOVER_REVEAL_DURATION_MS = 170
 const LAUNCHER_POPOVER_WIDTH = 392
-const LAUNCHER_POPUP_MARGIN_END = POPUP_SCREEN_RIGHT
 
 function getApplicationMonitorRoots() {
   const roots = new Set<string>()
@@ -208,6 +207,7 @@ export function AppLauncherControl({
   monitor: 0,
 }) {
   let trigger: Gtk.Button | null = null
+  let popupWindowRef: Gtk.Window | null = null
   let popupPlacement: Gtk.Box | null = null
   let popupRevealer: Gtk.Revealer | null = null
   let popupFrame: Gtk.Box | null = null
@@ -220,20 +220,6 @@ export function AppLauncherControl({
   let closingPopup = false
   const [windowVisible, setWindowVisible] = createState(false)
   const popupRegistryId = `launcher:${monitor}`
-
-  // DEBUG_POPUP_LOG: temporary state snapshot for the intermittent dead-button bug.
-  const debugState = () => debugPopupSnapshot({
-    windowVisible: windowVisible(),
-    closingPopup,
-    revealed: popupRevealer?.get_reveal_child?.(),
-    hasRoot: Boolean(popupRoot),
-    hasPlacement: Boolean(popupPlacement),
-    hasFrame: Boolean(popupFrame),
-    hasRevealer: Boolean(popupRevealer),
-    hasTrigger: Boolean(trigger),
-    triggerOpen: (trigger as any)?.has_css_class?.("widget-trigger-open"),
-    closeTimeoutId,
-  })
 
   void bindBarHoverWatcher
 
@@ -361,25 +347,28 @@ export function AppLauncherControl({
     else trigger.remove_css_class("widget-trigger-open")
   }
 
+  const syncPopupPosition = () => {
+    placeLayerWindowAtTopEdge(trigger, popupWindowRef, popupFrame, {
+      align: "end",
+      right: POPUP_SCREEN_RIGHT,
+    })
+  }
+
   const finishClosePopup = () => {
-    debugPopupLog(popupRegistryId, "finishClose before", debugState())
     clearCloseTimeout()
     closingPopup = false
     setWindowVisible(false)
     setTriggerOpen(false)
-    debugPopupLog(popupRegistryId, "finishClose after", debugState())
   }
 
   const isPopupRevealed = () => Boolean(popupRevealer?.get_reveal_child())
 
   const resetStalePopupState = (reason: string) => {
-    debugPopupLog(popupRegistryId, "reset stale", { reason, ...debugState() })
     console.warn(`[popup:${popupRegistryId}] reset stale state: ${reason}`)
     finishClosePopup()
   }
 
   const closePopup = () => {
-    debugPopupLog(popupRegistryId, "close requested", debugState())
     if (!windowVisible()) {
       closingPopup = false
       setTriggerOpen(false)
@@ -410,10 +399,12 @@ export function AppLauncherControl({
   const unregisterPopupController = registerPopupController(popupRegistryId, { close: closePopup })
 
   const openPopup = () => {
-    debugPopupLog(popupRegistryId, "open requested", debugState())
     if (windowVisible()) {
       if (closingPopup || !isPopupRevealed()) resetStalePopupState("open requested while visible but not revealed")
-      else return
+      else {
+        syncPopupPosition()
+        return
+      }
     }
 
     closeOtherPopups(popupRegistryId)
@@ -426,24 +417,19 @@ export function AppLauncherControl({
     setShowHiddenApps(false)
     setQuery("")
     if (searchEntry) searchEntry.set_text("")
-    debugPopupLog(popupRegistryId, "open state set", debugState())
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-      debugPopupLog(popupRegistryId, "open idle", debugState())
       if (!windowVisible() || closingPopup) return GLib.SOURCE_REMOVE
+      syncPopupPosition()
       if (popupRevealer) popupRevealer.revealChild = true
       else resetStalePopupState("revealer missing after open")
       popupRoot?.grab_focus()
       searchEntry?.grab_focus()
-      debugPopupLog(popupRegistryId, "open idle done", debugState())
       return GLib.SOURCE_REMOVE
     })
   }
 
   const togglePopup = () => {
-    debugPopupLog(popupRegistryId, "bar-click/toggle", debugState())
     if (closingPopup) {
-      resetStalePopupState("toggle requested while closing")
-      openPopup()
       return
     }
 
@@ -608,9 +594,9 @@ export function AppLauncherControl({
 
                 <button
                   class="flat launcher-app-side-button"
-                  tooltipText={showHiddenApps() ? "Restore application" : "Hide application"}
                   onClicked={() => (showHiddenApps() ? restoreApp(app) : hideApp(app))}
                   valign={Gtk.Align.CENTER}
+                  $={(self) => attachShellTooltip(self, () => showHiddenApps() ? "Restore application" : "Hide application")}
                 >
                   <label
                     class="launcher-side-icon launcher-material-icon"
@@ -647,34 +633,40 @@ export function AppLauncherControl({
     <window
       visible={windowVisible}
       monitor={monitor}
+      defaultWidth={-1}
+      defaultHeight={-1}
+      resizable={false}
       namespace="obsidian-shell-launcher"
       class="widget-popup-window launcher-popup-window"
       exclusivity={Astal.Exclusivity.IGNORE}
       keymode={Astal.Keymode.ON_DEMAND}
-      anchor={FLOATING_POPUP_ANCHOR}
+      anchor={LEFT_TOP_POPUP_ANCHOR}
+      $={(self) => {
+        popupWindowRef = self
+        try {
+          self.set_default_size(-1, -1)
+        } catch {}
+        self.connect("destroy", () => {
+          popupWindowRef = null
+          popupPlacement = null
+          popupRevealer = null
+          popupFrame = null
+          popupRoot = null
+        })
+      }}
     >
-      <box class="widget-popup-root" hexpand vexpand $={(self) => {
+      <box class="widget-popup-root" $={(self) => {
         popupRoot = self
         self.set_focusable(true)
+        attachPopupFocusDismiss(self, closePopup)
         attachEscapeKey(self, closePopup)
       }}>
-        <Gtk.GestureClick
-          button={0}
-          onPressed={(_, _nPress, x, y) => {
-            const root = popupPlacement?.get_parent?.() as Gtk.Widget | null
-            if (isPointInsideWidget(popupFrame, root, x, y)) return
-            closePopup()
-          }}
-        />
-
         <box
           class="widget-popup-placement"
-          halign={Gtk.Align.END}
+          halign={Gtk.Align.START}
           valign={Gtk.Align.START}
           $={(self) => {
             popupPlacement = self
-            self.set_margin_top(TOP_BAR_POPUP_MARGIN_TOP)
-            self.set_margin_end(LAUNCHER_POPUP_MARGIN_END)
           }}
         >
           <revealer
@@ -684,7 +676,10 @@ export function AppLauncherControl({
             transitionDuration={LAUNCHER_POPOVER_REVEAL_DURATION_MS}
             $={(self) => (popupRevealer = self)}
           >
-            <box class="widget-popup-frame launcher-popover-window" widthRequest={LAUNCHER_POPOVER_WIDTH} $={(self) => (popupFrame = self)}>{popupContent}</box>
+            <box class="widget-popup-frame launcher-popover-window" widthRequest={LAUNCHER_POPOVER_WIDTH} $={(self) => {
+              clipRoundedWidget(self)
+              popupFrame = self
+            }}>{popupContent}</box>
           </revealer>
         </box>
       </box>
@@ -698,13 +693,12 @@ export function AppLauncherControl({
       <button
         class="app-launcher-trigger"
         valign={Gtk.Align.CENTER}
-        tooltipText={"Applications"}
         onClicked={() => {
-          debugPopupLog(popupRegistryId, "trigger onClicked", debugState())
           togglePopup()
         }}
         $={(self) => {
           trigger = self
+          attachShellTooltip(self, "Applications")
 
           self.connect("destroy", () => {
             clearCloseTimeout()

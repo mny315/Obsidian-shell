@@ -44,7 +44,7 @@ function resolveNextPinnedValue(value: boolean | ((value: boolean) => boolean)) 
 
 export { playerPinned }
 
-export function setPlayerPinned(value: boolean | ((value: boolean) => boolean)) {
+function setPlayerPinned(value: boolean | ((value: boolean) => boolean)) {
   const nextValue = resolveNextPinnedValue(value)
   if (nextValue === Boolean(playerPinned())) return
 

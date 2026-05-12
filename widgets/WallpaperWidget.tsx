@@ -11,9 +11,9 @@ import { For, createComputed, createState } from "ags"
 import { execAsync } from "ags/process"
 import { attachEscapeKey } from "./EscapeKey"
 import { playerPinned, togglePlayerPinned } from "./PlayerPinState"
-import { FLOATING_POPUP_ANCHOR, isPointInsideWidget, placePopupFromTrigger } from "./FloatingPopup"
+import { LEFT_TOP_POPUP_ANCHOR, attachPopupFocusDismiss, clipRoundedWidget, placeLayerWindowFromTrigger } from "./FloatingPopup"
 import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
-import { debugPopupLog, debugPopupSnapshot, debugWidgetSnapshot } from "./DebugPopupLog"
+import { attachShellTooltip } from "./ShellTooltip"
 
 type WallpaperItem = {
   name: string
@@ -63,9 +63,8 @@ const GRID_VISIBLE_ROWS = 6
 const SCROLLER_HEIGHT = CARD_HEIGHT * GRID_VISIBLE_ROWS + GRID_GAP * (GRID_VISIBLE_ROWS - 1)
 const SCROLLER_MIN_HEIGHT = CARD_HEIGHT * 2 + GRID_GAP
 const POPOVER_WIDTH = SCROLLER_WIDTH + 24
-const WALLPAPER_NOTICE_MAX_WIDTH = POPOVER_WIDTH - 40
 const WALLPAPER_POPOVER_REVEAL_DURATION_MS = 165
-const WALLPAPER_POPOVER_OFFSET_Y = 20
+const WALLPAPER_POPOVER_OFFSET_Y = 15
 const WALLPAPER_INITIAL_VISIBLE_ITEMS = GRID_COLUMNS * GRID_VISIBLE_ROWS
 const WALLPAPER_LOAD_MORE_ITEMS = GRID_COLUMNS * 2
 const WALLPAPER_LOAD_MORE_THRESHOLD = CARD_HEIGHT + GRID_GAP
@@ -346,10 +345,6 @@ function readWallpaperSettings() {
   }
 }
 
-function readWallpaperDirectory() {
-  return readWallpaperSettings().directory ?? DEFAULT_WALLPAPER_DIR
-}
-
 function saveWallpaperSettings(nextPatch: Partial<WallpaperWidgetSettings>) {
   try {
     const current = readWallpaperSettings()
@@ -411,7 +406,6 @@ function listWallpaperFiles(wallpaperDir: string): WallpaperItem[] {
   }
 }
 
-
 function listWallpapers(wallpaperDir: string): WallpaperItem[] {
   return listWallpaperFiles(wallpaperDir).filter((item) => getExistingWallpaperThumbnail(item.path) !== null)
 }
@@ -424,6 +418,16 @@ function chunkWallpapers(items: WallpaperItem[], chunkSize: number) {
   }
 
   return rows
+}
+
+function sameWallpaperItems(left: WallpaperItem[], right: WallpaperItem[]) {
+  if (left.length !== right.length) return false
+
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index]?.path !== right[index]?.path) return false
+  }
+
+  return true
 }
 
 function formatError(error: unknown) {
@@ -630,7 +634,6 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
         return
       }
     } catch {
-      // Ignore missing daemon / query failures silently to avoid log spam on startup.
     }
 
     setActivePath(savedPath)
@@ -648,13 +651,11 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
         await execAsync([WALLPAPER_CLI_BIN, "query"])
         return true
       } catch {
-        // daemon not ready yet
       }
 
       try {
         void execAsync([WALLPAPER_DAEMON_BIN])
       } catch {
-        // ignore spawn race, query loop below handles readiness
       }
 
       for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -669,7 +670,6 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
           await execAsync([WALLPAPER_CLI_BIN, "query"])
           return true
         } catch {
-          // keep waiting for daemon socket
         }
       }
 
@@ -757,17 +757,16 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
         return
       }
 
-      setNotice(`Building previews 0/${items.length}`)
-      const completed = await buildWallpaperThumbnails(items, (done, total) => {
-        setNotice(`Building previews ${done}/${total}`)
-      })
+      const completed = await buildWallpaperThumbnails(items)
 
       if (!completed) return
 
       wallpaperTextureCache.clear()
       const readyItems = items.filter((item) => getExistingWallpaperThumbnail(item.path) !== null)
-      setWallpapers(readyItems)
-      resetVisibleWallpapers(readyItems)
+      if (!sameWallpaperItems(wallpapers(), readyItems)) {
+        setWallpapers(readyItems)
+        resetVisibleWallpapers(readyItems)
+      }
       setNotice(readyItems.length === items.length ? `Reloaded ${readyItems.length}` : `Reloaded ${readyItems.length}/${items.length}`)
     } catch (error) {
       setNotice(formatError(error))
@@ -856,8 +855,9 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
     chooser.show()
   }
 
-  const refreshBusy = createComputed(() => refreshing() || applying())
-  const noticeVisible = createComputed(() => (notice() ?? "").trim().length > 0)
+  const noticeText = createComputed(() => (notice() ?? "").trim())
+  const folderTooltip = createComputed(() => noticeText().length > 0 ? noticeText() : "Choose wallpapers folder")
+  const reloadTooltip = createComputed(() => noticeText().length > 0 ? noticeText() : "Reload wallpapers folder")
 
   const createPopoverContent = () => (
     <box
@@ -878,8 +878,11 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
             xalign={0}
             ellipsize={Pango.EllipsizeMode.MIDDLE}
             maxWidthChars={44}
-            tooltipText={wallpaperDir}
             label={wallpaperPathLabel}
+            $={(self) => {
+              attachShellTooltip(self, () => wallpaperDir)
+              self.set_single_line_mode(true)
+            }}
           />
         </box>
 
@@ -888,26 +891,24 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
             class={playerPinned((value) => value
               ? "flat wallpaper-refresh-button wallpaper-refresh-button-active"
               : "flat wallpaper-refresh-button")}
-            tooltipText={playerPinned((value) => value ? "Hide player in bar" : "Show player in bar")}
             onClicked={() => togglePlayerPinned()}
+            $={(self) => attachShellTooltip(self, () => playerPinned() ? "Hide player in bar" : "Show player in bar")}
           >
             <label class="wallpaper-refresh-icon" label={playerPinned((value) => value ? "󰎇" : "󰎈")} />
           </button>
 
           <button
             class="flat wallpaper-refresh-button"
-            tooltipText="Choose wallpapers folder"
-            sensitive={refreshBusy((value) => !value)}
             onClicked={chooseWallpaperDirectory}
+            $={(self) => attachShellTooltip(self, folderTooltip)}
           >
             <label class="wallpaper-refresh-icon" label={"󰉋"} />
           </button>
 
           <button
             class="flat wallpaper-refresh-button"
-            tooltipText="Reload wallpapers folder"
-            sensitive={refreshBusy((value) => !value)}
             onClicked={() => void refreshWallpapers()}
+            $={(self) => attachShellTooltip(self, reloadTooltip)}
           >
             <label class="wallpaper-refresh-icon" label={"󰑐"} />
           </button>
@@ -1009,31 +1010,11 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
         </box>
       </box>
 
-      <box
-        class="wallpaper-notice-wrap"
-        widthRequest={WALLPAPER_NOTICE_MAX_WIDTH}
-        hexpand={false}
-        halign={Gtk.Align.FILL}
-        visible={noticeVisible}
-        tooltipText={notice((value) => value ?? "")}
-      >
-        <label
-          class="wallpaper-notice-label"
-          widthRequest={WALLPAPER_NOTICE_MAX_WIDTH - 16}
-          hexpand={false}
-          xalign={0}
-          ellipsize={Pango.EllipsizeMode.END}
-          label={notice((value) => value ?? "")}
-          $={(self) => {
-            self.set_single_line_mode(true)
-            self.set_max_width_chars(52)
-          }}
-        />
-      </box>
     </box>
   )
 
   let trigger: Gtk.Button | null = null
+  let popupWindowRef: Gtk.Window | null = null
   let popupPlacement: Gtk.Box | null = null
   let popupRevealer: Gtk.Revealer | null = null
   let popupFrame: Gtk.Box | null = null
@@ -1043,50 +1024,6 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   let closingPopup = false
   const [windowVisible, setWindowVisible] = createState(false)
   const popupRegistryId = `wallpaper:${monitor}`
-
-  // DEBUG_POPUP_LOG: temporary state snapshot for the intermittent dead-button bug.
-  const debugState = () => debugPopupSnapshot({
-    windowVisible: windowVisible(),
-    closingPopup,
-    revealed: popupRevealer?.get_reveal_child?.(),
-    hasRoot: Boolean(popupRoot),
-    hasPlacement: Boolean(popupPlacement),
-    hasFrame: Boolean(popupFrame),
-    hasRevealer: Boolean(popupRevealer),
-    hasTrigger: Boolean(trigger),
-    triggerOpen: (trigger as any)?.has_css_class?.("widget-trigger-open"),
-    closeTimeoutId,
-  })
-
-  const debugRootForGeometry = () => (popupRoot ?? popupPlacement?.get_parent?.() ?? null) as Gtk.Widget | null
-
-  const debugGeometry = (reason: string, extra: Record<string, unknown> = {}) => {
-    // DEBUG_POPUP_LOG: temporary geometry/input diagnostics for invisible wallpaper popup.
-    const root = debugRootForGeometry()
-    debugPopupLog(popupRegistryId, `geometry ${reason}`, {
-      ...extra,
-      state: debugState(),
-      root: debugWidgetSnapshot(popupRoot, root),
-      placement: debugWidgetSnapshot(popupPlacement, root),
-      revealer: debugWidgetSnapshot(popupRevealer, root),
-      frame: debugWidgetSnapshot(popupFrame, root),
-      trigger: debugWidgetSnapshot(trigger, trigger?.get_root?.() as Gtk.Widget | null),
-    })
-  }
-
-  const watchPopupWidget = (name: string, widget: Gtk.Widget | null) => {
-    // DEBUG_POPUP_LOG: temporary map/unmap/visible hooks. Remove with debug logger.
-    if (!widget) return
-
-    debugGeometry(`${name} ready`)
-
-    for (const signal of ["map", "unmap", "realize", "unrealize", "notify::visible", "notify::mapped"] as const) {
-      try {
-        ;(widget as any).connect(signal, () => debugGeometry(`${name} ${signal}`))
-      } catch {}
-    }
-  }
-
   const clearApplyingCleanupTimeout = () => {
     if (applyingCleanupTimeoutId !== 0) {
       GLib.source_remove(applyingCleanupTimeoutId)
@@ -1108,7 +1045,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   }
 
   const syncPopupPosition = () => {
-    placePopupFromTrigger(trigger, popupPlacement, popupFrame, {
+    placeLayerWindowFromTrigger(trigger, popupWindowRef, popupFrame, {
       offsetX: -10,
       offsetY: WALLPAPER_POPOVER_OFFSET_Y,
       align: "start",
@@ -1116,25 +1053,20 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   }
 
   const finishClosePopup = () => {
-    debugPopupLog(popupRegistryId, "finishClose before", debugState())
     clearCloseTimeout()
     closingPopup = false
     setWindowVisible(false)
     setTriggerOpen(false)
-    debugPopupLog(popupRegistryId, "finishClose after", debugState())
-    debugGeometry("finishClose after")
   }
 
   const isPopupRevealed = () => Boolean(popupRevealer?.get_reveal_child())
 
   const resetStalePopupState = (reason: string) => {
-    debugPopupLog(popupRegistryId, "reset stale", { reason, ...debugState() })
     console.warn(`[popup:${popupRegistryId}] reset stale state: ${reason}`)
     finishClosePopup()
   }
 
   const closePopup = () => {
-    debugPopupLog(popupRegistryId, "close requested", debugState())
     if (!windowVisible()) {
       closingPopup = false
       setTriggerOpen(false)
@@ -1165,7 +1097,6 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   const unregisterPopupController = registerPopupController(popupRegistryId, { close: closePopup })
 
   const openPopup = () => {
-    debugPopupLog(popupRegistryId, "open requested", debugState())
     if (windowVisible()) {
       if (closingPopup || !isPopupRevealed()) resetStalePopupState("open requested while visible but not revealed")
       else {
@@ -1179,33 +1110,18 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
     closingPopup = false
     setWindowVisible(true)
     setTriggerOpen(true)
-    debugPopupLog(popupRegistryId, "open state set", debugState())
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-      debugPopupLog(popupRegistryId, "open idle", debugState())
       if (!windowVisible() || closingPopup) return GLib.SOURCE_REMOVE
       syncPopupPosition()
       if (popupRevealer) popupRevealer.revealChild = true
       else resetStalePopupState("revealer missing after open")
       popupRoot?.grab_focus()
-      debugPopupLog(popupRegistryId, "open idle done", debugState())
-      debugGeometry("open idle done")
-      GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-        debugGeometry("open second idle")
-        return GLib.SOURCE_REMOVE
-      })
-      GLib.timeout_add(GLib.PRIORITY_DEFAULT, 80, () => {
-        debugGeometry("open +80ms")
-        return GLib.SOURCE_REMOVE
-      })
       return GLib.SOURCE_REMOVE
     })
   }
 
   const togglePopup = () => {
-    debugPopupLog(popupRegistryId, "bar-click/toggle", debugState())
     if (closingPopup) {
-      resetStalePopupState("toggle requested while closing")
-      openPopup()
       return
     }
 
@@ -1227,21 +1143,22 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
     <window
       visible={windowVisible}
       monitor={monitor}
+      defaultWidth={-1}
+      defaultHeight={-1}
+      resizable={false}
       namespace="obsidian-shell-wallpaper"
       class="widget-popup-window wallpaper-popup-window"
       exclusivity={Astal.Exclusivity.IGNORE}
       keymode={Astal.Keymode.ON_DEMAND}
-      anchor={FLOATING_POPUP_ANCHOR}
+      anchor={LEFT_TOP_POPUP_ANCHOR}
       $={(self) => {
-        // DEBUG_POPUP_LOG: temporary window mapping diagnostics.
-        for (const signal of ["map", "unmap", "realize", "unrealize", "notify::visible", "notify::mapped"] as const) {
-          try {
-            ;(self as any).connect(signal, () => debugGeometry(`window ${signal}`, { window: debugWidgetSnapshot(self as any, self as any) }))
-          } catch {}
-        }
+        popupWindowRef = self
+        try {
+          self.set_default_size(-1, -1)
+        } catch {}
         self.connect("destroy", () => {
-          debugGeometry("window destroy")
           unregisterPopupController()
+          popupWindowRef = null
           popupPlacement = null
           popupRevealer = null
           popupFrame = null
@@ -1249,42 +1166,18 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
         })
       }}
     >
-      <box class="widget-popup-root" hexpand vexpand $={(self) => {
+      <box class="widget-popup-root" $={(self) => {
         popupRoot = self
         self.set_focusable(true)
+        attachPopupFocusDismiss(self, closePopup)
         attachEscapeKey(self, closePopup)
-        watchPopupWidget("root", self)
       }}>
-        <Gtk.GestureClick
-          button={0}
-          propagationPhase={Gtk.PropagationPhase.CAPTURE}
-          onReleased={(_, nPress, x, y) => {
-            const root = popupPlacement?.get_parent?.() as Gtk.Widget | null
-            const inside = isPointInsideWidget(popupFrame, root, x, y)
-            debugPopupLog(popupRegistryId, "root gesture released", {
-              nPress,
-              x,
-              y,
-              inside,
-              state: debugState(),
-              root: debugWidgetSnapshot(root, root),
-              frame: debugWidgetSnapshot(popupFrame, root),
-              placement: debugWidgetSnapshot(popupPlacement, root),
-              revealer: debugWidgetSnapshot(popupRevealer, root),
-            })
-            if (inside) return
-            debugPopupLog(popupRegistryId, "outside-click")
-            closePopup()
-          }}
-        />
-
         <box
           class="widget-popup-placement"
           halign={Gtk.Align.START}
           valign={Gtk.Align.START}
           $={(self) => {
             popupPlacement = self
-            watchPopupWidget("placement", self)
           }}
         >
           <revealer
@@ -1294,15 +1187,14 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
             transitionDuration={WALLPAPER_POPOVER_REVEAL_DURATION_MS}
             $={(self) => {
               popupRevealer = self
-              watchPopupWidget("revealer", self)
             }}
           >
             <box
               class="widget-popup-frame wallpaper-popover-window"
               widthRequest={POPOVER_WIDTH}
               $={(self) => {
+                clipRoundedWidget(self)
                 popupFrame = self
-                watchPopupWidget("frame", self)
               }}
             >
               {createPopoverContent()}
@@ -1318,14 +1210,12 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   return (
     <button
       class="wallpaper-widget-trigger left-module-button"
-      tooltipText="Wallpapers"
       onClicked={() => {
-        debugPopupLog(popupRegistryId, "trigger onClicked", debugState())
         togglePopup()
       }}
       $={(self) => {
         trigger = self
-        watchPopupWidget("trigger", self)
+        attachShellTooltip(self, "Wallpapers")
 
         void syncActiveWallpaper()
         self.connect("destroy", () => {

@@ -1,7 +1,7 @@
 import Gtk from "gi://Gtk?version=4.0"
 
 import { createComputed } from "ags"
-import { debugPopupLog } from "./DebugPopupLog"
+import { attachShellTooltip } from "./ShellTooltip"
 
 export function PowerControl({
   onToggle,
@@ -41,10 +41,10 @@ export function PowerControl({
         >
           <button
             class="power-action flat"
-            tooltipText={"Lock session"}
             onClicked={() => {
               onRun("hyprlock")
             }}
+            $={(self) => attachShellTooltip(self, "Lock session")}
           >
             <box spacing={8}>
               <label class="power-action-icon" label={"󰌾"} />
@@ -54,10 +54,10 @@ export function PowerControl({
 
           <button
             class="power-action flat"
-            tooltipText={"Reboot system"}
             onClicked={() => {
               onRun("systemctl reboot")
             }}
+            $={(self) => attachShellTooltip(self, "Reboot system")}
           >
             <box spacing={8}>
               <label class="power-action-icon" label={"󰜉"} />
@@ -67,10 +67,10 @@ export function PowerControl({
 
           <button
             class="power-action flat"
-            tooltipText={"Shut down system"}
             onClicked={() => {
               onRun("systemctl poweroff")
             }}
+            $={(self) => attachShellTooltip(self, "Shut down system")}
           >
             <box spacing={8}>
               <label class="power-action-icon" label={"󰐥"} />
@@ -80,10 +80,9 @@ export function PowerControl({
         </box>
       </revealer>
 
-      <button class="icon-button quick-toggle power-toggle flat" valign={Gtk.Align.CENTER} tooltipText={triggerTooltip} onClicked={() => {
-        debugPopupLog("power", "trigger onClicked")
+      <button class="icon-button quick-toggle power-toggle flat" valign={Gtk.Align.CENTER} onClicked={() => {
         onToggle()
-      }}>
+      }} $={(self) => attachShellTooltip(self, triggerTooltip)}>
         <label class="module-icon" label={"󰐥"} />
       </button>
     </box>

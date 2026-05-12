@@ -4,6 +4,7 @@ import Gtk from "gi://Gtk?version=4.0"
 
 import { createState } from "ags"
 import { execAsync } from "ags/process"
+import { attachShellTooltip } from "./ShellTooltip"
 
 type NiriKeyboardLayouts = {
   names?: string[]
@@ -162,9 +163,31 @@ function closeNiriConnection(connection: Gio.SocketConnection | null, stream: Gi
   } catch {}
 }
 
-async function initializeHyprland(setLabel: (next: string | ((prev: string) => string)) => void) {
+async function initializeHyprland(
+  setLabel: (next: string | ((prev: string) => string)) => void,
+  setSwitchLayout: (next: () => void | Promise<void>) => void,
+) {
   const { default: Hyprland } = await import("gi://AstalHyprland?version=0.1")
   const hyprland = Hyprland.get_default()
+
+  setSwitchLayout(() => {
+    const switchNext = async () => {
+      try {
+        await hyprland.message_async("switchxkblayout all next", null)
+        return
+      } catch (error) {
+        console.error(error)
+      }
+
+      try {
+        await execAsync(["hyprctl", "switchxkblayout", "all", "next"])
+      } catch (error) {
+        console.error(error)
+      }
+    }
+
+    void switchNext()
+  })
 
   try {
     const active = await getHyprDevicesLayout(hyprland)
@@ -184,12 +207,19 @@ async function initializeHyprland(setLabel: (next: string | ((prev: string) => s
   }
 }
 
-async function initializeNiri(setLabel: (next: string | ((prev: string) => string)) => void) {
+async function initializeNiri(
+  setLabel: (next: string | ((prev: string) => string)) => void,
+  setSwitchLayout: (next: () => void | Promise<void>) => void,
+) {
   const socketPath = GLib.getenv("NIRI_SOCKET")
   if (!socketPath) return () => {}
 
   let knownLayouts: string[] = []
   let stopped = false
+
+  setSwitchLayout(() => {
+    void execAsync(["niri", "msg", "action", "switch-layout", "next"]).catch(console.error)
+  })
   let reconnectId = 0
   let connection: Gio.SocketConnection | null = null
   let stream: Gio.DataInputStream | null = null
@@ -336,6 +366,10 @@ async function initializeNiri(setLabel: (next: string | ((prev: string) => strin
 export function KeyboardLayout() {
   const [label, setLabel] = createState("--")
   const [visible, setVisible] = createState(false)
+  let switchNextLayout: () => void | Promise<void> = () => {}
+  const setSwitchNextLayout = (next: () => void | Promise<void>) => {
+    switchNextLayout = next
+  }
 
   return (
     <box
@@ -350,13 +384,13 @@ export function KeyboardLayout() {
           try {
             if (GLib.getenv("HYPRLAND_INSTANCE_SIGNATURE")) {
               setVisible(true)
-              cleanup = await initializeHyprland(setLabel)
+              cleanup = await initializeHyprland(setLabel, setSwitchNextLayout)
               return
             }
 
             if (GLib.getenv("NIRI_SOCKET")) {
               setVisible(true)
-              cleanup = await initializeNiri(setLabel)
+              cleanup = await initializeNiri(setLabel, setSwitchNextLayout)
               return
             }
           } catch (error) {
@@ -367,6 +401,8 @@ export function KeyboardLayout() {
         void start().catch(console.error)
 
         self.connect("destroy", () => {
+          setSwitchNextLayout(() => {})
+
           try {
             cleanup?.()
           } catch (error) {
@@ -375,14 +411,17 @@ export function KeyboardLayout() {
         })
       }}
     >
-      <box
-        class="layout-indicator left-module-button left-module-content left-status-content"
-        spacing={0}
+      <button
+        class="layout-indicator left-module-button left-module-content left-status-content flat"
         valign={Gtk.Align.CENTER}
         halign={Gtk.Align.CENTER}
+        onClicked={() => {
+          void switchNextLayout()
+        }}
+        $={(self) => attachShellTooltip(self, "Switch keyboard layout")}
       >
         <label class="layout-label left-module-label" label={label} />
-      </box>
+      </button>
     </box>
   )
 }

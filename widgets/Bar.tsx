@@ -9,7 +9,7 @@ import { LeftModules } from "./LeftModules"
 import { Tray } from "./Tray"
 import { CenterModules } from "./CenterModules"
 import { RightModules } from "./RightModules"
-import { debugPopupLog } from "./DebugPopupLog"
+import { clipRoundedWidget } from "./FloatingPopup"
 
 const { TOP, LEFT, RIGHT } = Astal.WindowAnchor
 
@@ -26,15 +26,19 @@ export function Bar({ monitor }: { monitor: number }) {
     <window
       visible
       monitor={monitor}
-      namespace="obsidian-shell"
+      namespace="obsidian-shell-bar"
       class="bar-window"
       exclusivity={Astal.Exclusivity.EXCLUSIVE}
       keymode={Astal.Keymode.ON_DEMAND}
       anchor={TOP | LEFT | RIGHT}
       $={(self) => {
-        debugPopupLog("bar", "window ready", { monitor })
+        try {
+          self.set_margin_top(4)
+          self.set_margin_left(9)
+          self.set_margin_right(9)
+          self.set_margin_bottom(0)
+        } catch {}
         self.connect("destroy", () => {
-          debugPopupLog("bar", "window destroy", { monitor })
           if (closeTimeoutId !== 0) {
             GLib.source_remove(closeTimeoutId)
             closeTimeoutId = 0
@@ -66,7 +70,7 @@ export function Bar({ monitor }: { monitor: number }) {
           idle(() => (self.revealChild = true))
         }}
       >
-        <centerbox class="bar-shell">
+        <centerbox class="bar-shell" $={(self) => clipRoundedWidget(self)}>
           <Gtk.EventControllerMotion
             onEnter={() => barHoverHandlers.onEnter()}
             onLeave={() => barHoverHandlers.onLeave()}

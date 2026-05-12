@@ -5,6 +5,8 @@ import { createComputed, createState } from "ags"
 import { Astal } from "ags/gtk4"
 import { execAsync } from "ags/process"
 
+import { clipRoundedWidget, setLayerWindowMargins } from "./FloatingPopup"
+
 import {
   BRIGHTNESS_MIN,
   OSD_AUTO_HIDE_DELAY_MS,
@@ -30,7 +32,6 @@ type AudioSnapshot = {
 const { BOTTOM } = Astal.WindowAnchor
 
 const [windowVisible, setWindowVisible] = createState(false)
-const [revealed, setRevealed] = createState(false)
 const [kind, setKind] = createState<OsdKind>("volume")
 const [icon, setIcon] = createState("󰕾")
 const [value, setValue] = createState(0)
@@ -41,6 +42,8 @@ let pollSourceId = 0
 let hideSourceId = 0
 let closeSourceId = 0
 let valueAnimationSourceId = 0
+let osdRevealer: Gtk.Revealer | null = null
+let closingOsd = false
 let volumeBusy = false
 let brightnessBusy = false
 let lastVolumeKey = ""
@@ -191,17 +194,52 @@ async function shouldNotifyForExternalChange(kind: OsdKind) {
   return await isFullscreenActive()
 }
 
+function isOsdRevealed() {
+  return Boolean(osdRevealer?.get_reveal_child?.())
+}
+
+function finishCloseOsd() {
+  clearCloseTimeout()
+  closingOsd = false
+
+  if (osdRevealer) osdRevealer.revealChild = false
+  setWindowVisible(false)
+}
+
 function closeOsd() {
   clearHideTimeout()
-  clearCloseTimeout()
 
-  setRevealed(false)
+  if (!windowVisible()) {
+    clearCloseTimeout()
+    closingOsd = false
+    return
+  }
 
-  closeSourceId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, OSD_REVEAL_DURATION_MS, () => {
-    closeSourceId = 0
+  if (closingOsd) {
+    finishCloseOsd()
+    return
+  }
 
-    if (!revealed()) setWindowVisible(false)
+  closingOsd = true
 
+  if (isOsdRevealed()) {
+    osdRevealer!.revealChild = false
+    clearCloseTimeout()
+    closeSourceId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, OSD_REVEAL_DURATION_MS, () => {
+      closeSourceId = 0
+      finishCloseOsd()
+      return GLib.SOURCE_REMOVE
+    })
+    return
+  }
+
+  finishCloseOsd()
+}
+
+function revealOsdWhenMapped() {
+  GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+    if (!windowVisible() || closingOsd) return GLib.SOURCE_REMOVE
+    if (osdRevealer) osdRevealer.revealChild = true
     return GLib.SOURCE_REMOVE
   })
 }
@@ -209,6 +247,7 @@ function closeOsd() {
 function presentOsd(nextKind: OsdKind, nextValue: number, nextIcon: string, isMuted = false) {
   clearHideTimeout()
   clearCloseTimeout()
+  closingOsd = false
 
   setKind(nextKind)
   animateValue(nextValue)
@@ -217,13 +256,11 @@ function presentOsd(nextKind: OsdKind, nextValue: number, nextIcon: string, isMu
 
   if (!windowVisible()) {
     setWindowVisible(true)
-
-    GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-      setRevealed(true)
-      return GLib.SOURCE_REMOVE
-    })
+    revealOsdWhenMapped()
+  } else if (osdRevealer) {
+    osdRevealer.revealChild = true
   } else {
-    setRevealed(true)
+    revealOsdWhenMapped()
   }
 
   hideSourceId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, OSD_AUTO_HIDE_DELAY_MS, () => {
@@ -320,13 +357,20 @@ export function OsdWindow() {
   return (
     <window
       visible={windowVisible}
-      namespace="obsidian-shell"
+      defaultWidth={-1}
+      defaultHeight={-1}
+      resizable={false}
+      namespace="obsidian-shell-osd"
       class="osd-window"
       exclusivity={Astal.Exclusivity.IGNORE}
       keymode={Astal.Keymode.NONE}
       layer={Astal.Layer.OVERLAY}
       anchor={BOTTOM}
       $={(self) => {
+        try {
+          self.set_default_size(-1, -1)
+        } catch {}
+        setLayerWindowMargins(self, { bottom: OSD_BOTTOM_MARGIN })
         self.connect("destroy", () => {
           pollSourceId = clearSource(pollSourceId)
           hideSourceId = clearSource(hideSourceId)
@@ -340,6 +384,8 @@ export function OsdWindow() {
           startupSuppressUntil = 0
           volumeSuppressUntil = 0
           brightnessSuppressUntil = 0
+          osdRevealer = null
+          closingOsd = false
         })
       }}
     >
@@ -347,17 +393,17 @@ export function OsdWindow() {
         class="osd-placement"
         halign={Gtk.Align.CENTER}
         valign={Gtk.Align.END}
-        $={(self) => {
-          self.set_margin_bottom(OSD_BOTTOM_MARGIN)
-        }}
       >
         <revealer
           class="osd-revealer"
-          revealChild={revealed}
+          revealChild={false}
           transitionType={Gtk.RevealerTransitionType.SLIDE_UP}
           transitionDuration={OSD_REVEAL_DURATION_MS}
+          $={(self) => {
+            osdRevealer = self
+          }}
         >
-          <Gtk.Frame class="osd-frame" widthRequest={300}>
+          <box class="osd-frame" widthRequest={300} $={(self) => clipRoundedWidget(self)}>
             <box class="osd-body" orientation={Gtk.Orientation.VERTICAL} spacing={10}>
               <box class="osd-header" spacing={10} valign={Gtk.Align.CENTER}>
                 <label class="osd-icon" label={icon} />
@@ -377,7 +423,7 @@ export function OsdWindow() {
                 value={value}
               />
             </box>
-          </Gtk.Frame>
+          </box>
         </revealer>
       </box>
     </window>
