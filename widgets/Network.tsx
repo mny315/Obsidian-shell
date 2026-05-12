@@ -142,7 +142,9 @@ function appendServiceMeta(base: string, wireGuardActive: boolean, vlessActive: 
 
 async function getNmcliWifiEnabled() {
   const out = (await execText(["nmcli", "-t", "-f", "WIFI", "general", "status"])).toLowerCase()
-  return out === "enabled"
+  if (out === "enabled") return true
+  if (out === "disabled") return false
+  return null
 }
 
 function getAstalNetwork() {
@@ -170,9 +172,11 @@ function getAstalWifiEnabled(wifi = getAstalWifi()) {
 }
 
 async function getWifiEnabled() {
+  const nmcliEnabled = await getNmcliWifiEnabled()
+  if (nmcliEnabled !== null) return nmcliEnabled
   const astalEnabled = getAstalWifiEnabled()
   if (astalEnabled !== null) return astalEnabled
-  return getNmcliWifiEnabled()
+  return false
 }
 
 function setAstalWifiEnabled(enabled: boolean) {
@@ -238,12 +242,52 @@ function getAstalAccessPoints(wifi: AstalWifi | null | undefined) {
   }
 }
 
-function getWifiNetworks(savedConnections: Map<string, string[]>) {
+async function hasNmcliWifiDevice() {
+  const out = await execText(["nmcli", "-t", "-e", "yes", "-f", "TYPE", "device", "status"])
+  return out.split("\n").map(line => line.trim()).includes("wifi")
+}
+
+async function getNmcliWifiNetworks(savedConnections: Map<string, string[]>) {
+  const out = await execText(["nmcli", "-t", "-e", "yes", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "no"])
+  const networks: WifiNetwork[] = []
+
+  for (const line of out.split("\n")) {
+    if (!line.trim()) continue
+    const [active = "", ssid = "", signalRaw = "0", securityRaw = ""] = splitNmcliEscaped(line)
+    if (!ssid) continue
+    const signal = Math.max(0, Math.min(100, Number.parseInt(signalRaw, 10) || 0))
+    const security = securityRaw.trim() ? "secured" : "open"
+    networks.push({
+      inUse: active === "*",
+      ssid,
+      signal,
+      security,
+      saved: savedConnections.has(ssid),
+    })
+  }
+
+  if (!networks.some(network => network.inUse)) {
+    const activeSsid = await getActiveWifiSsid()
+    if (activeSsid && !networks.some(network => network.ssid === activeSsid)) {
+      networks.push({
+        inUse: true,
+        ssid: activeSsid,
+        signal: 0,
+        security: "secured",
+        saved: savedConnections.has(activeSsid),
+      })
+    }
+  }
+
+  return networks
+}
+
+async function getWifiNetworks(savedConnections: Map<string, string[]>) {
   const wifi = getAstalWifi()
   const activeAccessPoint = getAstalActiveAccessPoint(wifi)
   const activePath = accessPointPath(activeAccessPoint)
   const activeBssid = activeAccessPoint?.bssid ?? ""
-  const networks = getAstalAccessPoints(wifi).map((accessPoint) => {
+  const astalNetworks = getAstalAccessPoints(wifi).map((accessPoint) => {
     const ssid = accessPointSsid(accessPoint)
     const path = accessPointPath(accessPoint)
     const bssid = accessPoint.bssid ?? ""
@@ -257,8 +301,8 @@ function getWifiNetworks(savedConnections: Map<string, string[]>) {
   })
 
   const activeSsid = accessPointSsid(activeAccessPoint) || wifi?.ssid?.trim() || ""
-  if (activeSsid && !networks.some(network => network.inUse || network.ssid === activeSsid)) {
-    networks.push({
+  if (activeSsid && !astalNetworks.some(network => network.inUse || network.ssid === activeSsid)) {
+    astalNetworks.push({
       inUse: true,
       ssid: activeSsid,
       signal: accessPointSignal(activeAccessPoint) || accessPointSignal(wifi as unknown as AstalAccessPoint),
@@ -267,19 +311,25 @@ function getWifiNetworks(savedConnections: Map<string, string[]>) {
     })
   }
 
-  return uniqueWifiNetworks(networks)
+  const nmcliNetworks = await getNmcliWifiNetworks(savedConnections)
+  return uniqueWifiNetworks([...astalNetworks, ...nmcliNetworks])
 }
 
-function scanWifiNetworks() {
+async function scanWifiNetworks() {
   const wifi = getAstalWifi()
-  if (!wifi?.scan) return false
-  try {
-    wifi.scan()
-    return true
-  } catch (error) {
-    console.warn(`Astal Wi‑Fi scan failed: ${errorText(error)}`)
-    return false
+  let started = false
+
+  if (wifi?.scan) {
+    try {
+      wifi.scan()
+      started = true
+    } catch (error) {
+      console.warn(`Astal Wi‑Fi scan failed: ${errorText(error)}`)
+    }
   }
+
+  const result = await execResult(["nmcli", "device", "wifi", "rescan"])
+  return started || result.ok
 }
 
 async function getActiveWifiSsid() {
@@ -755,7 +805,7 @@ export function NetworkControl({
 
     deferAction(async () => {
       if (!(await getWifiEnabled())) return
-      if (scanWifiNetworks()) {
+      if (await scanWifiNetworks()) {
         presentStatus("Scanning networks…", { durationMs: WIFI_SCAN_SETTLE_DELAY_MS })
         scheduleRefresh(WIFI_SCAN_SETTLE_DELAY_MS)
       }
@@ -948,10 +998,11 @@ export function NetworkControl({
       }
 
       const wifi = getAstalWifi()
+      const [enabled, nmcliWifiDevice] = await Promise.all([getWifiEnabled(), hasNmcliWifiDevice()])
+      const wifiAvailable = Boolean(wifi) || nmcliWifiDevice
 
-      if (!wifi && wifiDeviceRetryCount < WIFI_DEVICE_RETRY_LIMIT) {
+      if (!wifiAvailable && wifiDeviceRetryCount < WIFI_DEVICE_RETRY_LIMIT) {
         wifiDeviceRetryCount += 1
-        const enabled = await getWifiEnabled()
         wifiEnabled = enabled
         syncWifiSwitch(enabled)
         rescanButton?.set_sensitive(false)
@@ -964,13 +1015,13 @@ export function NetworkControl({
         return
       }
 
-      const [enabled, networks] = await Promise.all([getWifiEnabled(), getWifiNetworks(savedConnections)])
-      wifiDeviceRetryCount = wifi ? 0 : wifiDeviceRetryCount
+      const networks = enabled ? await getWifiNetworks(savedConnections) : []
+      wifiDeviceRetryCount = wifiAvailable ? 0 : wifiDeviceRetryCount
       wifiEnabled = enabled
       syncWifiSwitch(enabled)
-      rescanButton?.set_sensitive(enabled && Boolean(wifi?.scan))
+      rescanButton?.set_sensitive(enabled && wifiAvailable)
 
-      if (!wifi) {
+      if (!wifiAvailable) {
         setIcon(BAR_WIFI_OFF_ICON)
         setTitle("Network")
         setMeta(appendServiceMeta("No Wi‑Fi device", wgActive, serviceActive))
@@ -1192,7 +1243,7 @@ export function NetworkControl({
     if (wifiEnabled) {
       deferAction(async () => {
         presentStatus("Scanning networks…", { durationMs: WIFI_SCAN_SETTLE_DELAY_MS })
-        if (!scanWifiNetworks()) await execResult(["nmcli", "device", "wifi", "rescan"])
+        if (!(await scanWifiNetworks())) presentStatus("Scan failed")
         timeout(WIFI_SCAN_SETTLE_DELAY_MS, () => { presentStatus(""); scheduleRefresh(0) })
       })
     }
