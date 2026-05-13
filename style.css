@@ -6,6 +6,10 @@
 @define-color section_bg rgba(24,29,40,0.42);
 @define-color section_border rgba(255,255,255,0.08);
 @define-color panel_bg rgba(28,34,46,0.52);
+@define-color popup_list_bg rgba(255,255,255,0.035);
+@define-color popup_card_bg rgba(38,44,58,0.34);
+@define-color popup_card_hover_bg rgba(255,255,255,0.095);
+@define-color popup_card_active_bg rgba(210,225,255,0.13);
 @define-color panel_border rgba(255,255,255,0.11);
 @define-color hover_bg rgba(255,255,255,0.10);
 @define-color active_bg rgba(255,255,255,0.15);
@@ -1964,6 +1968,91 @@ button.audio-sink-side-button:active {
 
 .audio-trigger.widget-trigger-open {
   background: @active_bg;
+  background-image: none;
+  box-shadow: none;
+}
+
+.launcher-list-wrap,
+.launcher-list-wrap > viewport,
+.launcher-list-wrap viewport,
+.launcher-list-wrap viewport > *,
+.launcher-list-content,
+.network-list-capsule,
+.network-list-scroller,
+.network-list-scroller > viewport,
+.network-list-scroller viewport,
+.network-list-scroller viewport > *,
+.network-list-inner,
+.audio-list-capsule,
+.audio-list-scroller,
+.audio-list-scroller > viewport,
+.audio-list-scroller viewport,
+.audio-list-scroller viewport > *,
+.audio-list-inner,
+.wallpaper-list-wrap,
+.wallpaper-list-wrap > viewport,
+.wallpaper-list-wrap viewport,
+.wallpaper-list-wrap viewport > *,
+.wallpaper-grid-rows,
+.wallpaper-grid-row {
+  background: transparent;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  border: none;
+}
+
+.wallpaper-gallery-frame {
+  background: transparent;
+  background-color: @popup_list_bg;
+  background-image: none;
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: none;
+}
+
+.network-row-shell,
+.network-row-current,
+.launcher-app-card,
+.audio-sink-row,
+.audio-sink-current {
+  background: transparent;
+  background-color: @popup_card_bg;
+  background-image: none;
+  border-color: @panel_border;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08),inset 0 -1px 0 rgba(0,0,0,0.05);
+}
+
+.network-row-shell:hover,
+.audio-sink-row:hover,
+.audio-sink-current:hover,
+.launcher-app-card:hover {
+  background: transparent;
+  background-color: @popup_card_hover_bg;
+  background-image: none;
+  border-color: @glass_border;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08),inset 0 -1px 0 rgba(0,0,0,0.05);
+}
+
+.network-row-shell:active,
+.audio-sink-row:active,
+.launcher-app-card:active {
+  background: transparent;
+  background-color: @popup_card_active_bg;
+  background-image: none;
+  border-color: rgba(220,232,255,0.20);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08),inset 0 -1px 0 rgba(0,0,0,0.05);
+}
+
+.launcher-app-main,
+.launcher-app-row,
+.launcher-app-content,
+.launcher-app-icon-wrap,
+.network-row-body,
+.audio-sink-main,
+.audio-sink-body,
+.audio-sink-content {
+  background: transparent;
+  background-color: transparent;
   background-image: none;
   box-shadow: none;
 }

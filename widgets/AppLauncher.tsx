@@ -6,8 +6,6 @@ import Gtk from "gi://Gtk?version=4.0"
 import Pango from "gi://Pango"
 
 import { For, createComputed, createState } from "ags"
-import { execAsync } from "ags/process"
-
 import { attachEscapeKey } from "./EscapeKey"
 import { LEFT_TOP_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, attachPopupFocusDismiss, clipRoundedWidget, placeLayerWindowAtTopEdge } from "./FloatingPopup"
 import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
@@ -191,10 +189,6 @@ function formatError(error: unknown) {
   if (error instanceof Error && error.message) return error.message
   if (typeof error === "string" && error.trim().length > 0) return error.trim()
   return "Failed to launch application"
-}
-
-function shellQuote(text: string) {
-  return `'${text.replace(/'/g, `'\\''`)}'`
 }
 
 export function AppLauncherControl({
@@ -451,30 +445,33 @@ export function AppLauncherControl({
   launcherControllers.add(controller)
   rebuildApplicationDirectoryMonitors()
 
-  const launchApp = async (app: LaunchableApp) => {
-    setNotice(null)
-
+  const spawnGtkLaunch = (id: string) => {
     try {
-      if (app.id) {
-        await execAsync(["bash", "-lc", `gtk-launch ${shellQuote(app.id)}`])
-      } else {
-        const launched = app.appInfo.launch([], null)
-        if (!launched) throw new Error("Failed to start application")
-      }
-
-      closePopup()
-      return
+      const [started] = GLib.spawn_async(null, ["gtk-launch", id], null, GLib.SpawnFlags.SEARCH_PATH, null)
+      if (!started) throw new Error("Failed to start application")
+      return true
     } catch (error) {
+      console.warn(formatError(error))
+      return false
+    }
+  }
+
+  const launchApp = (app: LaunchableApp) => {
+    setNotice(null)
+    closePopup()
+
+    GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
       try {
         const launched = app.appInfo.launch([], null)
-        if (launched) {
-          closePopup()
-          return
-        }
-      } catch {}
+        if (!launched && app.id) spawnGtkLaunch(app.id)
+        else if (!launched) console.warn("Failed to start application")
+      } catch (error) {
+        if (app.id) spawnGtkLaunch(app.id)
+        else console.warn(formatError(error))
+      }
 
-      setNotice(formatError(error))
-    }
+      return GLib.SOURCE_REMOVE
+    })
   }
 
   const setHiddenAppKeys = (value: string[] | ((value: string[]) => string[])) => {

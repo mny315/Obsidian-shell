@@ -14,10 +14,11 @@ import { attachShellTooltip } from "./ShellTooltip"
 
 const POPOVER_REVEAL_DURATION_MS = 165
 const NETWORK_POPOVER_WIDTH = 392
-const NETWORK_STARTUP_DELAY_MS = 700
 const WIFI_DEVICE_RETRY_DELAY_MS = 350
 const WIFI_DEVICE_RETRY_LIMIT = 12
 const WIFI_SCAN_SETTLE_DELAY_MS = 1600
+const WIFI_RADIO_POLL_INTERVAL_MS = 300
+const WIFI_RADIO_POLL_LIMIT = 30
 const BAR_WIFI_ICON = "󰤨"
 const BAR_WIFI_OFF_ICON = "󰖪"
 const VLESS_SERVICE_NAME = "sing-box.service"
@@ -84,12 +85,6 @@ type AstalNetworkService = SignalSource & {
   wifi?: AstalWifi | null
   get_client?: () => SignalSource | null
   get_wifi?: () => AstalWifi | null
-}
-
-function waitMs(ms: number) {
-  return new Promise<void>((resolve) => {
-    timeout(ms, () => resolve())
-  })
 }
 
 function errorText(error: unknown) {
@@ -702,8 +697,10 @@ export function NetworkControl({
   let steadyRefreshId = 0
   let refreshInFlight = false
   let refreshAgain = false
-  let firstRefresh = true
   let wifiDeviceRetryCount = 0
+  let wifiRadioPollId = 0
+  let wifiRadioTarget: boolean | null = null
+  let lastWifiNetworks: WifiNetwork[] = []
 
   const [icon, setIcon] = createState("󰖪")
   const [title, setTitle] = createState("Network")
@@ -974,11 +971,6 @@ export function NetworkControl({
     refreshInFlight = true
 
     try {
-      if (firstRefresh) {
-        firstRefresh = false
-        await waitMs(NETWORK_STARTUP_DELAY_MS)
-      }
-
       const nmReady = await isNetworkManagerReady()
       const [wgProfiles, savedConnections, serviceActive] = await Promise.all([getWireGuardProfiles(), getSavedWifiConnections(), getVlessServiceActive()])
       const wgActive = wgProfiles.some(p => p.active)
@@ -998,8 +990,13 @@ export function NetworkControl({
       }
 
       const wifi = getAstalWifi()
-      const [enabled, nmcliWifiDevice] = await Promise.all([getWifiEnabled(), hasNmcliWifiDevice()])
+      const [observedEnabled, nmcliWifiDevice] = await Promise.all([getWifiEnabled(), hasNmcliWifiDevice()])
+      const enabled = wifiRadioTarget ?? observedEnabled
       const wifiAvailable = Boolean(wifi) || nmcliWifiDevice
+
+      if (wifiRadioTarget !== null && observedEnabled === wifiRadioTarget) {
+        wifiRadioTarget = null
+      }
 
       if (!wifiAvailable && wifiDeviceRetryCount < WIFI_DEVICE_RETRY_LIMIT) {
         wifiDeviceRetryCount += 1
@@ -1016,6 +1013,8 @@ export function NetworkControl({
       }
 
       const networks = enabled ? await getWifiNetworks(savedConnections) : []
+      if (enabled && networks.length > 0) lastWifiNetworks = networks
+      if (!enabled || !wifiAvailable) lastWifiNetworks = []
       wifiDeviceRetryCount = wifiAvailable ? 0 : wifiDeviceRetryCount
       wifiEnabled = enabled
       syncWifiSwitch(enabled)
@@ -1036,11 +1035,12 @@ export function NetworkControl({
         setMeta(appendServiceMeta("Wi‑Fi off", wgActive, serviceActive))
         renderWifiList([])
       } else {
-        const current = networks.find(n => n.inUse)
+        const visibleNetworks = networks.length > 0 ? networks : lastWifiNetworks
+        const current = visibleNetworks.find(n => n.inUse)
         setIcon(current ? wifiSignalIcon(current.signal) : BAR_WIFI_ICON)
         setTitle(current?.ssid || "Wi‑Fi")
-        setMeta(appendServiceMeta(current ? current.signal + "%" : "Ready", wgActive, serviceActive))
-        renderWifiList(networks)
+        setMeta(appendServiceMeta(current ? current.signal + "%" : wifiRadioTarget !== null ? "Starting…" : "Ready", wgActive, serviceActive))
+        renderWifiList(visibleNetworks)
       }
 
       renderWireGuardList(wgProfiles)
@@ -1058,6 +1058,33 @@ export function NetworkControl({
     refreshDebounce = timeout(delay, () => {
       refreshDebounce = null
       void refresh()
+    })
+  }
+
+  const stopWifiRadioPolling = () => {
+    if (wifiRadioPollId === 0) return
+    GLib.source_remove(wifiRadioPollId)
+    wifiRadioPollId = 0
+  }
+
+  const startWifiRadioPolling = (target: boolean) => {
+    stopWifiRadioPolling()
+    wifiRadioTarget = target
+    let ticks = 0
+
+    scheduleRefresh(0)
+
+    wifiRadioPollId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, WIFI_RADIO_POLL_INTERVAL_MS, () => {
+      ticks += 1
+      scheduleRefresh(0)
+
+      if (wifiRadioTarget === null || ticks >= WIFI_RADIO_POLL_LIMIT) {
+        wifiRadioPollId = 0
+        if (ticks >= WIFI_RADIO_POLL_LIMIT) wifiRadioTarget = null
+        return GLib.SOURCE_REMOVE
+      }
+
+      return GLib.SOURCE_CONTINUE
     })
   }
 
@@ -1279,11 +1306,26 @@ export function NetworkControl({
             }
             renderWifiList([], "Scanning networks…")
 
+            startWifiRadioPolling(enabled)
+
             deferAction(async () => {
-              const result = setAstalWifiEnabled(enabled)
-                ? { ok: true, text: "" }
-                : await execResult(["nmcli", "radio", "wifi", enabled ? "on" : "off"])
-              if (!result.ok) presentStatus(result.text || "Failed to change Wi‑Fi state")
+              const astalChanged = setAstalWifiEnabled(enabled)
+              const result = await execResult(["nmcli", "radio", "wifi", enabled ? "on" : "off"])
+              if (!result.ok && !astalChanged) {
+                wifiRadioTarget = null
+                presentStatus(result.text || "Failed to change Wi‑Fi state")
+                scheduleRefresh(0)
+                return
+              }
+
+              if (enabled) {
+                if (await scanWifiNetworks()) {
+                  scheduleRefresh(WIFI_SCAN_SETTLE_DELAY_MS)
+                }
+              } else {
+                lastWifiNetworks = []
+              }
+
               scheduleRefresh(100)
             })
           })
@@ -1426,6 +1468,7 @@ export function NetworkControl({
           unregisterPopupController()
           clearCloseTimeout()
           clearStatusTimer()
+          stopWifiRadioPolling()
           refreshDebounce?.cancel()
           refreshDebounce = null
           disconnectNetworkSignals()
