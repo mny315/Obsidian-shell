@@ -605,15 +605,26 @@ popover.tray-menu-popover-window contents {
   animation: none;
 }
 
+popover.tray-menu-popover-window contents *,
 popover.tray-menu-popover-window contents box,
 popover.tray-menu-popover-window contents stack,
+popover.tray-menu-popover-window contents scrolledwindow,
+popover.tray-menu-popover-window contents viewport,
+popover.tray-menu-popover-window contents frame,
+popover.tray-menu-popover-window contents list,
+popover.tray-menu-popover-window contents row,
 popover.tray-menu-popover-window contents label,
-popover.tray-menu-popover-window contents image {
+popover.tray-menu-popover-window contents image,
+popover.tray-menu-popover-window contents check,
+popover.tray-menu-popover-window contents radio,
+popover.tray-menu-popover-window contents arrow,
+popover.tray-menu-popover-window contents accelerator {
   background: transparent;
   background-color: transparent;
   background-image: none;
   border: none;
   box-shadow: none;
+  text-shadow: none;
 }
 
 window.widget-popup-window,
@@ -821,8 +832,13 @@ tooltip label,
 }
 
 popover.tray-menu-popover-window contents modelbutton,
+popover.tray-menu-popover-window contents modelbutton.flat,
 popover.tray-menu-popover-window contents button,
-popover.tray-menu-popover-window contents button.model {
+popover.tray-menu-popover-window contents button.flat,
+popover.tray-menu-popover-window contents button.model,
+popover.tray-menu-popover-window contents button.text-button,
+popover.tray-menu-popover-window contents button.image-button,
+popover.tray-menu-popover-window contents button.image-text-button {
   min-height: 30px;
   margin: 2px 0;
   padding: 0 10px;
@@ -833,21 +849,38 @@ popover.tray-menu-popover-window contents button.model {
   background-image: none;
   border: none;
   box-shadow: none;
+  text-shadow: none;
 }
 
 popover.tray-menu-popover-window contents modelbutton:hover,
+popover.tray-menu-popover-window contents modelbutton.flat:hover,
 popover.tray-menu-popover-window contents button:hover,
+popover.tray-menu-popover-window contents button.flat:hover,
 popover.tray-menu-popover-window contents button.model:hover,
+popover.tray-menu-popover-window contents button.text-button:hover,
+popover.tray-menu-popover-window contents button.image-button:hover,
+popover.tray-menu-popover-window contents button.image-text-button:hover,
 popover.tray-menu-popover-window contents modelbutton:active,
+popover.tray-menu-popover-window contents modelbutton.flat:active,
 popover.tray-menu-popover-window contents button:active,
+popover.tray-menu-popover-window contents button.flat:active,
 popover.tray-menu-popover-window contents button.model:active,
+popover.tray-menu-popover-window contents button.text-button:active,
+popover.tray-menu-popover-window contents button.image-button:active,
+popover.tray-menu-popover-window contents button.image-text-button:active,
 popover.tray-menu-popover-window contents modelbutton:checked,
+popover.tray-menu-popover-window contents modelbutton.flat:checked,
 popover.tray-menu-popover-window contents button:checked,
-popover.tray-menu-popover-window contents button.model:checked {
+popover.tray-menu-popover-window contents button.flat:checked,
+popover.tray-menu-popover-window contents button.model:checked,
+popover.tray-menu-popover-window contents button.text-button:checked,
+popover.tray-menu-popover-window contents button.image-button:checked,
+popover.tray-menu-popover-window contents button.image-text-button:checked {
   background: @hover_bg;
   background-color: @hover_bg;
   background-image: none;
   box-shadow: none;
+  text-shadow: none;
 }
 
 popover.tray-menu-popover-window contents button:disabled,
