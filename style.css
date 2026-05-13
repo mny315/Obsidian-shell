@@ -571,8 +571,7 @@ scale.slider-control:active > trough > slider {
 popover.bluetooth-popover-window contents,
 popover.network-popover-window contents,
 popover.launcher-popover-window contents,
-popover.wallpaper-popover-window contents,
-popover.tray-menu-popover-window contents {
+popover.wallpaper-popover-window contents {
   background: @popup_surface_bg;
   border: 1px solid @popup_surface_border;
   border-radius: 18px;
@@ -580,6 +579,41 @@ popover.tray-menu-popover-window contents {
   padding: 12px;
   box-shadow: none;
   animation: none;
+}
+
+popover.tray-menu-popover-window,
+popover.tray-menu-popover-window.background,
+popover.tray-menu-popover-window.menu {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+}
+
+popover.tray-menu-popover-window contents {
+  background: @popup_surface_bg;
+  background-color: @popup_surface_bg;
+  background-image: none;
+  border: 1px solid @popup_surface_border;
+  border-radius: 18px;
+  background-clip: padding-box;
+  padding: 8px;
+  box-shadow: none;
+  animation: none;
+}
+
+popover.tray-menu-popover-window contents box,
+popover.tray-menu-popover-window contents stack,
+popover.tray-menu-popover-window contents label,
+popover.tray-menu-popover-window contents image {
+  background: transparent;
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
 }
 
 window.widget-popup-window,
@@ -787,23 +821,46 @@ tooltip label,
 }
 
 popover.tray-menu-popover-window contents modelbutton,
-popover.tray-menu-popover-window contents button {
+popover.tray-menu-popover-window contents button,
+popover.tray-menu-popover-window contents button.model {
   min-height: 30px;
   margin: 2px 0;
   padding: 0 10px;
   border-radius: 10px;
+  color: @fg;
   background: transparent;
+  background-color: transparent;
   background-image: none;
+  border: none;
   box-shadow: none;
 }
 
 popover.tray-menu-popover-window contents modelbutton:hover,
 popover.tray-menu-popover-window contents button:hover,
+popover.tray-menu-popover-window contents button.model:hover,
 popover.tray-menu-popover-window contents modelbutton:active,
 popover.tray-menu-popover-window contents button:active,
+popover.tray-menu-popover-window contents button.model:active,
 popover.tray-menu-popover-window contents modelbutton:checked,
-popover.tray-menu-popover-window contents button:checked {
+popover.tray-menu-popover-window contents button:checked,
+popover.tray-menu-popover-window contents button.model:checked {
   background: @hover_bg;
+  background-color: @hover_bg;
+  background-image: none;
+  box-shadow: none;
+}
+
+popover.tray-menu-popover-window contents button:disabled,
+popover.tray-menu-popover-window contents button.model:disabled,
+popover.tray-menu-popover-window contents label:disabled {
+  opacity: 0.45;
+}
+
+popover.tray-menu-popover-window contents separator {
+  min-height: 1px;
+  margin: 6px 8px;
+  background: @popup_surface_border;
+  background-color: @popup_surface_border;
   background-image: none;
   box-shadow: none;
 }
