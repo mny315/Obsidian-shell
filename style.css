@@ -719,30 +719,69 @@ button.wallpaper-card {
 }
 
 calendar.calendar-widget,
+calendar.calendar-widget.view,
 .calendar-widget {
   padding: 8px;
   border-radius: 14px;
-  background: rgba(28,34,46,0.44);
+  background: rgba(28,34,46,0.24);
+  background-color: rgba(28,34,46,0.24);
+  background-image: none;
   border: 1px solid rgba(255,255,255,0.09);
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.07),inset 0 -1px 0 rgba(0,0,0,0.06);
 }
 
+calendar.calendar-widget > grid,
+calendar.calendar-widget.view > grid,
+.calendar-widget > grid {
+  background: transparent;
+  background-color: transparent;
+  background-image: none;
+}
+
 calendar.calendar-widget > header,
-.calendar-widget > header {
+.calendar-widget > header,
+calendar.calendar-widget header,
+.calendar-widget header,
+calendar.calendar-widget header stack,
+.calendar-widget header stack,
+calendar.calendar-widget header stack.month,
+.calendar-widget header stack.month,
+calendar.calendar-widget header label,
+.calendar-widget header label,
+calendar.calendar-widget header label.year,
+.calendar-widget header label.year {
   min-height: 30px;
   margin-bottom: 4px;
   background: transparent;
+  background-color: transparent;
+  background-image: none;
   border: none;
   box-shadow: none;
 }
 
+calendar.calendar-widget header stack,
+.calendar-widget header stack,
+calendar.calendar-widget header stack.month,
+.calendar-widget header stack.month,
+calendar.calendar-widget header label,
+.calendar-widget header label,
+calendar.calendar-widget header label.year,
+.calendar-widget header label.year {
+  margin: 0;
+  padding: 0;
+}
+
 calendar.calendar-widget button,
-.calendar-widget button {
+.calendar-widget button,
+calendar.calendar-widget header button,
+.calendar-widget header button {
   min-width: 28px;
   min-height: 28px;
   padding: 0;
   border-radius: 9px;
   background: transparent;
+  background-color: transparent;
+  background-image: none;
   border: none;
   box-shadow: none;
 }
@@ -760,13 +799,25 @@ calendar.calendar-widget grid label,
   padding: 0;
   border-radius: 9px;
   font-size: 13px;
+  background: transparent;
+  background-color: transparent;
+  background-image: none;
 }
 
 calendar.calendar-widget grid label.today,
 .calendar-widget grid label.today {
   background: @active_bg;
+  background-color: @active_bg;
+  background-image: none;
   color: @fg;
   font-weight: 600;
+}
+
+calendar.calendar-widget grid label:selected,
+.calendar-widget grid label:selected {
+  background: @active_bg;
+  background-color: @active_bg;
+  background-image: none;
 }
 
 calendar.calendar-widget grid label.other-month,
