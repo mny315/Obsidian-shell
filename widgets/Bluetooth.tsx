@@ -793,10 +793,26 @@ export function BluetoothControl({
     })
   }
 
+  const hasBluetoothAdapter = createComputed(() => adapterList().length > 0)
+  const adapterPowered = createComputed(() => Boolean(adapterList()[0]?.powered))
   const sortedDevices = createComputed(() => [...deviceList()].sort((a, b) => deviceSortScore(a) - deviceSortScore(b)))
+  const visibleDevices = createComputed(() => adapterPowered() ? sortedDevices() : [])
+  const deviceListEmptyText = createComputed(() => {
+    const adapter = adapterList()[0] ?? null
+    if (!adapter) return "Bluetooth unavailable"
+    if (!adapterPowered()) return "Bluetooth is turned off"
+    if (adapter.discovering) return "Scanning devices…"
+    return "No devices found"
+  })
+  const deviceListEmptyMeta = createComputed(() => {
+    const adapter = adapterList()[0] ?? null
+    if (!adapter) return "No Bluetooth adapter found"
+    if (!adapterPowered()) return "Turn it on to see available devices"
+    return ""
+  })
   const triggerIcon = createComputed(() => triggerGlyph(powered(), connected()))
 
-  const connectedDeviceNames = createComputed(() => sortedDevices()
+  const connectedDeviceNames = createComputed(() => visibleDevices()
     .filter((device) => device.connected)
     .map((device) => deviceName(device)))
 
@@ -893,6 +909,16 @@ export function BluetoothControl({
   const unregisterPopupController = registerPopupController(popupRegistryId, { close: closePopup })
 
   const openPopup = () => {
+    const adapters = readAdapters()
+    setAdapterList(adapters)
+
+    if (adapters.length === 0) {
+      clearDiscoveryTimeout()
+      presentNotice(null)
+      finishClosePopup()
+      return
+    }
+
     if (windowVisible()) {
       if (closingPopup || !isPopupRevealed()) resetStalePopupState("open requested while visible but not revealed")
       else {
@@ -910,7 +936,7 @@ export function BluetoothControl({
     presentNotice(null)
     requestDeviceRefresh(0)
     requestAdapterRefresh(0)
-    scheduleDiscoveryTimeout(readAdapters()[0] ?? null)
+    scheduleDiscoveryTimeout(adapters[0] ?? null)
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
       if (!windowVisible() || closingPopup) return GLib.SOURCE_REMOVE
       syncPopupPosition()
@@ -975,9 +1001,11 @@ export function BluetoothControl({
                   <label class="network-header-meta" xalign={0} label={adapterMeta} />
                 </box>
                 <box class="network-header-actions" spacing={6} valign={Gtk.Align.CENTER}>
-                  <button class="flat network-icon-button" valign={Gtk.Align.CENTER} onClicked={() => {
+                  <button class="flat network-icon-button" valign={Gtk.Align.CENTER} sensitive={adapterPowered} onClicked={() => {
+                    if (!adapterPowered()) return
                     deferAction(() => {
                       try {
+                        if (!adapter.powered) return
                         if (adapter.discovering) {
                           clearDiscoveryTimeout()
                           adapter.stop_discovery()
@@ -1028,8 +1056,13 @@ export function BluetoothControl({
                       pendingPowered = targetPowered
                       deferAction(async () => {
                         try {
+                          if (!targetPowered) {
+                            clearDiscoveryTimeout()
+                            if (adapter.discovering) adapter.stop_discovery()
+                          }
                           adapter.powered = targetPowered
                           requestAdapterRefresh(120)
+                          requestDeviceRefresh(120)
                         } finally {
                           pendingPowered = null
                           GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
@@ -1051,26 +1084,50 @@ export function BluetoothControl({
         </With>
       </box>
 
-      <box orientation={Gtk.Orientation.VERTICAL} spacing={6} vexpand>
-        <label class="network-section-title" xalign={0} label="Devices" />
-        <box class="network-list-capsule" orientation={Gtk.Orientation.VERTICAL} vexpand>
-          <Gtk.ScrolledWindow class="network-list-scroller" vexpand minContentHeight={120} maxContentHeight={220} propagateNaturalHeight>
-            <box class="network-list-inner" orientation={Gtk.Orientation.VERTICAL} spacing={0}>
-              <For each={sortedDevices}>
-                {(device) => (
-                  <BluetoothDeviceRow
-                    device={device}
-                    getAdapter={() => adapterList()[0] ?? null}
-                    setNotice={presentNotice}
-                    requestDeviceRefresh={requestDeviceRefresh}
-                    requestAdapterRefresh={requestAdapterRefresh}
-                  />
-                )}
-              </For>
+      <With value={createComputed(() => ({ powered: adapterPowered(), emptyText: deviceListEmptyText(), emptyMeta: deviceListEmptyMeta() }))}>
+        {(state) => state.powered ? (
+          <box orientation={Gtk.Orientation.VERTICAL} spacing={6} vexpand>
+            <label class="network-section-title" xalign={0} label="Devices" />
+            <box class="network-list-capsule" orientation={Gtk.Orientation.VERTICAL} vexpand>
+              <Gtk.ScrolledWindow class="network-list-scroller" vexpand minContentHeight={120} maxContentHeight={220} propagateNaturalHeight>
+                <box class="network-list-inner" orientation={Gtk.Orientation.VERTICAL} spacing={0}>
+                  <For each={visibleDevices}>
+                    {(device) => (
+                      <BluetoothDeviceRow
+                        device={device}
+                        getAdapter={() => adapterList()[0] ?? null}
+                        setNotice={presentNotice}
+                        requestDeviceRefresh={requestDeviceRefresh}
+                        requestAdapterRefresh={requestAdapterRefresh}
+                      />
+                    )}
+                  </For>
+                  <With value={createComputed(() => visibleDevices().length === 0 ? deviceListEmptyText() : null)}>
+                    {(emptyText) => emptyText && (
+                      <label class="network-empty" xalign={0} label={emptyText} />
+                    )}
+                  </With>
+                </box>
+              </Gtk.ScrolledWindow>
             </box>
-          </Gtk.ScrolledWindow>
-        </box>
-      </box>
+          </box>
+        ) : (
+          <box orientation={Gtk.Orientation.VERTICAL} spacing={6}>
+            <label class="network-section-title" xalign={0} label="Devices" />
+            <box class="network-list-capsule" orientation={Gtk.Orientation.VERTICAL}>
+              <box class="network-list-inner" orientation={Gtk.Orientation.VERTICAL} spacing={0}>
+                <box class="bluetooth-off-state" spacing={10} valign={Gtk.Align.CENTER}>
+                  <label class="network-row-icon" label={triggerGlyph(false, false)} />
+                  <box orientation={Gtk.Orientation.VERTICAL} spacing={2} hexpand valign={Gtk.Align.CENTER}>
+                    <label class="network-row-title" xalign={0} label={state.emptyText} />
+                    <label class="network-row-meta" xalign={0} label={state.emptyMeta} />
+                  </box>
+                </box>
+              </box>
+            </box>
+          </box>
+        )}
+      </With>
 
       <With value={notice}>
         {(value) => value && (
@@ -1136,14 +1193,12 @@ export function BluetoothControl({
   void popupWindow
 
   return (
-    <box class="network-shell" valign={Gtk.Align.CENTER}>
-      <button class="bluetooth-trigger" valign={Gtk.Align.CENTER} onClicked={() => {
+    <box class="network-shell" valign={Gtk.Align.CENTER} visible={hasBluetoothAdapter}>
+      <button class="bluetooth-trigger" valign={Gtk.Align.CENTER} sensitive={hasBluetoothAdapter} onClicked={() => {
         togglePopup()
       }} $={(self) => {
         attachShellTooltip(self, triggerTooltip)
         trigger = self
-
-        void ensureBluetoothAgent()
 
         syncDevices()
         syncAdapters()
@@ -1173,23 +1228,26 @@ export function BluetoothControl({
         }
 
         const notifyDevicesId = bluetooth.connect("notify::devices", () => requestDeviceRefresh())
-        const notifyAdaptersId = bluetooth.connect("notify::adapters", () => {
+        const handleAdapterInventoryChanged = () => {
           syncAdapterWatchers()
-          requestAdapterRefresh()
-          scheduleDiscoveryTimeout(readAdapters()[0] ?? null)
-        })
+          requestAdapterRefresh(0)
+
+          const adapter = readAdapters()[0] ?? null
+          if (!adapter) {
+            clearDiscoveryTimeout()
+            presentNotice(null)
+            finishClosePopup()
+            return
+          }
+
+          scheduleDiscoveryTimeout(adapter)
+        }
+
+        const notifyAdaptersId = bluetooth.connect("notify::adapters", handleAdapterInventoryChanged)
         const deviceAddedId = bluetooth.connect("device-added", () => requestDeviceRefresh())
         const deviceRemovedId = bluetooth.connect("device-removed", () => requestDeviceRefresh(120))
-        const adapterAddedId = bluetooth.connect("adapter-added", () => {
-          syncAdapterWatchers()
-          requestAdapterRefresh()
-          scheduleDiscoveryTimeout(readAdapters()[0] ?? null)
-        })
-        const adapterRemovedId = bluetooth.connect("adapter-removed", () => {
-          syncAdapterWatchers()
-          clearDiscoveryTimeout()
-          requestAdapterRefresh(120)
-        })
+        const adapterAddedId = bluetooth.connect("adapter-added", handleAdapterInventoryChanged)
+        const adapterRemovedId = bluetooth.connect("adapter-removed", handleAdapterInventoryChanged)
 
         syncAdapterWatchers()
         scheduleDiscoveryTimeout(readAdapters()[0] ?? null)

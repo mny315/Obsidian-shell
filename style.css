@@ -1115,6 +1115,12 @@ switch.bluetooth-device-switch:disabled {
   opacity: 0.78;
 }
 
+.bluetooth-off-state {
+  min-height: 42px;
+  padding: 8px 10px;
+  margin: 2px 0;
+}
+
 button.network-icon-button {
   min-width: 28px;
   min-height: 28px;

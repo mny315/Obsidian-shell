@@ -16,7 +16,6 @@ const POPOVER_REVEAL_DURATION_MS = 165
 const NETWORK_POPOVER_WIDTH = 392
 const WIFI_DEVICE_RETRY_DELAY_MS = 350
 const WIFI_DEVICE_RETRY_LIMIT = 12
-const WIFI_SCAN_SETTLE_DELAY_MS = 1600
 const WIFI_RADIO_POLL_INTERVAL_MS = 300
 const WIFI_RADIO_POLL_LIMIT = 30
 const BAR_WIFI_ICON = "󰤨"
@@ -242,8 +241,10 @@ async function hasNmcliWifiDevice() {
   return out.split("\n").map(line => line.trim()).includes("wifi")
 }
 
-async function getNmcliWifiNetworks(savedConnections: Map<string, string[]>) {
-  const out = await execText(["nmcli", "-t", "-e", "yes", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "no"])
+type WifiScanMode = "auto" | "yes" | "no"
+
+async function getNmcliWifiNetworks(savedConnections: Map<string, string[]>, scanMode: WifiScanMode = "auto") {
+  const out = await execText(["nmcli", "-t", "-e", "yes", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", scanMode])
   const networks: WifiNetwork[] = []
 
   for (const line of out.split("\n")) {
@@ -277,7 +278,7 @@ async function getNmcliWifiNetworks(savedConnections: Map<string, string[]>) {
   return networks
 }
 
-async function getWifiNetworks(savedConnections: Map<string, string[]>) {
+async function getWifiNetworks(savedConnections: Map<string, string[]>, scanMode: WifiScanMode = "auto") {
   const wifi = getAstalWifi()
   const activeAccessPoint = getAstalActiveAccessPoint(wifi)
   const activePath = accessPointPath(activeAccessPoint)
@@ -306,25 +307,8 @@ async function getWifiNetworks(savedConnections: Map<string, string[]>) {
     })
   }
 
-  const nmcliNetworks = await getNmcliWifiNetworks(savedConnections)
+  const nmcliNetworks = await getNmcliWifiNetworks(savedConnections, scanMode)
   return uniqueWifiNetworks([...astalNetworks, ...nmcliNetworks])
-}
-
-async function scanWifiNetworks() {
-  const wifi = getAstalWifi()
-  let started = false
-
-  if (wifi?.scan) {
-    try {
-      wifi.scan()
-      started = true
-    } catch (error) {
-      console.warn(`Astal Wi‑Fi scan failed: ${errorText(error)}`)
-    }
-  }
-
-  const result = await execResult(["nmcli", "device", "wifi", "rescan"])
-  return started || result.ok
 }
 
 async function getActiveWifiSsid() {
@@ -644,9 +628,13 @@ function importWireGuard(
       }
       const imported = parseWireGuardImportResult(result.text)
       const desiredName = configNameFromPath(path)
+      const target = imported.uuid ? ["uuid", imported.uuid] : [imported.name || desiredName]
       if (desiredName && imported.name !== desiredName) {
-        const target = imported.uuid ? ["uuid", imported.uuid] : [imported.name]
         await execResult(["nmcli", "connection", "modify", ...target, "connection.id", desiredName])
+      }
+      const autoconnectTarget = imported.uuid ? ["uuid", imported.uuid] : [desiredName || imported.name]
+      if (autoconnectTarget[0]) {
+        await execResult(["nmcli", "connection", "modify", ...autoconnectTarget, "connection.autoconnect", "no"])
       }
       presentStatus("")
       await refresh()
@@ -693,7 +681,6 @@ export function NetworkControl({
   let statusTimer: { cancel: () => void } | null = null
   let networkSignalIds: Array<[SignalSource, number]> = []
   let wifiSignalSource: SignalSource | null = null
-  let startupRefreshId = 0
   let steadyRefreshId = 0
   let refreshInFlight = false
   let refreshAgain = false
@@ -701,6 +688,8 @@ export function NetworkControl({
   let wifiRadioPollId = 0
   let wifiRadioTarget: boolean | null = null
   let lastWifiNetworks: WifiNetwork[] = []
+  let forceWifiScanOnNextRefresh = false
+  let wireGuardAutoconnectDisabledUuids = new Set<string>()
 
   const [icon, setIcon] = createState("󰖪")
   const [title, setTitle] = createState("Network")
@@ -802,10 +791,9 @@ export function NetworkControl({
 
     deferAction(async () => {
       if (!(await getWifiEnabled())) return
-      if (await scanWifiNetworks()) {
-        presentStatus("Scanning networks…", { durationMs: WIFI_SCAN_SETTLE_DELAY_MS })
-        scheduleRefresh(WIFI_SCAN_SETTLE_DELAY_MS)
-      }
+      presentStatus("Scanning networks…", { durationMs: 0 })
+      await refresh(true)
+      presentStatus("")
     })
 
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
@@ -913,6 +901,20 @@ export function NetworkControl({
     })).sort((a, b) => a.active !== b.active ? (a.active ? -1 : 1) : a.name.localeCompare(b.name))
   }
 
+  const disableWireGuardAutoconnect = async (profiles: WireGuardProfile[]) => {
+    for (const profile of profiles) {
+      if (!profile.uuid || wireGuardAutoconnectDisabledUuids.has(profile.uuid)) continue
+
+      const result = await execResult(["nmcli", "connection", "modify", "uuid", profile.uuid, "connection.autoconnect", "no"])
+      if (!result.ok) {
+        console.warn(`WireGuard autoconnect disable failed for ${profile.name}: ${result.text}`)
+        continue
+      }
+
+      wireGuardAutoconnectDisabledUuids.add(profile.uuid)
+    }
+  }
+
   const renderWifiList = (networks: WifiNetwork[], emptyText = "Scanning networks…") => {
     clearChildren(wifiListBox)
     wifiSectionBox?.set_visible(wifiEnabled)
@@ -962,8 +964,9 @@ export function NetworkControl({
     }
   }
 
-  const refresh = async () => {
+  const refresh = async (forceWifiScan = false) => {
     if (refreshInFlight) {
+      if (forceWifiScan) forceWifiScanOnNextRefresh = true
       refreshAgain = true
       return
     }
@@ -973,6 +976,7 @@ export function NetworkControl({
     try {
       const nmReady = await isNetworkManagerReady()
       const [wgProfiles, savedConnections, serviceActive] = await Promise.all([getWireGuardProfiles(), getSavedWifiConnections(), getVlessServiceActive()])
+      await disableWireGuardAutoconnect(wgProfiles)
       const wgActive = wgProfiles.some(p => p.active)
       setVlessActive(serviceActive)
 
@@ -986,6 +990,7 @@ export function NetworkControl({
         setMeta(appendServiceMeta("NetworkManager starting…", wgActive, serviceActive))
         renderWifiList([], "NetworkManager is starting…")
         renderWireGuardList(wgProfiles)
+        scheduleRefresh(WIFI_DEVICE_RETRY_DELAY_MS)
         return
       }
 
@@ -1012,7 +1017,9 @@ export function NetworkControl({
         return
       }
 
-      const networks = enabled ? await getWifiNetworks(savedConnections) : []
+      const scanMode: WifiScanMode = enabled && (forceWifiScan || forceWifiScanOnNextRefresh) ? "yes" : "auto"
+      forceWifiScanOnNextRefresh = false
+      const networks = enabled ? await getWifiNetworks(savedConnections, scanMode) : []
       if (enabled && networks.length > 0) lastWifiNetworks = networks
       if (!enabled || !wifiAvailable) lastWifiNetworks = []
       wifiDeviceRetryCount = wifiAvailable ? 0 : wifiDeviceRetryCount
@@ -1053,7 +1060,8 @@ export function NetworkControl({
     }
   }
 
-  const scheduleRefresh = (delay = 200) => {
+  const scheduleRefresh = (delay = 200, forceWifiScan = false) => {
+    if (forceWifiScan) forceWifiScanOnNextRefresh = true
     refreshDebounce?.cancel()
     refreshDebounce = timeout(delay, () => {
       refreshDebounce = null
@@ -1127,21 +1135,8 @@ export function NetworkControl({
       console.warn(`Network signal setup failed: ${errorText(error)}`)
     }
 
-    if (startupRefreshId === 0) {
-      let startupTicks = 0
-      startupRefreshId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1000, () => {
-        startupTicks += 1
-        scheduleRefresh(0)
-        if (startupTicks >= 30) {
-          startupRefreshId = 0
-          return GLib.SOURCE_REMOVE
-        }
-        return GLib.SOURCE_CONTINUE
-      })
-    }
-
     if (steadyRefreshId === 0) {
-      steadyRefreshId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 15000, () => {
+      steadyRefreshId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 30000, () => {
         scheduleRefresh(0)
         return GLib.SOURCE_CONTINUE
       })
@@ -1158,11 +1153,6 @@ export function NetworkControl({
 
     networkSignalIds = []
     wifiSignalSource = null
-
-    if (startupRefreshId !== 0) {
-      GLib.source_remove(startupRefreshId)
-      startupRefreshId = 0
-    }
 
     if (steadyRefreshId !== 0) {
       GLib.source_remove(steadyRefreshId)
@@ -1269,9 +1259,9 @@ export function NetworkControl({
   const rescanBtn = makeIconButton("󰑐", "network-icon-button", "Rescan", () => {
     if (wifiEnabled) {
       deferAction(async () => {
-        presentStatus("Scanning networks…", { durationMs: WIFI_SCAN_SETTLE_DELAY_MS })
-        if (!(await scanWifiNetworks())) presentStatus("Scan failed")
-        timeout(WIFI_SCAN_SETTLE_DELAY_MS, () => { presentStatus(""); scheduleRefresh(0) })
+        presentStatus("Scanning networks…", { durationMs: 0 })
+        await refresh(true)
+        presentStatus("")
       })
     }
   })
@@ -1319,14 +1309,11 @@ export function NetworkControl({
               }
 
               if (enabled) {
-                if (await scanWifiNetworks()) {
-                  scheduleRefresh(WIFI_SCAN_SETTLE_DELAY_MS)
-                }
+                await refresh(true)
               } else {
                 lastWifiNetworks = []
+                scheduleRefresh(100)
               }
-
-              scheduleRefresh(100)
             })
           })
         }} />
