@@ -37,6 +37,8 @@ type ActivePlayerWatcherProps = {
 
 type PlayerAction = "previous" | "play_pause" | "next" | "raise"
 
+const PLAYER_META_REVEAL_DURATION_MS = 500
+
 function players() {
   try {
     const list = mpris.get_players()
@@ -137,6 +139,7 @@ function disconnectSignal(object: Player, id: number) {
     object.disconnect(id)
   } catch {}
 }
+
 
 function ActivePlayerWatcher({
   rootClass,
@@ -251,6 +254,7 @@ function PlayerInline({
   const playbackStatusBinding = createBinding(player, "playback-status")
 
   const verticalLayout = layout === "vertical"
+  const [metaRevealed, setMetaRevealed] = createState(false)
 
   const meta = createComputed(() => {
     const titleText = `${title() ?? ""}`.trim()
@@ -276,6 +280,10 @@ function PlayerInline({
       halign={fillWidth ? Gtk.Align.FILL : centerText ? Gtk.Align.CENTER : Gtk.Align.FILL}
       hexpand={fillWidth}
     >
+      <Gtk.EventControllerMotion
+        onEnter={() => setMetaRevealed(true)}
+        onLeave={() => setMetaRevealed(false)}
+      />
       <box
         class={controlsClass}
         spacing={0}
@@ -309,39 +317,46 @@ function PlayerInline({
         </box>
       </box>
 
-      <box
-        class={metaClass}
-        spacing={0}
-        hexpand={fillWidth}
-        halign={fillWidth ? Gtk.Align.FILL : centerText ? Gtk.Align.CENTER : Gtk.Align.START}
+      <revealer
+        class="player-meta-revealer"
+        revealChild={metaRevealed}
+        transitionType={verticalLayout ? Gtk.RevealerTransitionType.SLIDE_DOWN : Gtk.RevealerTransitionType.SLIDE_RIGHT}
+        transitionDuration={PLAYER_META_REVEAL_DURATION_MS}
       >
-        <button
-          class="flat player-main-button"
-          widthRequest={fillWidth ? -1 : (buttonWidth ?? -1)}
+        <box
+          class={metaClass}
+          spacing={0}
           hexpand={fillWidth}
           halign={fillWidth ? Gtk.Align.FILL : centerText ? Gtk.Align.CENTER : Gtk.Align.START}
-          onClicked={() => callPlayer(player, "raise")}
-          $={(self) => attachShellTooltip(self, meta)}
         >
-          <box
-            class={centerText ? "player-main-content player-main-content-centered" : "player-main-content"}
-            spacing={showMainIcon ? 8 : 0}
-            valign={Gtk.Align.CENTER}
-            halign={fillWidth ? Gtk.Align.FILL : centerText ? Gtk.Align.CENTER : Gtk.Align.FILL}
+          <button
+            class="flat player-main-button"
+            widthRequest={fillWidth ? -1 : (buttonWidth ?? -1)}
             hexpand={fillWidth}
+            halign={fillWidth ? Gtk.Align.FILL : centerText ? Gtk.Align.CENTER : Gtk.Align.START}
+            onClicked={() => callPlayer(player, "raise")}
+            $={(self) => attachShellTooltip(self, meta)}
           >
-            <label class="player-main-icon" label={"󰎇"} visible={showMainIcon} />
-            <label
-              class={centerText ? "player-main-label player-main-label-centered" : "player-main-label"}
-              label={displayMeta}
-              ellipsize={Pango.EllipsizeMode.END}
-              xalign={centerText ? 0.5 : 0}
+            <box
+              class={centerText ? "player-main-content player-main-content-centered" : "player-main-content"}
+              spacing={showMainIcon ? 8 : 0}
+              valign={Gtk.Align.CENTER}
+              halign={fillWidth ? Gtk.Align.FILL : centerText ? Gtk.Align.CENTER : Gtk.Align.FILL}
               hexpand={fillWidth}
-              halign={fillWidth ? Gtk.Align.FILL : centerText ? Gtk.Align.CENTER : Gtk.Align.START}
-            />
-          </box>
-        </button>
-      </box>
+            >
+              <label class="player-main-icon" label={"󰎇"} visible={showMainIcon} />
+              <label
+                class={centerText ? "player-main-label player-main-label-centered" : "player-main-label"}
+                label={displayMeta}
+                ellipsize={Pango.EllipsizeMode.END}
+                xalign={centerText ? 0.5 : 0}
+                hexpand={fillWidth}
+                halign={fillWidth ? Gtk.Align.FILL : centerText ? Gtk.Align.CENTER : Gtk.Align.START}
+              />
+            </box>
+          </button>
+        </box>
+      </revealer>
     </box>
   )
 }

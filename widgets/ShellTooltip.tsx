@@ -1,6 +1,8 @@
 import GLib from "gi://GLib"
 import Gdk from "gi://Gdk?version=4.0"
 import Gtk from "gi://Gtk?version=4.0"
+import Pango from "gi://Pango?version=1.0"
+import PangoCairo from "gi://PangoCairo?version=1.0"
 
 import { createComputed, createState } from "ags"
 import { Astal } from "ags/gtk4"
@@ -13,6 +15,9 @@ const TOOLTIP_SHOW_DELAY_MS = 420
 const TOOLTIP_HIDE_DELAY_MS = 80
 const TOOLTIP_GAP = 8
 const SCREEN_PADDING = 12
+const TOOLTIP_TEXT_OVERSCAN_X = 2
+const TOOLTIP_TEXT_OVERSCAN_Y = 4
+const TOOLTIP_TEXT_DRAW_OFFSET_Y = 1
 
 type TooltipSource = string | null | undefined | (() => string | null | undefined)
 
@@ -28,6 +33,9 @@ const [tooltipUsesMarkup, setTooltipUsesMarkup] = createState(false)
 
 const tooltipWindows = new Map<number, unknown>()
 let tooltipFrame: Gtk.Widget | null = null
+let tooltipTextArea: Gtk.DrawingArea | null = null
+let currentTooltipText = ""
+let currentTooltipUsesMarkup = false
 let activeTarget: Gtk.Widget | null = null
 let showSourceId = 0
 let hideSourceId = 0
@@ -36,6 +44,200 @@ let activeSerial = 0
 
 const sourceByWidget = new WeakMap<Gtk.Widget, TooltipSource>()
 const optionsByWidget = new WeakMap<Gtk.Widget, TooltipOptions>()
+
+
+const SHELL_TEXT_FONT_SIZE_PX = 14
+const SHELL_TEXT_FONT_WEIGHT = Pango.Weight.NORMAL
+
+function readWidgetFontDescription(widget: Gtk.Widget | null) {
+  if (!widget) return null
+
+  try {
+    const context = widget.get_pango_context?.()
+    const description = context?.get_font_description?.()
+    return description?.copy?.() ?? description ?? null
+  } catch {
+    return null
+  }
+}
+
+function readGtkFontName() {
+  try {
+    const settings = Gtk.Settings.get_default?.()
+    const value = settings?.get_property?.("gtk-font-name")
+    if (typeof value === "string" && value.trim()) return value.trim()
+  } catch {}
+
+  try {
+    const settings = Gtk.Settings.get_default?.() as any
+    const value = settings?.gtkFontName ?? settings?.gtk_font_name
+    if (typeof value === "string" && value.trim()) return value.trim()
+  } catch {}
+
+  return ""
+}
+
+function readFontDescriptionFromString(fontName: string) {
+  if (!fontName) return null
+
+  try {
+    return Pango.FontDescription.from_string(fontName)
+  } catch {
+    return null
+  }
+}
+
+export function readShellTextFontDescription(fallbackWidget: Gtk.Widget | null = null) {
+  const description = readFontDescriptionFromString(readGtkFontName())
+    ?? readWidgetFontDescription(fallbackWidget)
+
+  if (!description) return null
+
+  const copy = description.copy?.() ?? description
+
+  try {
+    copy.set_absolute_size(SHELL_TEXT_FONT_SIZE_PX * Pango.SCALE)
+  } catch {
+    try {
+      copy.set_size(SHELL_TEXT_FONT_SIZE_PX * Pango.SCALE)
+    } catch {}
+  }
+
+  try {
+    copy.set_weight(SHELL_TEXT_FONT_WEIGHT)
+  } catch {}
+
+  try {
+    copy.set_style(Pango.Style.NORMAL)
+  } catch {}
+
+  try {
+    copy.set_variant(Pango.Variant.NORMAL)
+  } catch {}
+
+  try {
+    copy.set_stretch(Pango.Stretch.NORMAL)
+  } catch {}
+
+  return copy
+}
+
+export function applyShellTextFont(layout: Pango.Layout, fallbackWidget: Gtk.Widget | null = null) {
+  const description = readShellTextFontDescription(fallbackWidget)
+  if (!description) return
+
+  try {
+    layout.set_font_description(description)
+  } catch {}
+}
+
+function createTooltipLayout(widget: Gtk.Widget, text: string, usesMarkup: boolean) {
+  const layout = widget.create_pango_layout("")
+
+  applyShellTextFont(layout, widget)
+
+  try {
+    layout.set_single_paragraph_mode(true)
+  } catch {}
+
+  try {
+    layout.set_ellipsize(Pango.EllipsizeMode.NONE)
+  } catch {}
+
+  try {
+    if (usesMarkup) layout.set_markup(text, -1)
+    else layout.set_text(text, -1)
+  } catch (error) {
+    console.error(error)
+    layout.set_text(text, -1)
+  }
+
+  return layout
+}
+
+function measureTooltipText(widget: Gtk.Widget, text: string, usesMarkup: boolean) {
+  if (!text) return { width: 1, height: 1 }
+
+  const layout = createTooltipLayout(widget, text, usesMarkup)
+
+  try {
+    const size = layout.get_pixel_size()
+    if (Array.isArray(size)) {
+      return {
+        width: Math.max(1, toNumber(size[0], 1) + TOOLTIP_TEXT_OVERSCAN_X * 2),
+        height: Math.max(1, toNumber(size[1], 1) + TOOLTIP_TEXT_OVERSCAN_Y),
+      }
+    }
+  } catch {}
+
+  return { width: 1, height: 1 }
+}
+
+function updateTooltipTextArea() {
+  if (!tooltipTextArea) return
+
+  const { width, height } = measureTooltipText(tooltipTextArea, currentTooltipText, currentTooltipUsesMarkup)
+
+  try {
+    tooltipTextArea.set_content_width(width)
+    tooltipTextArea.set_content_height(height)
+  } catch {}
+
+  try {
+    tooltipTextArea.queue_resize()
+    tooltipTextArea.queue_draw()
+  } catch {}
+}
+
+function setCairoSourceFromWidgetColor(widget: Gtk.Widget, cr: any) {
+  try {
+    const color = (widget as any).get_color?.()
+    if (color) {
+      cr.setSourceRGBA(color.red, color.green, color.blue, color.alpha)
+      return
+    }
+  } catch {}
+
+  try {
+    const color = (widget as any).get_style_context?.()?.get_color?.()
+    if (color) {
+      cr.setSourceRGBA(color.red, color.green, color.blue, color.alpha)
+      return
+    }
+  } catch {}
+
+  cr.setSourceRGBA(1, 1, 1, 1)
+}
+
+function drawTooltipText(area: Gtk.DrawingArea, cr: any, width: number, height: number) {
+  const text = currentTooltipText
+  if (!text) return
+
+  const layout = createTooltipLayout(area, text, currentTooltipUsesMarkup)
+  let layoutWidth = 0
+  let layoutHeight = 0
+
+  try {
+    const size = layout.get_pixel_size()
+    if (Array.isArray(size)) {
+      layoutWidth = toNumber(size[0], 0)
+      layoutHeight = toNumber(size[1], 0)
+    }
+  } catch {}
+
+  const x = Math.max(0, Math.floor((width - layoutWidth) / 2))
+  const y = Math.max(0, Math.floor((height - layoutHeight) / 2) + TOOLTIP_TEXT_DRAW_OFFSET_Y)
+
+  try {
+    cr.save()
+    setCairoSourceFromWidgetColor(area, cr)
+    cr.moveTo(x, y)
+    PangoCairo.show_layout(cr, layout)
+    cr.restore()
+  } catch (error) {
+    console.error(error)
+  }
+}
 
 function clearSource(id: number) {
   if (id === 0) return 0
@@ -208,7 +410,7 @@ function implicitTooltipOffsetY(target: Gtk.Widget) {
     "workspace-indicator-shell",
     "workspace-indicator",
     "workspace-chip",
-  ])) return 6
+  ])) return 8
 
   if (widgetOrParentHasCssClass(target, [
     "tray-capsule",
@@ -304,8 +506,11 @@ function showTooltip(target: Gtk.Widget, source: TooltipSource, options: Tooltip
 
   hideSourceId = clearSource(hideSourceId)
   activeTarget = target
+  currentTooltipText = text
+  currentTooltipUsesMarkup = Boolean(options.markup)
   setTooltipText(text)
-  setTooltipUsesMarkup(Boolean(options.markup))
+  setTooltipUsesMarkup(currentTooltipUsesMarkup)
+  updateTooltipTextArea()
   queuePlacement(target)
   setTooltipVisible(true)
 }
@@ -375,6 +580,7 @@ export function ShellTooltipWindow({ monitor }: { monitor: number }) {
         self.connect("destroy", () => {
           tooltipWindows.delete(monitor)
           tooltipFrame = null
+          tooltipTextArea = null
           activeTarget = null
           showSourceId = clearSource(showSourceId)
           hideSourceId = clearSource(hideSourceId)
@@ -386,7 +592,21 @@ export function ShellTooltipWindow({ monitor }: { monitor: number }) {
         tooltipFrame = self
         clipRoundedWidget(self)
       }}>
-        <label class="shell-tooltip-label" label={tooltipText} useMarkup={tooltipUsesMarkup} xalign={0} justify={Gtk.Justification.LEFT} />
+        <Gtk.DrawingArea
+          class="shell-tooltip-label shell-tooltip-text-area left-module-label"
+          hexpand={false}
+          vexpand={false}
+          halign={Gtk.Align.CENTER}
+          valign={Gtk.Align.CENTER}
+          $={(self) => {
+            tooltipTextArea = self
+            self.set_draw_func(drawTooltipText)
+            updateTooltipTextArea()
+            self.connect("destroy", () => {
+              if (tooltipTextArea === self) tooltipTextArea = null
+            })
+          }}
+        />
       </box>
     </window>
   )

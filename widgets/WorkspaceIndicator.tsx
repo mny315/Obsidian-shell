@@ -693,7 +693,7 @@ export function WorkspaceIndicator({ monitor }: { monitor: number }) {
               class={item.className}
               valign={Gtk.Align.CENTER}
               onClicked={item.onActivate}
-              $={(self) => attachShellTooltip(self, () => item.tooltip)}
+              $={(self) => attachShellTooltip(self, () => item.tooltip, { offsetY: -1 })}
             >
               <box class={item.coreClassName} valign={Gtk.Align.CENTER} halign={Gtk.Align.CENTER} />
             </button>

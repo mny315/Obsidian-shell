@@ -1,23 +1,69 @@
-@define-color fg rgba(255,255,255,1.00);
-@define-color glass_bg rgba(14,18,26,0.58);
-@define-color popup_surface_bg rgba(11,15,22,0.46);
-@define-color popup_surface_border rgba(255,255,255,0.12);
-@define-color glass_border rgba(255,255,255,0.14);
-@define-color section_bg rgba(24,29,40,0.42);
-@define-color section_border rgba(255,255,255,0.08);
-@define-color panel_bg rgba(28,34,46,0.52);
-@define-color popup_list_bg rgba(255,255,255,0.035);
-@define-color popup_card_bg rgba(38,44,58,0.34);
-@define-color popup_card_hover_bg rgba(255,255,255,0.095);
-@define-color popup_card_active_bg rgba(210,225,255,0.13);
-@define-color panel_border rgba(255,255,255,0.11);
-@define-color hover_bg rgba(255,255,255,0.10);
-@define-color active_bg rgba(255,255,255,0.15);
-@define-color glass_toggle_bg rgba(255,255,255,0.08);
-@define-color glass_toggle_border rgba(255,255,255,0.14);
-@define-color glass_toggle_on_bg rgba(210,225,255,0.20);
-@define-color glass_toggle_on_border rgba(235,243,255,0.26);
-@define-color danger_fg rgba(255,120,120,1.00);
+@define-color fg #ffffff;
+@define-color shell_tint mix(@theme_bg_color,@theme_selected_bg_color,0.10);
+@define-color panel_tint mix(@theme_bg_color,@theme_selected_bg_color,0.07);
+@define-color card_tint mix(@theme_bg_color,@theme_selected_bg_color,0.08);
+@define-color glass_bg alpha(@shell_tint,0.68);
+@define-color popup_surface_bg alpha(@panel_tint,0.54);
+@define-color popup_surface_border alpha(@theme_selected_bg_color,0.22);
+@define-color glass_border alpha(@theme_selected_bg_color,0.34);
+@define-color section_bg alpha(@panel_tint,0.50);
+@define-color section_border alpha(@theme_selected_bg_color,0.18);
+@define-color panel_bg alpha(@panel_tint,0.58);
+@define-color popup_list_bg alpha(@theme_fg_color,0.035);
+@define-color popup_card_bg alpha(@card_tint,0.42);
+@define-color popup_card_hover_bg alpha(@theme_fg_color,0.105);
+@define-color popup_card_active_bg alpha(@theme_fg_color,0.18);
+@define-color panel_border alpha(@theme_selected_bg_color,0.20);
+@define-color hover_bg alpha(@theme_fg_color,0.115);
+@define-color active_bg alpha(@theme_fg_color,0.18);
+@define-color glass_toggle_bg alpha(@theme_fg_color,0.075);
+@define-color glass_toggle_border alpha(@theme_fg_color,0.16);
+@define-color glass_toggle_on_bg alpha(@theme_fg_color,0.16);
+@define-color glass_toggle_on_border alpha(@theme_fg_color,0.28);
+@define-color danger_fg @theme_selected_bg_color;
+@define-color soft_overlay_03 alpha(@theme_selected_bg_color,0.05);
+@define-color soft_overlay_05 alpha(@theme_selected_bg_color,0.08);
+@define-color soft_overlay_06 alpha(@theme_selected_bg_color,0.09);
+@define-color soft_overlay_07 alpha(@theme_selected_bg_color,0.10);
+@define-color soft_overlay_08 alpha(@theme_selected_bg_color,0.12);
+@define-color soft_overlay_09 alpha(@theme_fg_color,0.09);
+@define-color soft_overlay_10 alpha(@theme_selected_bg_color,0.16);
+@define-color soft_overlay_11 alpha(@theme_fg_color,0.11);
+@define-color soft_overlay_12 alpha(@theme_fg_color,0.12);
+@define-color soft_overlay_14 alpha(@theme_fg_color,0.14);
+@define-color soft_overlay_15 alpha(@theme_fg_color,0.15);
+@define-color soft_overlay_16 alpha(@theme_fg_color,0.16);
+@define-color soft_overlay_18 alpha(@theme_fg_color,0.18);
+@define-color soft_overlay_24 alpha(@theme_fg_color,0.24);
+@define-color soft_overlay_42 alpha(@theme_fg_color,0.42);
+@define-color soft_overlay_45 alpha(@theme_fg_color,0.45);
+@define-color soft_overlay_92 alpha(@theme_fg_color,0.92);
+@define-color soft_overlay_96 alpha(@theme_fg_color,0.96);
+@define-color soft_overlay_98 alpha(@theme_fg_color,0.98);
+@define-color soft_overlay_100 @theme_fg_color;
+@define-color accent_overlay_08 alpha(@theme_selected_bg_color,0.08);
+@define-color accent_overlay_12 alpha(@theme_selected_bg_color,0.12);
+@define-color accent_overlay_13 alpha(@theme_selected_bg_color,0.13);
+@define-color accent_overlay_18 alpha(@theme_selected_bg_color,0.18);
+@define-color accent_overlay_20 alpha(@theme_selected_bg_color,0.20);
+@define-color accent_overlay_26 alpha(@theme_selected_bg_color,0.26);
+@define-color danger_bg alpha(@theme_selected_bg_color,0.10);
+@define-color danger_border alpha(@theme_selected_bg_color,0.18);
+@define-color urgent_bg alpha(@theme_selected_bg_color,0.16);
+@define-color urgent_core alpha(@theme_selected_bg_color,0.92);
+@define-color theme_card_bg_soft alpha(@card_tint,0.30);
+@define-color theme_card_bg_mid alpha(@panel_tint,0.56);
+@define-color theme_card_bg_panel alpha(@panel_tint,0.62);
+@define-color theme_card_bg_shell alpha(@shell_tint,0.66);
+@define-color theme_bg_shell alpha(@shell_tint,0.58);
+@define-color theme_bg_border alpha(@theme_selected_bg_color,0.22);
+@define-color shadow_05 alpha(@theme_bg_color,0.05);
+@define-color shadow_06 alpha(@theme_bg_color,0.06);
+@define-color shadow_08 alpha(@theme_bg_color,0.08);
+@define-color shadow_10 alpha(@theme_bg_color,0.10);
+@define-color shadow_12 alpha(@theme_bg_color,0.12);
+@define-color shadow_14 alpha(@theme_bg_color,0.14);
+@define-color shadow_18 alpha(@theme_bg_color,0.18);
 
 window,
 window.background,
@@ -38,7 +84,6 @@ window.shell-tooltip-window.background {
 
 * {
   border: none;
-  font-family: "Lexend";
   font-size: 15px;
   font-weight: 400;
   color: @fg;
@@ -79,6 +124,8 @@ window.bar-window {
 
 revealer.bar-revealer,
 revealer.bar-revealer > contents,
+revealer.player-meta-revealer,
+revealer.player-meta-revealer > contents,
 window.bar-window > widget,
 window.bar-window > box,
 window.bar-window > contents,
@@ -106,7 +153,7 @@ revealer.widget-popup-revealer,
   border: 1px solid @glass_border;
   border-radius: 18px;
   background-clip: padding-box;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(255,255,255,0.03);
+  box-shadow: inset 0 1px 0 alpha(@theme_selected_bg_color,0.22),inset 0 -1px 0 alpha(@theme_selected_bg_color,0.07);
   transition: background-color 180ms ease,border-color 180ms ease,opacity 180ms ease;
 }
 
@@ -154,7 +201,7 @@ button.wallpaper-card:active {
   padding: 0 6px;
   border: 1px solid @section_border;
   border-radius: 13px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 4px 12px rgba(0,0,0,0.10);
+  box-shadow: inset 0 1px 0 @soft_overlay_10,inset 0 -1px 0 @shadow_08,0 4px 12px @shadow_10;
 }
 
 .left-side-wrap {
@@ -170,6 +217,11 @@ button.wallpaper-card:active {
 }
 
 .pinned-player-inline {
+  background: transparent;
+  min-width: 0;
+}
+
+.player-meta-revealer {
   background: transparent;
   min-width: 0;
 }
@@ -365,7 +417,7 @@ button.network-icon-button:hover,
   border-radius: 12px;
   background: @panel_bg;
   border: 1px solid @panel_border;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 6px 18px rgba(0,0,0,0.14);
+  box-shadow: inset 0 1px 0 @soft_overlay_10,inset 0 -1px 0 @shadow_08,0 6px 18px @shadow_14;
   transition: background-color 180ms ease,border-color 180ms ease,opacity 180ms ease;
 }
 
@@ -480,6 +532,19 @@ button.network-icon-button:active,
   background: @active_bg;
 }
 
+button.player-transport-button:disabled,
+button.player-transport-button:disabled:hover,
+button.player-transport-button:disabled:active {
+  background: transparent;
+  background-image: none;
+  color: @soft_overlay_45;
+  opacity: 0.62;
+}
+
+button.player-transport-button:disabled label.player-transport-icon {
+  color: @soft_overlay_45;
+}
+
 .panel-icon-button {
   min-width: 24px;
   min-height: 24px;
@@ -508,7 +573,7 @@ scale.slider-control > trough {
   margin: 0;
   border: none;
   border-radius: 999px;
-  background: rgba(255,255,255,0.16);
+  background: @soft_overlay_16;
   background-image: none;
   box-shadow: none;
 }
@@ -522,7 +587,7 @@ scale.slider-control > trough > fill {
   margin: 0;
   border: none;
   border-radius: 999px;
-  background: rgba(255,255,255,0.92);
+  background: @soft_overlay_92;
   background-image: none;
   box-shadow: none;
 }
@@ -723,11 +788,11 @@ calendar.calendar-widget.view,
 .calendar-widget {
   padding: 8px;
   border-radius: 14px;
-  background: rgba(28,34,46,0.24);
-  background-color: rgba(28,34,46,0.24);
+  background: @theme_card_bg_soft;
+  background-color: @theme_card_bg_soft;
   background-image: none;
-  border: 1px solid rgba(255,255,255,0.09);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.07),inset 0 -1px 0 rgba(0,0,0,0.06);
+  border: 1px solid @soft_overlay_09;
+  box-shadow: inset 0 1px 0 @soft_overlay_07,inset 0 -1px 0 @shadow_06;
 }
 
 calendar.calendar-widget > grid,
@@ -873,6 +938,14 @@ window.shell-tooltip-window .shell-tooltip-frame,
   box-shadow: none;
 }
 
+
+window.shell-tooltip-window > box.shell-tooltip-frame,
+window.shell-tooltip-window .shell-tooltip-frame,
+.shell-tooltip-frame {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
 tooltip label,
 .shell-tooltip-label {
   color: @fg;
@@ -880,6 +953,13 @@ tooltip label,
   background-color: transparent;
   background-image: none;
   text-shadow: none;
+}
+
+.shell-tooltip-text-area {
+  min-width: 1px;
+  min-height: 1px;
+  padding: 0;
+  margin: 0;
 }
 
 popover.tray-menu-popover-window contents modelbutton,
@@ -934,9 +1014,23 @@ popover.tray-menu-popover-window contents button.image-text-button:checked {
   text-shadow: none;
 }
 
+popover.tray-menu-popover-window contents .tray-menu-pango-label {
+  min-width: 1px;
+  min-height: 1px;
+  padding: 0;
+  margin: 0;
+  color: @fg;
+  background: transparent;
+  background-color: transparent;
+  background-image: none;
+  text-shadow: none;
+}
+
 popover.tray-menu-popover-window contents button:disabled,
 popover.tray-menu-popover-window contents button.model:disabled,
-popover.tray-menu-popover-window contents label:disabled {
+popover.tray-menu-popover-window contents label:disabled,
+popover.tray-menu-popover-window contents button:disabled .tray-menu-pango-label,
+popover.tray-menu-popover-window contents button.model:disabled .tray-menu-pango-label {
   opacity: 0.45;
 }
 
@@ -962,8 +1056,8 @@ popover.tray-menu-popover-window contents separator {
 .wallpaper-count {
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(28,34,46,0.50);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: @theme_card_bg_mid;
+  border: 1px solid @soft_overlay_08;
   font-size: 12px;
   opacity: 0.86;
 }
@@ -1019,14 +1113,14 @@ switch.bluetooth-device-switch {
   border-radius: 999px;
   background: @glass_toggle_bg;
   border: 1px solid @glass_toggle_border;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08),inset 0 -1px 0 rgba(0,0,0,0.10);
+  box-shadow: inset 0 1px 0 @soft_overlay_08,inset 0 -1px 0 @shadow_10;
   transition: background-color 180ms ease,border-color 180ms ease,opacity 180ms ease;
 }
 
 switch.network-toggle:hover,
 switch.bluetooth-device-switch:hover {
-  background: rgba(255,255,255,0.11);
-  border-color: rgba(255,255,255,0.18);
+  background: @soft_overlay_11;
+  border-color: @soft_overlay_18;
 }
 
 switch.network-toggle slider,
@@ -1034,22 +1128,22 @@ switch.bluetooth-device-switch slider {
   min-width: 14px;
   min-height: 14px;
   border-radius: 999px;
-  background: rgba(255,255,255,0.92);
-  border: 1px solid rgba(18,22,30,0.34);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.45),0 2px 8px rgba(0,0,0,0.18);
+  background: @soft_overlay_92;
+  border: 1px solid @theme_bg_border;
+  box-shadow: inset 0 1px 0 @soft_overlay_45,0 2px 8px @shadow_18;
 }
 
 switch.network-toggle:checked,
 switch.bluetooth-device-switch:checked {
   background: @glass_toggle_on_bg;
   border-color: @glass_toggle_on_border;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12),inset 0 -1px 0 rgba(0,0,0,0.08),0 0 0 1px rgba(255,255,255,0.03);
+  box-shadow: inset 0 1px 0 @soft_overlay_12,inset 0 -1px 0 @shadow_08,0 0 0 1px @soft_overlay_03;
 }
 
 switch.network-toggle:checked slider,
 switch.bluetooth-device-switch:checked slider {
-  background: rgba(255,255,255,0.98);
-  border-color: rgba(205,220,245,0.42);
+  background: @soft_overlay_98;
+  border-color: @soft_overlay_42;
 }
 
 gtkswitch.network-toggle:disabled,
@@ -1074,7 +1168,7 @@ switch.bluetooth-device-switch:disabled {
   border-radius: 12px;
   background: @panel_bg;
   border: 1px solid @panel_border;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 6px 18px rgba(0,0,0,0.14);
+  box-shadow: inset 0 1px 0 @soft_overlay_10,inset 0 -1px 0 @shadow_08,0 6px 18px @shadow_14;
   transition: background-color 200ms ease,border-color 200ms ease,opacity 200ms ease;
 }
 
@@ -1086,7 +1180,7 @@ switch.bluetooth-device-switch:disabled {
 .network-row-current {
   background: @panel_bg;
   border: 1px solid @panel_border;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 6px 18px rgba(0,0,0,0.14);
+  box-shadow: inset 0 1px 0 @soft_overlay_10,inset 0 -1px 0 @shadow_08,0 6px 18px @shadow_14;
 }
 
 .network-row-body {
@@ -1143,17 +1237,17 @@ button.network-vless-button {
 }
 
 button.network-vless-button:hover {
-  background: rgba(255,255,255,0.05);
+  background: @soft_overlay_05;
 }
 
 button.network-vless-button:active {
-  background: rgba(255,255,255,0.09);
+  background: @soft_overlay_09;
 }
 
 button.network-vless-button:focus,
 button.network-vless-button:focus-visible,
 button.network-vless-button:checked {
-  background: rgba(255,255,255,0.05);
+  background: @soft_overlay_05;
   box-shadow: none;
   outline: none;
 }
@@ -1163,7 +1257,7 @@ button.network-vless-button.network-vless-button-active:hover,
 button.network-vless-button.network-vless-button-active:active,
 button.network-vless-button.network-vless-button-active:focus,
 button.network-vless-button.network-vless-button-active:focus-visible {
-  background: rgba(255,255,255,0.09);
+  background: @soft_overlay_09;
   box-shadow: none;
   outline: none;
 }
@@ -1173,17 +1267,17 @@ button.network-row-button.bluetooth-pair-button {
   min-height: 28px;
   padding: 0 10px;
   border-radius: 9px;
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.12);
+  background: @soft_overlay_08;
+  border: 1px solid @soft_overlay_12;
 }
 
 button.network-row-button.bluetooth-pair-button:hover {
-  background: rgba(255,255,255,0.12);
-  border-color: rgba(255,255,255,0.18);
+  background: @soft_overlay_12;
+  border-color: @soft_overlay_18;
 }
 
 button.network-row-button.bluetooth-pair-button:active {
-  background: rgba(255,255,255,0.15);
+  background: @soft_overlay_15;
 }
 
 button.network-row-button.bluetooth-pair-button:disabled {
@@ -1218,7 +1312,7 @@ scrollbar.vertical:active trough {
 scrollbar.vertical slider,
 scrollbar.vertical:hover slider,
 scrollbar.vertical:active slider {
-  background: rgba(255,255,255,0.1);
+  background: @soft_overlay_10;
   border-radius: 10px;
   min-width: 4px;
   margin: 0 3px;
@@ -1227,14 +1321,14 @@ scrollbar.vertical:active slider {
 }
 
 .network-password-box {
-  background: rgba(14,18,26,0.50);
+  background: @theme_bg_shell;
   padding: 12px;
   border-radius: 12px;
   margin-bottom: 10px;
 }
 
 entry {
-  background: rgba(28,34,46,0.56);
+  background: @theme_card_bg_panel;
   border: 1px solid @panel_border;
   border-radius: 8px;
   padding: 6px 10px;
@@ -1367,9 +1461,9 @@ menubutton.app-launcher-trigger button.toggle:focus-visible {
   min-height: 38px;
   padding: 0 10px;
   border-radius: 14px;
-  background: rgba(28,34,46,0.58);
-  border: 1px solid rgba(255,255,255,0.10);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08),inset 0 -1px 0 rgba(0,0,0,0.06);
+  background: @theme_card_bg_shell;
+  border: 1px solid @soft_overlay_10;
+  box-shadow: inset 0 1px 0 @soft_overlay_08,inset 0 -1px 0 @shadow_06;
 }
 
 .launcher-material-icon,
@@ -1406,8 +1500,8 @@ entry.launcher-search {
 
 .launcher-hidden-toggle,
 .launcher-app-side-button {
-  background: rgba(28,34,46,0.50);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: @theme_card_bg_mid;
+  border: 1px solid @soft_overlay_08;
   box-shadow: none;
 }
 
@@ -1418,13 +1512,13 @@ entry.launcher-search {
 }
 
 .launcher-hidden-toggle:hover {
-  background: rgba(255,255,255,0.08);
+  background: @soft_overlay_08;
   border-color: @glass_border;
 }
 
 .launcher-hidden-toggle:active {
-  background: rgba(255,255,255,0.12);
-  border-color: rgba(220,232,255,0.20);
+  background: @soft_overlay_12;
+  border-color: @accent_overlay_20;
 }
 
 .launcher-app-card {
@@ -1433,18 +1527,18 @@ entry.launcher-search {
   border-radius: 12px;
   background: @panel_bg;
   border: 1px solid @panel_border;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10),inset 0 -1px 0 rgba(0,0,0,0.08),0 6px 18px rgba(0,0,0,0.12);
+  box-shadow: inset 0 1px 0 @soft_overlay_10,inset 0 -1px 0 @shadow_08,0 6px 18px @shadow_12;
   transition: background-color 140ms ease,border-color 140ms ease;
 }
 
 .launcher-app-card:hover {
-  background: rgba(255,255,255,0.08);
+  background: @soft_overlay_08;
   border-color: @glass_border;
 }
 
 .launcher-app-card:active {
-  background: rgba(255,255,255,0.12);
-  border-color: rgba(220,232,255,0.20);
+  background: @soft_overlay_12;
+  border-color: @accent_overlay_20;
 }
 
 .launcher-app-main {
@@ -1478,13 +1572,13 @@ entry.launcher-search {
 }
 
 .launcher-app-side-button:hover {
-  background: rgba(255,255,255,0.10);
+  background: @soft_overlay_10;
   border: none;
   box-shadow: none;
 }
 
 .launcher-app-side-button:active {
-  background: rgba(255,255,255,0.14);
+  background: @soft_overlay_14;
   border: none;
   box-shadow: none;
 }
@@ -1537,8 +1631,8 @@ entry.launcher-search {
 .launcher-notice {
   padding: 7px 9px;
   border-radius: 10px;
-  background: rgba(255,120,120,0.10);
-  border: 1px solid rgba(255,120,120,0.18);
+  background: @danger_bg;
+  border: 1px solid @danger_border;
   color: @danger_fg;
   opacity: 1;
 }
@@ -1572,7 +1666,7 @@ menubutton.wallpaper-widget-trigger > button.toggle:checked,
 menubutton.wallpaper-widget-trigger button.toggle:hover,
 menubutton.wallpaper-widget-trigger button.toggle:active,
 menubutton.wallpaper-widget-trigger button.toggle:checked {
-  background: rgba(255,255,255,0.05);
+  background: @soft_overlay_05;
   background-image: none;
   border-color: transparent;
   box-shadow: none;
@@ -1638,17 +1732,17 @@ button.wallpaper-refresh-button {
 }
 
 button.wallpaper-refresh-button:hover {
-  background: rgba(255,255,255,0.05);
+  background: @soft_overlay_05;
 }
 
 button.wallpaper-refresh-button:active {
-  background: rgba(255,255,255,0.09);
+  background: @soft_overlay_09;
 }
 
 button.wallpaper-refresh-button:focus,
 button.wallpaper-refresh-button:focus-visible,
 button.wallpaper-refresh-button:checked {
-  background: rgba(255,255,255,0.05);
+  background: @soft_overlay_05;
   box-shadow: none;
   outline: none;
 }
@@ -1658,7 +1752,7 @@ button.wallpaper-refresh-button.wallpaper-refresh-button-active:hover,
 button.wallpaper-refresh-button.wallpaper-refresh-button-active:active,
 button.wallpaper-refresh-button.wallpaper-refresh-button-active:focus,
 button.wallpaper-refresh-button.wallpaper-refresh-button-active:focus-visible {
-  background: rgba(255,255,255,0.09);
+  background: @soft_overlay_09;
   box-shadow: none;
   outline: none;
 }
@@ -1667,8 +1761,8 @@ button.wallpaper-refresh-button.wallpaper-refresh-button-active:focus-visible {
   min-width: 448px;
   padding: 10px;
   border-radius: 18px;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: @soft_overlay_03;
+  border: 1px solid @soft_overlay_08;
 }
 
 .wallpaper-list-wrap {
@@ -1712,24 +1806,24 @@ button.wallpaper-card:checked {
   min-height: 84px;
   padding: 0;
   border-radius: 12px;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: @soft_overlay_03;
+  border: 1px solid @soft_overlay_08;
   transition: none;
 }
 
 .wallpaper-thumb-wrap-hover {
-  background: rgba(255,255,255,0.12);
-  border-color: rgba(255,255,255,0.08);
+  background: @soft_overlay_12;
+  border-color: @soft_overlay_08;
 }
 
 .wallpaper-thumb-wrap-active {
-  background: rgba(210,225,255,0.12);
-  border-color: rgba(235,243,255,0.26);
+  background: @accent_overlay_12;
+  border-color: @accent_overlay_26;
 }
 
 .wallpaper-thumb-wrap-active.wallpaper-thumb-wrap-hover {
-  background: rgba(210,225,255,0.18);
-  border-color: rgba(235,243,255,0.26);
+  background: @accent_overlay_18;
+  border-color: @accent_overlay_26;
 }
 
 .wallpaper-thumb {
@@ -1840,7 +1934,7 @@ scale.osd-slider:focus-within {
 scale.osd-slider trough,
 scale.osd-slider > trough {
   min-height: 8px;
-  background: rgba(255,255,255,0.16);
+  background: @soft_overlay_16;
   border-radius: 999px;
 }
 
@@ -1849,7 +1943,7 @@ scale.osd-slider fill,
 scale.osd-slider > trough > highlight,
 scale.osd-slider > trough > fill {
   min-height: 8px;
-  background: rgba(255,255,255,0.96);
+  background: @soft_overlay_96;
   border-radius: 999px;
 }
 
@@ -1889,7 +1983,7 @@ button.workspace-chip {
 }
 
 button.workspace-chip:hover {
-  background: rgba(255,255,255,0.06);
+  background: @soft_overlay_06;
 }
 
 button.workspace-chip:active {
@@ -1898,18 +1992,18 @@ button.workspace-chip:active {
 
 button.workspace-chip.active,
 button.workspace-chip.focused {
-  background: rgba(210,225,255,0.08);
+  background: @accent_overlay_08;
 }
 
 button.workspace-chip.urgent {
-  background: rgba(120,24,24,0.16);
+  background: @urgent_bg;
 }
 
 .workspace-chip-core {
   min-width: 6px;
   min-height: 6px;
   border-radius: 999px;
-  background: rgba(255,255,255,0.24);
+  background: @soft_overlay_24;
   border: none;
   outline: none;
   box-shadow: none;
@@ -1920,7 +2014,7 @@ button.workspace-chip.urgent {
 .workspace-chip-core.occupied {
   min-width: 7px;
   min-height: 7px;
-  background: rgba(255,255,255,0.42);
+  background: @soft_overlay_42;
   opacity: 0.96;
 }
 
@@ -1928,18 +2022,18 @@ button.workspace-chip.urgent {
 .workspace-chip-core.focused {
   min-width: 10px;
   min-height: 10px;
-  background: rgba(244,247,255,0.98);
+  background: @soft_overlay_98;
   opacity: 1.0;
   box-shadow: none;
 }
 
 .workspace-chip-core.focused {
-  background: rgba(255,255,255,1.0);
+  background: @soft_overlay_100;
   box-shadow: none;
 }
 
 .workspace-chip-core.urgent {
-  background: rgba(255,120,120,0.92);
+  background: @urgent_core;
   box-shadow: none;
   opacity: 1.0;
 }
@@ -2153,7 +2247,7 @@ button.audio-sink-side-button:active {
   background: transparent;
   background-color: @popup_list_bg;
   background-image: none;
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid @soft_overlay_08;
   box-shadow: none;
 }
 
@@ -2166,7 +2260,7 @@ button.audio-sink-side-button:active {
   background-color: @popup_card_bg;
   background-image: none;
   border-color: @panel_border;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08),inset 0 -1px 0 rgba(0,0,0,0.05);
+  box-shadow: inset 0 1px 0 @soft_overlay_08,inset 0 -1px 0 @shadow_05;
 }
 
 .network-row-shell:hover,
@@ -2177,7 +2271,7 @@ button.audio-sink-side-button:active {
   background-color: @popup_card_hover_bg;
   background-image: none;
   border-color: @glass_border;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08),inset 0 -1px 0 rgba(0,0,0,0.05);
+  box-shadow: inset 0 1px 0 @soft_overlay_08,inset 0 -1px 0 @shadow_05;
 }
 
 .network-row-shell:active,
@@ -2186,8 +2280,8 @@ button.audio-sink-side-button:active {
   background: transparent;
   background-color: @popup_card_active_bg;
   background-image: none;
-  border-color: rgba(220,232,255,0.20);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08),inset 0 -1px 0 rgba(0,0,0,0.05);
+  border-color: @accent_overlay_20;
+  box-shadow: inset 0 1px 0 @soft_overlay_08,inset 0 -1px 0 @shadow_05;
 }
 
 .launcher-app-main,
