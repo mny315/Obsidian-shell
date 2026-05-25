@@ -1026,6 +1026,7 @@ popover.tray-menu-popover-window contents .tray-menu-pango-label {
   text-shadow: none;
 }
 
+
 popover.tray-menu-popover-window contents button:disabled,
 popover.tray-menu-popover-window contents button.model:disabled,
 popover.tray-menu-popover-window contents label:disabled,
@@ -1666,7 +1667,7 @@ menubutton.wallpaper-widget-trigger > button.toggle:checked,
 menubutton.wallpaper-widget-trigger button.toggle:hover,
 menubutton.wallpaper-widget-trigger button.toggle:active,
 menubutton.wallpaper-widget-trigger button.toggle:checked {
-  background: @soft_overlay_05;
+  background: @hover_bg;
   background-image: none;
   border-color: transparent;
   box-shadow: none;

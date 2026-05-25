@@ -121,12 +121,33 @@ async function isNetworkManagerReady() {
   return Boolean(await execText(["nmcli", "-t", "-f", "STATE", "general", "status"]))
 }
 
-async function getSystemdActiveState(unit: string) {
-  return (await execText(["systemctl", "show", unit, "--property=ActiveState", "--value"])).trim()
+type SystemdUnitState = {
+  available: boolean
+  active: boolean
 }
 
-async function getVlessServiceActive() {
-  return (await getSystemdActiveState(VLESS_SERVICE_NAME)) === "active"
+async function getSystemdUnitState(unit: string): Promise<SystemdUnitState> {
+  const result = await execResult(["systemctl", "show", unit, "--property=LoadState", "--property=ActiveState"])
+  if (!result.ok) return { available: false, active: false }
+
+  const values = new Map<string, string>()
+  for (const line of result.text.split("\n")) {
+    const [key = "", value = ""] = line.split("=", 2)
+    if (key) values.set(key, value.trim())
+  }
+
+  const loadState = values.get("LoadState") ?? ""
+  const activeState = values.get("ActiveState") ?? ""
+  const available = Boolean(loadState && loadState !== "not-found")
+
+  return {
+    available,
+    active: available && activeState === "active",
+  }
+}
+
+async function getVlessServiceState() {
+  return getSystemdUnitState(VLESS_SERVICE_NAME)
 }
 
 function appendServiceMeta(base: string, wireGuardActive: boolean, vlessActive: boolean) {
@@ -694,6 +715,7 @@ export function NetworkControl({
   const [icon, setIcon] = createState("󰖪")
   const [title, setTitle] = createState("Network")
   const [meta, setMeta] = createState("Loading…")
+  const [vlessAvailable, setVlessAvailable] = createState(false)
   const [vlessActive, setVlessActive] = createState(false)
   const [vlessBusy, setVlessBusy] = createState(false)
   const triggerTooltip = createComputed(() => `${title()} • ${meta()}`)
@@ -975,9 +997,11 @@ export function NetworkControl({
 
     try {
       const nmReady = await isNetworkManagerReady()
-      const [wgProfiles, savedConnections, serviceActive] = await Promise.all([getWireGuardProfiles(), getSavedWifiConnections(), getVlessServiceActive()])
+      const [wgProfiles, savedConnections, vlessService] = await Promise.all([getWireGuardProfiles(), getSavedWifiConnections(), getVlessServiceState()])
       await disableWireGuardAutoconnect(wgProfiles)
       const wgActive = wgProfiles.some(p => p.active)
+      const serviceActive = vlessService.active
+      setVlessAvailable(vlessService.available)
       setVlessActive(serviceActive)
 
       if (!nmReady) {
@@ -1220,9 +1244,16 @@ export function NetworkControl({
   const toggleVless = async () => {
     if (vlessBusy()) return
 
+    const service = await getVlessServiceState()
+    setVlessAvailable(service.available)
+    if (!service.available) {
+      setVlessActive(false)
+      return
+    }
+
     setVlessBusy(true)
     try {
-      const active = await getVlessServiceActive()
+      const active = service.active
       setVlessActive(active)
       presentStatus(active ? "Stopping VLESS…" : "Starting VLESS…", { durationMs: 0 })
 
@@ -1242,6 +1273,7 @@ export function NetworkControl({
 
   const vlessBtn = (
     <button
+      visible={vlessAvailable}
       class={vlessActive((active) => active
         ? "flat network-icon-button network-vless-button network-vless-button-active"
         : "flat network-icon-button network-vless-button")}

@@ -19,12 +19,13 @@ function toNumber(value: unknown, fallback = 0) {
 
 
 const TRAY_MENU_TEXT_OVERSCAN_X = 2
-const TRAY_MENU_TEXT_OVERSCAN_Y = 4
-const TRAY_MENU_TEXT_DRAW_OFFSET_Y = 1
+const TRAY_MENU_TEXT_PADDING_TOP = 3
+const TRAY_MENU_TEXT_PADDING_BOTTOM = 4
 
 const trayMenuPatchedLabels = new WeakSet<Gtk.Widget>()
 const trayMenuLabelAreas = new WeakMap<Gtk.Widget, Gtk.DrawingArea>()
 const trayMenuPatchSourceIds = new WeakMap<Gtk.PopoverMenu, number>()
+let openTrayMenu: Gtk.PopoverMenu | null = null
 
 function clearSource(id: number) {
   if (id === 0) return 0
@@ -78,6 +79,52 @@ function labelUsesMarkup(label: Gtk.Widget) {
   }
 }
 
+function readRectNumber(rect: any, key: string) {
+  return toNumber(rect?.[key], 0)
+}
+
+function readLayoutPixelExtents(layout: Pango.Layout) {
+  try {
+    const extents = (layout as any).get_pixel_extents?.()
+    const ink = Array.isArray(extents) ? extents[0] : null
+    const logical = Array.isArray(extents) ? extents[1] : null
+
+    if (ink || logical) {
+      return {
+        inkX: readRectNumber(ink, "x"),
+        inkY: readRectNumber(ink, "y"),
+        inkWidth: Math.max(1, readRectNumber(ink, "width")),
+        inkHeight: Math.max(1, readRectNumber(ink, "height")),
+        logicalWidth: Math.max(1, readRectNumber(logical, "width")),
+        logicalHeight: Math.max(1, readRectNumber(logical, "height")),
+      }
+    }
+  } catch {}
+
+  try {
+    const size = layout.get_pixel_size()
+    if (Array.isArray(size)) {
+      return {
+        inkX: 0,
+        inkY: 0,
+        inkWidth: Math.max(1, toNumber(size[0], 1)),
+        inkHeight: Math.max(1, toNumber(size[1], 1)),
+        logicalWidth: Math.max(1, toNumber(size[0], 1)),
+        logicalHeight: Math.max(1, toNumber(size[1], 1)),
+      }
+    }
+  } catch {}
+
+  return {
+    inkX: 0,
+    inkY: 0,
+    inkWidth: 1,
+    inkHeight: 1,
+    logicalWidth: 1,
+    logicalHeight: 1,
+  }
+}
+
 function createTrayMenuTextLayout(area: Gtk.DrawingArea, sourceLabel: Gtk.Widget, text: string) {
   const layout = area.create_pango_layout("")
   applyShellTextFont(layout, area)
@@ -111,18 +158,14 @@ function measureTrayMenuText(area: Gtk.DrawingArea, sourceLabel: Gtk.Widget, tex
   if (!text) return { width: 1, height: 1 }
 
   const layout = createTrayMenuTextLayout(area, sourceLabel, text)
+  const extents = readLayoutPixelExtents(layout)
+  const leftOverscan = Math.max(0, -extents.inkX)
+  const topOverscan = Math.max(0, -extents.inkY)
 
-  try {
-    const size = layout.get_pixel_size()
-    if (Array.isArray(size)) {
-      return {
-        width: Math.max(1, toNumber(size[0], 1) + TRAY_MENU_TEXT_OVERSCAN_X * 2),
-        height: Math.max(1, toNumber(size[1], 1) + TRAY_MENU_TEXT_OVERSCAN_Y),
-      }
-    }
-  } catch {}
-
-  return { width: 1, height: 1 }
+  return {
+    width: Math.max(1, Math.max(extents.logicalWidth, extents.inkWidth + leftOverscan) + TRAY_MENU_TEXT_OVERSCAN_X * 2),
+    height: Math.max(1, Math.max(extents.logicalHeight, extents.inkHeight + topOverscan) + TRAY_MENU_TEXT_PADDING_TOP + TRAY_MENU_TEXT_PADDING_BOTTOM),
+  }
 }
 
 function syncTrayMenuTextArea(area: Gtk.DrawingArea, sourceLabel: Gtk.Widget) {
@@ -145,16 +188,9 @@ function drawTrayMenuText(area: Gtk.DrawingArea, cr: any, width: number, height:
   if (!text) return
 
   const layout = createTrayMenuTextLayout(area, sourceLabel, text)
-  let layoutWidth = 0
-  let layoutHeight = 0
-
-  try {
-    const size = layout.get_pixel_size()
-    if (Array.isArray(size)) {
-      layoutWidth = toNumber(size[0], 0)
-      layoutHeight = toNumber(size[1], 0)
-    }
-  } catch {}
+  const extents = readLayoutPixelExtents(layout)
+  const layoutWidth = Math.max(extents.logicalWidth, extents.inkWidth + Math.max(0, -extents.inkX))
+  const layoutHeight = Math.max(extents.logicalHeight, extents.inkHeight + Math.max(0, -extents.inkY))
 
   let sourceXalign = 0
   let sourceYalign = 0.5
@@ -167,8 +203,8 @@ function drawTrayMenuText(area: Gtk.DrawingArea, cr: any, width: number, height:
     sourceYalign = toNumber((sourceLabel as any).get_yalign?.(), 0.5)
   } catch {}
 
-  const x = Math.max(0, Math.round((width - layoutWidth) * sourceXalign))
-  const y = Math.max(0, Math.round((height - layoutHeight) * sourceYalign) + TRAY_MENU_TEXT_DRAW_OFFSET_Y)
+  const x = Math.max(0, Math.round((width - layoutWidth) * sourceXalign) + TRAY_MENU_TEXT_OVERSCAN_X - Math.min(0, extents.inkX))
+  const y = Math.max(0, Math.round((height - layoutHeight) * sourceYalign) + TRAY_MENU_TEXT_PADDING_TOP - Math.min(0, extents.inkY))
 
   try {
     cr.save()
@@ -216,15 +252,53 @@ function copyTrayMenuLabelSizing(sourceLabel: Gtk.Widget, area: Gtk.DrawingArea)
   } catch {}
 }
 
-function insertTrayMenuTextArea(sourceLabel: Gtk.Widget, area: Gtk.DrawingArea) {
+function removeTrayMenuNativeLabel(sourceLabel: Gtk.Widget, replacement: Gtk.Widget) {
+  const parent = sourceLabel.get_parent?.() as Gtk.Widget | null
+  if (!parent) return
+
+  try {
+    if (parent instanceof Gtk.Box) {
+      parent.remove(sourceLabel)
+      return
+    }
+  } catch {}
+
+  try {
+    const remove = (parent as any).remove
+    if (typeof remove === "function") {
+      remove.call(parent, sourceLabel)
+      return
+    }
+  } catch {}
+
+  try {
+    if (parent instanceof Gtk.Button && (parent as any).get_child?.() === sourceLabel) {
+      parent.set_child(replacement)
+      return
+    }
+  } catch {}
+
+  try {
+    ;(sourceLabel as any).unparent?.()
+  } catch {}
+}
+
+function replaceTrayMenuNativeLabel(sourceLabel: Gtk.Widget, area: Gtk.DrawingArea) {
   const parent = sourceLabel.get_parent?.() as Gtk.Widget | null
   if (!parent) return false
+
+  try {
+    if (parent instanceof Gtk.Button && (parent as any).get_child?.() === sourceLabel) {
+      parent.set_child(area)
+      return true
+    }
+  } catch {}
 
   try {
     const insertAfter = (area as any).insert_after
     if (typeof insertAfter === "function") {
       insertAfter.call(area, parent, sourceLabel)
-      sourceLabel.set_visible(false)
+      removeTrayMenuNativeLabel(sourceLabel, area)
       return true
     }
   } catch {}
@@ -232,14 +306,7 @@ function insertTrayMenuTextArea(sourceLabel: Gtk.Widget, area: Gtk.DrawingArea) 
   try {
     if (parent instanceof Gtk.Box) {
       parent.insert_child_after(area, sourceLabel)
-      sourceLabel.set_visible(false)
-      return true
-    }
-  } catch {}
-
-  try {
-    if (parent instanceof Gtk.Button && (parent as any).get_child?.() === sourceLabel) {
-      parent.set_child(area)
+      removeTrayMenuNativeLabel(sourceLabel, area)
       return true
     }
   } catch {}
@@ -264,7 +331,7 @@ function patchTrayMenuLabel(sourceLabel: Gtk.Widget) {
   area.set_draw_func((self, cr, width, height) => drawTrayMenuText(self, cr, width, height, sourceLabel))
   syncTrayMenuTextArea(area, sourceLabel)
 
-  if (!insertTrayMenuTextArea(sourceLabel, area)) return
+  if (!replaceTrayMenuNativeLabel(sourceLabel, area)) return
 
   trayMenuPatchedLabels.add(sourceLabel)
   trayMenuLabelAreas.set(sourceLabel, area)
@@ -363,6 +430,23 @@ function syncTrayMenuOffset(trigger: Gtk.Widget | null, menu: Gtk.PopoverMenu | 
   } catch {}
 }
 
+function showTrayMenu(menu: Gtk.PopoverMenu | null) {
+  if (!menu) return
+
+  if (openTrayMenu && openTrayMenu !== menu) {
+    try {
+      openTrayMenu.popdown()
+    } catch {}
+  }
+
+  openTrayMenu = menu
+  menu.popup()
+}
+
+function forgetTrayMenu(menu: Gtk.PopoverMenu) {
+  if (openTrayMenu === menu) openTrayMenu = null
+}
+
 function TrayItem({ item }: { item: any }) {
   let trigger: Gtk.Box | null = null
   let menu: Gtk.PopoverMenu | null = null
@@ -434,7 +518,7 @@ function TrayItem({ item }: { item: any }) {
           try {
             syncTrayMenuOffset(trigger, menu)
             queueTrayMenuTextPatch(menu)
-            menu?.popup()
+            showTrayMenu(menu)
             queueTrayMenuTextPatch(menu)
           } catch (error) {
           }
@@ -455,7 +539,18 @@ function TrayItem({ item }: { item: any }) {
           } catch {}
 
           try {
-            self.connect("notify::visible", () => queueTrayMenuTextPatch(self))
+            self.connect("notify::visible", () => {
+              if (!self.get_visible()) forgetTrayMenu(self)
+              queueTrayMenuTextPatch(self)
+            })
+          } catch {}
+
+          try {
+            self.connect("closed", () => forgetTrayMenu(self))
+          } catch {}
+
+          try {
+            self.connect("destroy", () => forgetTrayMenu(self))
           } catch {}
         }}
       />
