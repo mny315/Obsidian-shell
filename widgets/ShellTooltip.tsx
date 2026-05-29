@@ -28,8 +28,6 @@ type TooltipOptions = {
 
 const [tooltipVisible, setTooltipVisible] = createState(false)
 const [tooltipMonitor, setTooltipMonitor] = createState(0)
-const [tooltipText, setTooltipText] = createState("")
-const [tooltipUsesMarkup, setTooltipUsesMarkup] = createState(false)
 
 const tooltipWindows = new Map<number, unknown>()
 let tooltipFrame: Gtk.Widget | null = null
@@ -508,8 +506,6 @@ function showTooltip(target: Gtk.Widget, source: TooltipSource, options: Tooltip
   activeTarget = target
   currentTooltipText = text
   currentTooltipUsesMarkup = Boolean(options.markup)
-  setTooltipText(text)
-  setTooltipUsesMarkup(currentTooltipUsesMarkup)
   updateTooltipTextArea()
   queuePlacement(target)
   setTooltipVisible(true)

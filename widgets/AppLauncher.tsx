@@ -202,7 +202,6 @@ export function AppLauncherControl({
 }) {
   let trigger: Gtk.Button | null = null
   let popupWindowRef: Gtk.Window | null = null
-  let popupPlacement: Gtk.Box | null = null
   let popupRevealer: Gtk.Revealer | null = null
   let popupFrame: Gtk.Box | null = null
   let popupRoot: Gtk.Box | null = null
@@ -513,11 +512,13 @@ export function AppLauncherControl({
       <box class="launcher-header" spacing={8} valign={Gtk.Align.CENTER}>
         <label class="launcher-title" xalign={0} hexpand label={launcherTitle} />
         <button
-          class="flat launcher-hidden-toggle"
+          class="flat hidden-toggle launcher-hidden-toggle"
+          valign={Gtk.Align.CENTER}
+          vexpand={false}
           visible={hiddenToggleVisible}
           onClicked={() => setShowHiddenApps((value) => !value)}
         >
-          <label label={hiddenToggleLabel} />
+          <label class="hidden-toggle-label" valign={Gtk.Align.CENTER} label={hiddenToggleLabel} />
         </button>
       </box>
 
@@ -645,7 +646,6 @@ export function AppLauncherControl({
         } catch {}
         self.connect("destroy", () => {
           popupWindowRef = null
-          popupPlacement = null
           popupRevealer = null
           popupFrame = null
           popupRoot = null
@@ -662,9 +662,6 @@ export function AppLauncherControl({
           class="widget-popup-placement"
           halign={Gtk.Align.START}
           valign={Gtk.Align.START}
-          $={(self) => {
-            popupPlacement = self
-          }}
         >
           <revealer
             class="widget-popup-revealer"

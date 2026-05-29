@@ -3,7 +3,6 @@ import GdkPixbuf from "gi://GdkPixbuf"
 import Gio from "gi://Gio"
 import GLib from "gi://GLib"
 import Gtk from "gi://Gtk?version=4.0"
-import Pango from "gi://Pango"
 
 import { Astal } from "ags/gtk4"
 
@@ -14,6 +13,7 @@ import { playerPinned, togglePlayerPinned } from "./PlayerPinState"
 import { LEFT_TOP_POPUP_ANCHOR, attachPopupFocusDismiss, clipRoundedWidget, placeLayerWindowFromTrigger } from "./FloatingPopup"
 import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
 import { attachShellTooltip } from "./ShellTooltip"
+import { audioThreadVisualizerEnabled, toggleAudioThreadVisualizer } from "./AudioThreadVisualizer"
 
 type WallpaperItem = {
   name: string
@@ -306,6 +306,7 @@ function getWallpaperTexture(path: string) {
 type WallpaperWidgetSettings = {
   directory?: string
   currentWallpaper?: string
+  audioThreadVisualizerEnabled?: boolean
 }
 
 function isAbsoluteDirectory(path: string) {
@@ -335,10 +336,14 @@ function readWallpaperSettings() {
 
     const directory = parsed?.directory?.trim() ?? ""
     const currentWallpaper = parsed?.currentWallpaper?.trim() ?? ""
+    const audioThreadVisualizerEnabled = typeof parsed?.audioThreadVisualizerEnabled === "boolean"
+      ? parsed.audioThreadVisualizerEnabled
+      : undefined
 
     return {
       directory: isAbsoluteDirectory(directory) ? directory : undefined,
       currentWallpaper: isExistingFilePath(currentWallpaper) ? currentWallpaper : undefined,
+      audioThreadVisualizerEnabled,
     } satisfies WallpaperWidgetSettings
   } catch {
     return {} as WallpaperWidgetSettings
@@ -597,7 +602,6 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   const [visibleCount, setVisibleCount] = createState(WALLPAPER_INITIAL_VISIBLE_ITEMS)
   const visibleWallpapers = createComputed(() => wallpapers().slice(0, visibleCount()))
   const wallpaperRows = createComputed(() => chunkWallpapers(visibleWallpapers(), GRID_COLUMNS))
-  const wallpaperPathLabel = createComputed(() => formatWallpaperDirectory(wallpaperDir()))
   const emptyMetaLabel = createComputed(() => `Put PNG, JPG or WEBP files into ${formatWallpaperDirectory(wallpaperDir())}`)
 
   const resetVisibleWallpapers = (items: WallpaperItem[] = wallpapers()) => {
@@ -791,6 +795,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       await runWallpaperApplyCommand(item.path)
       saveWallpaperSettings({ currentWallpaper: item.path })
       setActivePath(item.path)
+
       applyingCleanupTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 180, () => {
         setNotice("Wallpaper applied")
         applyingCleanupTimeoutId = 0
@@ -858,6 +863,10 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   const noticeText = createComputed(() => (notice() ?? "").trim())
   const folderTooltip = createComputed(() => noticeText().length > 0 ? noticeText() : "Choose wallpapers folder")
   const reloadTooltip = createComputed(() => noticeText().length > 0 ? noticeText() : "Reload wallpapers folder")
+  const prepareHeaderActionButton = (self: Gtk.Button) => {
+    self.set_focus_on_click(false)
+    self.set_focusable(false)
+  }
 
   const createPopoverContent = () => (
     <box
@@ -873,45 +882,58 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
             <label class="wallpaper-title" xalign={0} label="Wallpapers" />
             <label class="wallpaper-count" label={countLabel} />
           </box>
-          <label
-            class="wallpaper-path"
-            xalign={0}
-            ellipsize={Pango.EllipsizeMode.MIDDLE}
-            maxWidthChars={44}
-            label={wallpaperPathLabel}
-            $={(self) => {
-              attachShellTooltip(self, () => wallpaperDir)
-              self.set_single_line_mode(true)
-            }}
-          />
+          <box class="wallpaper-path-actions" spacing={0} valign={Gtk.Align.CENTER} halign={Gtk.Align.START}>
+            <button
+              class="flat wallpaper-refresh-button"
+              onClicked={chooseWallpaperDirectory}
+              $={(self) => {
+                prepareHeaderActionButton(self)
+                attachShellTooltip(self, folderTooltip)
+              }}
+            >
+              <label class="wallpaper-refresh-icon" label={"󰉋"} />
+            </button>
+
+            <button
+              class="flat wallpaper-refresh-button"
+              onClicked={() => void refreshWallpapers()}
+              $={(self) => {
+                prepareHeaderActionButton(self)
+                attachShellTooltip(self, reloadTooltip)
+              }}
+            >
+              <label class="wallpaper-refresh-icon" label={"󰑐"} />
+            </button>
+          </box>
         </box>
 
-        <box class="wallpaper-header-actions" spacing={6} valign={Gtk.Align.START}>
+        <box class="wallpaper-header-actions" spacing={6} halign={Gtk.Align.END} valign={Gtk.Align.START}>
+          <button
+            class={audioThreadVisualizerEnabled((value) => value
+              ? "flat wallpaper-refresh-button wallpaper-refresh-button-active"
+              : "flat wallpaper-refresh-button")}
+            onClicked={() => toggleAudioThreadVisualizer()}
+            $={(self) => {
+              prepareHeaderActionButton(self)
+              attachShellTooltip(self, () => audioThreadVisualizerEnabled() ? "Disable bottom audio thread" : "Enable bottom audio thread")
+            }}
+          >
+            <label class="wallpaper-refresh-icon" label={"󰺢"} />
+          </button>
+
           <button
             class={playerPinned((value) => value
               ? "flat wallpaper-refresh-button wallpaper-refresh-button-active"
               : "flat wallpaper-refresh-button")}
             onClicked={() => togglePlayerPinned()}
-            $={(self) => attachShellTooltip(self, () => playerPinned() ? "Hide player in bar" : "Show player in bar")}
+            $={(self) => {
+              prepareHeaderActionButton(self)
+              attachShellTooltip(self, () => playerPinned() ? "Hide player in bar" : "Show player in bar")
+            }}
           >
             <label class="wallpaper-refresh-icon" label={playerPinned((value) => value ? "󰎇" : "󰎈")} />
           </button>
 
-          <button
-            class="flat wallpaper-refresh-button"
-            onClicked={chooseWallpaperDirectory}
-            $={(self) => attachShellTooltip(self, folderTooltip)}
-          >
-            <label class="wallpaper-refresh-icon" label={"󰉋"} />
-          </button>
-
-          <button
-            class="flat wallpaper-refresh-button"
-            onClicked={() => void refreshWallpapers()}
-            $={(self) => attachShellTooltip(self, reloadTooltip)}
-          >
-            <label class="wallpaper-refresh-icon" label={"󰑐"} />
-          </button>
         </box>
       </box>
 
@@ -1015,7 +1037,6 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
 
   let trigger: Gtk.Button | null = null
   let popupWindowRef: Gtk.Window | null = null
-  let popupPlacement: Gtk.Box | null = null
   let popupRevealer: Gtk.Revealer | null = null
   let popupFrame: Gtk.Box | null = null
   let popupRoot: Gtk.Box | null = null
@@ -1159,7 +1180,6 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
         self.connect("destroy", () => {
           unregisterPopupController()
           popupWindowRef = null
-          popupPlacement = null
           popupRevealer = null
           popupFrame = null
           popupRoot = null
@@ -1176,9 +1196,6 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
           class="widget-popup-placement"
           halign={Gtk.Align.START}
           valign={Gtk.Align.START}
-          $={(self) => {
-            popupPlacement = self
-          }}
         >
           <revealer
             class="widget-popup-revealer"

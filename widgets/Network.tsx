@@ -21,6 +21,7 @@ const WIFI_RADIO_POLL_LIMIT = 30
 const BAR_WIFI_ICON = "󰤨"
 const BAR_WIFI_OFF_ICON = "󰖪"
 const VLESS_SERVICE_NAME = "sing-box.service"
+const VLESS_PROGRAM_NAMES = ["sing-box", "singbox"]
 
 type WifiNetwork = {
   inUse: boolean
@@ -124,30 +125,54 @@ async function isNetworkManagerReady() {
 type SystemdUnitState = {
   available: boolean
   active: boolean
+  execStart: string
 }
 
 async function getSystemdUnitState(unit: string): Promise<SystemdUnitState> {
-  const result = await execResult(["systemctl", "show", unit, "--property=LoadState", "--property=ActiveState"])
-  if (!result.ok) return { available: false, active: false }
+  const result = await execResult(["systemctl", "show", unit, "--property=LoadState", "--property=ActiveState", "--property=ExecStart"])
+  if (!result.ok) return { available: false, active: false, execStart: "" }
 
   const values = new Map<string, string>()
   for (const line of result.text.split("\n")) {
-    const [key = "", value = ""] = line.split("=", 2)
-    if (key) values.set(key, value.trim())
+    const separator = line.indexOf("=")
+    if (separator <= 0) continue
+    values.set(line.slice(0, separator), line.slice(separator + 1).trim())
   }
 
   const loadState = values.get("LoadState") ?? ""
   const activeState = values.get("ActiveState") ?? ""
+  const execStart = values.get("ExecStart") ?? ""
   const available = Boolean(loadState && loadState !== "not-found")
 
   return {
     available,
     active: available && activeState === "active",
+    execStart,
   }
 }
 
+function hasVlessProgramInPath() {
+  return VLESS_PROGRAM_NAMES.some((name) => Boolean(GLib.find_program_in_path(name)?.trim()))
+}
+
+function hasExecutableFromExecStart(execStart: string) {
+  const paths = execStart.match(/\/[^\s;]+/g) ?? []
+
+  return paths.some((path) => {
+    const basename = path.split("/").pop() ?? ""
+    return VLESS_PROGRAM_NAMES.includes(basename) && GLib.file_test(path, GLib.FileTest.IS_EXECUTABLE)
+  })
+}
+
 async function getVlessServiceState() {
-  return getSystemdUnitState(VLESS_SERVICE_NAME)
+  const unit = await getSystemdUnitState(VLESS_SERVICE_NAME)
+  if (!unit.available) return { available: false, active: false }
+
+  const usable = unit.active || hasVlessProgramInPath() || hasExecutableFromExecStart(unit.execStart)
+  return {
+    available: usable,
+    active: usable && unit.active,
+  }
 }
 
 function appendServiceMeta(base: string, wireGuardActive: boolean, vlessActive: boolean) {
@@ -677,12 +702,10 @@ export function NetworkControl({
 }) {
   let trigger: Gtk.Button | null = null
   let popupWindowRef: Gtk.Window | null = null
-  let popupPlacement: Gtk.Box | null = null
   let wifiListBox: Gtk.Box | null = null
   let wifiSectionBox: Gtk.Box | null = null
   let wgListBox: Gtk.Box | null = null
   let popupRevealer: Gtk.Revealer | null = null
-  let popupFrame: Gtk.Box | null = null
   let popupRoot: Gtk.Box | null = null
   let wifiSwitch: Gtk.Switch | null = null
   let passwordBox: Gtk.Box | null = null
@@ -1275,8 +1298,8 @@ export function NetworkControl({
     <button
       visible={vlessAvailable}
       class={vlessActive((active) => active
-        ? "flat network-icon-button network-vless-button network-vless-button-active"
-        : "flat network-icon-button network-vless-button")}
+        ? "flat wallpaper-refresh-button wallpaper-refresh-button-active"
+        : "flat wallpaper-refresh-button")}
       onClicked={() => deferAction(toggleVless)}
       $={(self) => {
         self.set_focus_on_click(false)
@@ -1284,11 +1307,11 @@ export function NetworkControl({
         attachShellTooltip(self, () => vlessBusy() ? "Switching VLESS…" : vlessActive() ? "Stop VLESS" : "Start VLESS")
       }}
     >
-      <label class="network-icon-button-label network-vless-icon" label={vlessActive((active) => active ? "󰌾" : "󰌿")} />
+      <label class="wallpaper-refresh-icon" label={vlessActive((active) => active ? "󰌾" : "󰌿")} />
     </button>
   )
 
-  const rescanBtn = makeIconButton("󰑐", "network-icon-button", "Rescan", () => {
+  const rescanBtn = makeIconButton("󰑐", "wallpaper-refresh-button", "Rescan", () => {
     if (wifiEnabled) {
       deferAction(async () => {
         presentStatus("Scanning networks…", { durationMs: 0 })
@@ -1305,8 +1328,10 @@ export function NetworkControl({
           <label class="network-header-title" xalign={0} label={title} ellipsize={Pango.EllipsizeMode.END} />
           <label class="network-header-meta" xalign={0} label={meta} />
         </box>
-        {rescanBtn}
-        {vlessBtn}
+        <box class="network-header-action-capsule" spacing={0} valign={Gtk.Align.CENTER} halign={Gtk.Align.END}>
+          {vlessBtn}
+          {rescanBtn}
+        </box>
         <Gtk.Switch class="network-toggle" valign={Gtk.Align.CENTER} halign={Gtk.Align.END} $={(self) => {
           wifiSwitch = self
           self.connect("notify::active", () => {
@@ -1428,9 +1453,7 @@ export function NetworkControl({
         } catch {}
         self.connect("destroy", () => {
           popupWindowRef = null
-          popupPlacement = null
           popupRevealer = null
-          popupFrame = null
           popupRoot = null
         })
       }}
@@ -1445,9 +1468,6 @@ export function NetworkControl({
           class="widget-popup-placement"
           halign={Gtk.Align.START}
           valign={Gtk.Align.START}
-          $={(self) => {
-            popupPlacement = self
-          }}
         >
           <revealer
             class="widget-popup-revealer"
@@ -1458,7 +1478,6 @@ export function NetworkControl({
           >
             <box class="widget-popup-frame network-popover-window" widthRequest={NETWORK_POPOVER_WIDTH} $={(self) => {
               clipRoundedWidget(self)
-              popupFrame = self
             }}>
               {popoverContent}
             </box>

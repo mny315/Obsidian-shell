@@ -357,17 +357,13 @@ export function AudioControl({
   let flashTimeoutId: number | null = null
   let popupWindowRef: Gtk.Window | null = null
   let popupRevealer: Gtk.Revealer | null = null
-  let popupFrame: Gtk.Box | null = null
   let popupRoot: Gtk.Box | null = null
-  let popupPlacement: Gtk.Box | null = null
   let trigger: Gtk.Button | null = null
   let refreshTimer = 0
   let closeTimeoutId = 0
   let closingPopup = false
 
   const popupRegistryId = `audio-devices-${monitor}`
-
-  const isOpen = () => Boolean(windowVisible())
 
   const setTriggerOpen = (open: boolean) => {
     if (!trigger) return
@@ -598,13 +594,13 @@ export function AudioControl({
           <label class="network-header-meta audio-header-meta" xalign={0} label={statusText} />
         </box>
         <button
-          class="flat launcher-hidden-toggle"
+          class="flat hidden-toggle audio-hidden-toggle"
           valign={Gtk.Align.CENTER}
           vexpand={false}
           visible={hiddenToggleVisible}
           onClicked={() => setShowHidden((value) => !value)}
         >
-          <label label={hiddenToggleLabel} />
+          <label class="hidden-toggle-label" valign={Gtk.Align.CENTER} label={hiddenToggleLabel} />
         </button>
       </box>
 
@@ -687,9 +683,7 @@ export function AudioControl({
         self.connect("destroy", () => {
           popupWindowRef = null
           popupRevealer = null
-          popupFrame = null
           popupRoot = null
-          popupPlacement = null
         })
       }}
     >
@@ -703,9 +697,6 @@ export function AudioControl({
           class="widget-popup-placement"
           halign={Gtk.Align.START}
           valign={Gtk.Align.START}
-          $={(self) => {
-            popupPlacement = self
-          }}
         >
           <revealer
             class="widget-popup-revealer"
@@ -716,7 +707,6 @@ export function AudioControl({
           >
             <box class="widget-popup-frame network-popover-window audio-popover-window" widthRequest={AUDIO_POPOVER_WIDTH} $={(self) => {
               clipRoundedWidget(self)
-              popupFrame = self
             }}>
               {popupContent}
             </box>

@@ -1,7 +1,5 @@
 #!/usr/bin/env -S ags run
 
-import type Gtk from "gi://Gtk?version=4.0"
-
 import app from "ags/gtk4/app"
 import style from "./style.css"
 
@@ -11,6 +9,7 @@ import { Bar } from "./widgets/Bar"
 import { ShellTooltipWindow } from "./widgets/ShellTooltip"
 import { registerAppLauncherRequestHandler } from "./widgets/AppLauncher"
 import { initializeOsd, OsdWindow } from "./widgets/Osd"
+import { AudioThreadVisualizerWindow } from "./widgets/AudioThreadVisualizer"
 
 app.start({
   instanceName: "obsidian-shell",
@@ -26,6 +25,7 @@ app.start({
     for (let i = 0; i < monitors; i++) {
       Bar({ monitor: i })
       ShellTooltipWindow({ monitor: i })
+      AudioThreadVisualizerWindow({ monitor: i })
     }
   },
 })
