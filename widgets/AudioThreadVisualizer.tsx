@@ -26,10 +26,7 @@ const LEVEL_RELEASE = 0.46
 const SPATIAL_SMOOTHING_PASSES = 1
 const INPUT_NOISE_FLOOR = 0.018
 
-const cava = AstalCava.get_default()
-try {
-  ;(cava as any)?.set_active?.(false)
-} catch {}
+let cava: any = null
 
 const [audioThreadVisualizerEnabled, setAudioThreadVisualizerEnabledState] = createState(readAudioThreadVisualizerEnabled())
 const drawingAreas = new Set<Gtk.DrawingArea>()
@@ -37,7 +34,6 @@ let targetLevels = new Array<number>(CAVA_BARS).fill(0)
 let renderLevels = new Array<number>(CAVA_BARS).fill(0)
 let frameSourceId = 0
 let cavaNotifyId = 0
-let cavaConfigured = false
 let themeWatchConfigured = false
 
 function clearSource(sourceId: number) {
@@ -117,30 +113,40 @@ function normalizeCavaValues(values: number[]) {
   return next
 }
 
+function getPipewireInput() {
+  return (AstalCava as any).Input?.PIPEWIRE ?? 2
+}
+
+function getCava() {
+  if (cava) return cava
+
+  try {
+    const CavaClass = (AstalCava as any).Cava
+    if (typeof CavaClass !== "function") throw new Error("AstalCava.Cava constructor is not available")
+
+    cava = new CavaClass({
+      active: false,
+      bars: CAVA_BARS,
+      framerate: VISUALIZER_FPS,
+      autosens: true,
+      stereo: false,
+      noise_reduction: 0.42,
+      input: getPipewireInput(),
+    })
+  } catch (error) {
+    console.error(error)
+    cava = null
+  }
+
+  return cava
+}
+
 function readCavaValues() {
   if (!cava) return
 
   try {
-    const raw = (cava as any).values ?? (cava as any).get_values?.()
+    const raw = cava.values ?? cava.get_values?.()
     targetLevels = normalizeCavaValues(asNumberArray(raw))
-  } catch (error) {
-    console.error(error)
-  }
-}
-
-function configureCava() {
-  if (!cava || cavaConfigured) return
-  cavaConfigured = true
-
-  try {
-    ;(cava as any).set_bars?.(CAVA_BARS)
-    ;(cava as any).set_framerate?.(VISUALIZER_FPS)
-    ;(cava as any).set_autosens?.(true)
-    ;(cava as any).set_stereo?.(false)
-    ;(cava as any).set_noise_reduction?.(0.42)
-
-    const pipewireInput = (AstalCava as any).Input?.PIPEWIRE ?? 2
-    ;(cava as any).set_input?.(pipewireInput)
   } catch (error) {
     console.error(error)
   }
@@ -229,19 +235,18 @@ function resetLevels() {
 }
 
 function startCava() {
-  if (!cava) return
-
-  configureCava()
+  const cavaInstance = getCava()
+  if (!cavaInstance) return
 
   try {
     if (cavaNotifyId === 0) {
-      cavaNotifyId = (cava as any).connect("notify::values", () => {
+      cavaNotifyId = cavaInstance.connect("notify::values", () => {
         readCavaValues()
         startFrameClock()
       })
     }
 
-    ;(cava as any).set_active?.(true)
+    cavaInstance.set_active?.(true)
     readCavaValues()
     startFrameClock()
   } catch (error) {
@@ -256,7 +261,7 @@ function stopCava(reset: boolean) {
   }
 
   try {
-    ;(cava as any).set_active?.(false)
+    cava.set_active?.(false)
   } catch (error) {
     console.error(error)
   }
@@ -447,7 +452,7 @@ export function AudioThreadVisualizerWindow({ monitor }: { monitor: number }) {
 
                 if (cava && cavaNotifyId !== 0) {
                   try {
-                    ;(cava as any).disconnect(cavaNotifyId)
+                    cava.disconnect(cavaNotifyId)
                   } catch {}
                   cavaNotifyId = 0
                 }
