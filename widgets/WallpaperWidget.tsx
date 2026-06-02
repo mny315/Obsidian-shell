@@ -6,8 +6,9 @@ import Gtk from "gi://Gtk?version=4.0"
 
 import { Astal } from "ags/gtk4"
 
-import { For, createComputed, createState } from "ags"
-import { execAsync } from "ags/process"
+import { createComputed, createState } from "ags"
+import { execAsync, subprocess } from "ags/process"
+import { AGS_STATE_DIR, WALLPAPER_SETTINGS_PATH } from "../config"
 import { attachEscapeKey } from "./EscapeKey"
 import { playerPinned, togglePlayerPinned } from "./PlayerPinState"
 import { LEFT_TOP_POPUP_ANCHOR, attachPopupFocusDismiss, clipRoundedWidget, placeLayerWindowFromTrigger } from "./FloatingPopup"
@@ -46,14 +47,9 @@ function getDefaultPicturesDir() {
 }
 
 const DEFAULT_WALLPAPER_DIR = getDefaultPicturesDir()
-const WALLPAPER_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"])
-const STATE_HOME = (() => {
-  const configured = GLib.getenv("XDG_STATE_HOME")?.trim() ?? ""
-  if (configured.length > 0 && GLib.path_is_absolute(configured)) return configured
-  return GLib.build_filenamev([GLib.get_home_dir(), ".local", "state"])
-})()
-const WALLPAPER_STATE_DIR = GLib.build_filenamev([STATE_HOME, "ags"])
-const WALLPAPER_SETTINGS_PATH = GLib.build_filenamev([WALLPAPER_STATE_DIR, "wallpaper-widget.json"])
+const WALLPAPER_IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"])
+const WALLPAPER_VIDEO_EXTENSIONS = new Set([".mp4", ".mkv", ".webm", ".mov", ".m4v", ".avi"])
+const WALLPAPER_EXTENSIONS = new Set([...WALLPAPER_IMAGE_EXTENSIONS, ...WALLPAPER_VIDEO_EXTENSIONS])
 const GRID_COLUMNS = 3
 const CARD_WIDTH = 144
 const CARD_HEIGHT = 84
@@ -71,6 +67,9 @@ const WALLPAPER_LOAD_MORE_THRESHOLD = CARD_HEIGHT + GRID_GAP
 const WALLPAPER_TEXTURE_QUEUE_INTERVAL_MS = 12
 const WALLPAPER_THUMBNAIL_VERSION = "cover-fill-v3"
 const WALLPAPER_CACHE_DIR = GLib.build_filenamev([GLib.get_user_cache_dir(), "obsidian-shell", "wallpaper-thumbs"])
+const WALLPAPER_VIDEO_STILL_VERSION = "live-still-v1"
+const WALLPAPER_VIDEO_TRANSITION_MS = 900
+const WALLPAPER_VIDEO_HANDOFF_MS = 240
 const wallpaperTextureCache = new Map<string, Gdk.Texture | null>()
 const wallpaperThumbnailPathCache = new Map<string, string>()
 const wallpaperTextureSubscribers = new Map<string, Set<(texture: Gdk.Texture | null) => void>>()
@@ -78,12 +77,33 @@ const wallpaperTextureQueued = new Set<string>()
 const wallpaperTextureQueue: string[] = []
 let wallpaperTextureQueueSourceId = 0
 let wallpaperThumbnailBuildGeneration = 0
-const WALLPAPER_CLI_BIN = GLib.find_program_in_path("awww")?.trim()
-  ?? GLib.find_program_in_path("swww")?.trim()
-  ?? ""
-const WALLPAPER_DAEMON_BIN = GLib.find_program_in_path("awww-daemon")?.trim()
-  ?? GLib.find_program_in_path("swww-daemon")?.trim()
-  ?? ""
+const WALLPAPER_CLI_BIN = GLib.find_program_in_path("awww")?.trim() ?? ""
+const WALLPAPER_DAEMON_BIN = GLib.find_program_in_path("awww-daemon")?.trim() ?? ""
+const FFMPEG_BIN = GLib.find_program_in_path("ffmpeg")?.trim() ?? ""
+const MPVPAPER_BIN = GLib.find_program_in_path("mpvpaper")?.trim() ?? ""
+const PKILL_BIN = GLib.find_program_in_path("pkill")?.trim() ?? ""
+const PGREP_BIN = GLib.find_program_in_path("pgrep")?.trim() ?? ""
+const MPVPAPER_OUTPUT = GLib.getenv("OBSIDIAN_SHELL_MPVPAPER_OUTPUT")?.trim() || "ALL"
+const MPVPAPER_DEFAULT_OPTIONS = "config=no no-audio loop-file=inf hwdec=auto-safe terminal=no input-terminal=no input-default-bindings=no osc=no osd-level=0"
+const MPVPAPER_FORCED_OPTIONS = ["config=no"]
+const STATIC_WALLPAPER_DAEMON_NAMES = ["awww-daemon"]
+const LIVE_WALLPAPER_PROCESS_NAMES = ["mpvpaper"]
+const WALLPAPER_BACKEND_SETTLE_MS = 120
+const WALLPAPER_STATIC_TRANSITION_ARGS = [
+  "--transition-type",
+  "grow",
+  "--transition-pos",
+  "center",
+  "--transition-duration",
+  "0.9",
+  "--transition-fps",
+  "120",
+  "--transition-step",
+  "28",
+]
+let liveWallpaperProcess: ReturnType<typeof subprocess> | null = null
+let liveWallpaperPath = ""
+let wallpaperStartupRestoreStarted = false
 
 function resetWallpaperTexturePipeline() {
   wallpaperThumbnailBuildGeneration += 1
@@ -192,9 +212,13 @@ function getWallpaperThumbnailPath(path: string) {
     console.error(error)
   }
 
+  const thumbnailVersion = isVideoWallpaperPath(path)
+    ? `${WALLPAPER_THUMBNAIL_VERSION}:video-widget-play-v1`
+    : WALLPAPER_THUMBNAIL_VERSION
+
   const key = GLib.compute_checksum_for_string(
     GLib.ChecksumType.SHA256,
-    `${path}:${etag}:${CARD_WIDTH}x${CARD_HEIGHT}:${WALLPAPER_THUMBNAIL_VERSION}`,
+    `${path}:${etag}:${CARD_WIDTH}x${CARD_HEIGHT}:${thumbnailVersion}`,
     -1,
   )
 
@@ -203,8 +227,82 @@ function getWallpaperThumbnailPath(path: string) {
   return thumbnailPath
 }
 
-function generateWallpaperThumbnail(path: string, thumbnailPath: string) {
+function getWallpaperFileCacheKey(path: string, version: string) {
+  let etag = ""
+
+  try {
+    const info = Gio.File.new_for_path(path).query_info(
+      "etag::value,time::modified,standard::size",
+      Gio.FileQueryInfoFlags.NONE,
+      null,
+    )
+    const size = info.get_size()
+    const modified = info.get_attribute_uint64("time::modified")
+    etag = info.get_etag() ?? `${size}:${modified}`
+  } catch (error) {
+    console.error(error)
+  }
+
+  return GLib.compute_checksum_for_string(
+    GLib.ChecksumType.SHA256,
+    `${path}:${etag}:${version}`,
+    -1,
+  )
+}
+
+function getWallpaperVideoStillPath(path: string) {
+  const key = getWallpaperFileCacheKey(path, WALLPAPER_VIDEO_STILL_VERSION)
+  return GLib.build_filenamev([WALLPAPER_CACHE_DIR, `${key}.still.png`])
+}
+
+function getWallpaperExtension(path: string) {
+  const lower = path.toLowerCase()
+  const dot = lower.lastIndexOf(".")
+  return dot >= 0 ? lower.slice(dot) : ""
+}
+
+function isImageWallpaperPath(path: string) {
+  return WALLPAPER_IMAGE_EXTENSIONS.has(getWallpaperExtension(path))
+}
+
+function isVideoWallpaperPath(path: string) {
+  return WALLPAPER_VIDEO_EXTENSIONS.has(getWallpaperExtension(path))
+}
+
+function isSupportedWallpaperPath(path: string) {
+  return WALLPAPER_EXTENSIONS.has(getWallpaperExtension(path))
+}
+
+function isMpvpaperForbiddenOption(option: string) {
+  const normalized = option.trim().replace(/^--/, "")
+  if (!normalized) return true
+
+  const name = normalized.split("=", 1)[0] ?? ""
+  return name === "vo" || name === "config" || name === "config-dir"
+}
+
+function getMpvpaperOptions() {
+  const configured = GLib.getenv("OBSIDIAN_SHELL_MPVPAPER_OPTIONS")?.trim() ?? ""
+  const rawOptions = (configured.length > 0 ? configured : MPVPAPER_DEFAULT_OPTIONS)
+    .split(/\s+/)
+    .map((option) => option.trim())
+    .filter((option) => !isMpvpaperForbiddenOption(option))
+
+  return [...MPVPAPER_FORCED_OPTIONS, ...rawOptions].join(" ")
+}
+
+function removeFileIfExists(path: string) {
+  try {
+    if (Gio.File.new_for_path(path).query_exists(null)) GLib.unlink(path)
+  } catch {
+  }
+}
+
+function generateImageWallpaperThumbnail(path: string, thumbnailPath: string) {
   if (!ensureWallpaperCacheDir()) return null
+
+  const tempPath = `${thumbnailPath}.tmp.png`
+  removeFileIfExists(tempPath)
 
   try {
     const source = GdkPixbuf.Pixbuf.new_from_file(path)
@@ -235,15 +333,155 @@ function generateWallpaperThumbnail(path: string, thumbnailPath: string) {
 
     if (!thumbnail) throw new Error(`Failed to scale preview for ${path}`)
 
-    const tempPath = `${thumbnailPath}.tmp`
     thumbnail.savev(tempPath, "png", [], [])
     GLib.rename(tempPath, thumbnailPath)
 
     return thumbnailPath
   } catch (error) {
+    removeFileIfExists(tempPath)
     console.error(error)
     return null
   }
+}
+
+async function generateVideoWallpaperThumbnail(path: string, thumbnailPath: string) {
+  if (!ensureWallpaperCacheDir()) return null
+  if (!FFMPEG_BIN) return null
+
+  const tempPath = `${thumbnailPath}.tmp.png`
+  const videoFilter = `scale=${CARD_WIDTH}:${CARD_HEIGHT}:force_original_aspect_ratio=increase,crop=${CARD_WIDTH}:${CARD_HEIGHT}`
+  const makeCommand = (seekBeforeInput: boolean) => {
+    const command = [
+      FFMPEG_BIN,
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-y",
+    ]
+
+    if (seekBeforeInput) {
+      command.push("-ss", "00:00:01")
+    }
+
+    command.push(
+      "-i",
+      path,
+      "-frames:v",
+      "1",
+      "-vf",
+      videoFilter,
+      tempPath,
+    )
+
+    return command
+  }
+
+  const commands = [
+    makeCommand(true),
+    makeCommand(false),
+  ]
+
+  let lastError: unknown = null
+
+  for (const command of commands) {
+    removeFileIfExists(tempPath)
+
+    try {
+      await execAsync(command)
+      if (!Gio.File.new_for_path(tempPath).query_exists(null)) throw new Error(`ffmpeg did not create preview for ${path}`)
+      GLib.rename(tempPath, thumbnailPath)
+      return thumbnailPath
+    } catch (error) {
+      lastError = error
+      removeFileIfExists(tempPath)
+    }
+  }
+
+  console.error(lastError ?? new Error(`Failed to create video preview for ${path}`))
+  return null
+}
+
+async function generateWallpaperThumbnail(path: string, thumbnailPath: string) {
+  if (isVideoWallpaperPath(path)) return generateVideoWallpaperThumbnail(path, thumbnailPath)
+  if (isImageWallpaperPath(path)) return generateImageWallpaperThumbnail(path, thumbnailPath)
+  return null
+}
+
+async function generateVideoWallpaperStill(path: string, stillPath: string) {
+  if (!ensureWallpaperCacheDir()) return null
+  if (!FFMPEG_BIN) return null
+
+  const tempPath = `${stillPath}.tmp.png`
+  const commands = [
+    [
+      FFMPEG_BIN,
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-y",
+      "-ss",
+      "00:00:00.050",
+      "-i",
+      path,
+      "-frames:v",
+      "1",
+      tempPath,
+    ],
+    [
+      FFMPEG_BIN,
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-y",
+      "-i",
+      path,
+      "-frames:v",
+      "1",
+      tempPath,
+    ],
+    [
+      FFMPEG_BIN,
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-y",
+      "-ss",
+      "00:00:01",
+      "-i",
+      path,
+      "-frames:v",
+      "1",
+      tempPath,
+    ],
+  ]
+
+  let lastError: unknown = null
+
+  for (const command of commands) {
+    removeFileIfExists(tempPath)
+
+    try {
+      await execAsync(command)
+      if (!Gio.File.new_for_path(tempPath).query_exists(null)) throw new Error(`ffmpeg did not create live wallpaper still for ${path}`)
+      GLib.rename(tempPath, stillPath)
+      return stillPath
+    } catch (error) {
+      lastError = error
+      removeFileIfExists(tempPath)
+    }
+  }
+
+  console.error(lastError ?? new Error(`Failed to create live wallpaper still for ${path}`))
+  return null
+}
+
+async function ensureVideoWallpaperStill(path: string) {
+  if (!isVideoWallpaperPath(path)) return null
+
+  const stillPath = getWallpaperVideoStillPath(path)
+  if (Gio.File.new_for_path(stillPath).query_exists(null)) return stillPath
+
+  return generateVideoWallpaperStill(path, stillPath)
 }
 
 function getExistingWallpaperThumbnail(path: string) {
@@ -273,7 +511,7 @@ async function buildWallpaperThumbnails(
     const item = items[index]
     const thumbnailPath = getWallpaperThumbnailPath(item.path)
     if (!Gio.File.new_for_path(thumbnailPath).query_exists(null)) {
-      generateWallpaperThumbnail(item.path, thumbnailPath)
+      await generateWallpaperThumbnail(item.path, thumbnailPath)
     }
 
     onProgress?.(index + 1, total)
@@ -358,7 +596,7 @@ function saveWallpaperSettings(nextPatch: Partial<WallpaperWidgetSettings>) {
       ...nextPatch,
     }
 
-    GLib.mkdir_with_parents(WALLPAPER_STATE_DIR, 0o700)
+    GLib.mkdir_with_parents(AGS_STATE_DIR, 0o700)
     GLib.file_set_contents(WALLPAPER_SETTINGS_PATH, JSON.stringify(next))
   } catch (error) {
     console.error(error)
@@ -389,9 +627,7 @@ function listWallpaperFiles(wallpaperDir: string): WallpaperItem[] {
       if (info.get_file_type() !== Gio.FileType.REGULAR) continue
 
       const name = info.get_name()
-      const lower = name.toLowerCase()
-      const matchesImage = [...WALLPAPER_EXTENSIONS].some((ext) => lower.endsWith(ext))
-      if (!matchesImage) continue
+      if (!isSupportedWallpaperPath(name)) continue
 
       items.push({
         name,
@@ -465,128 +701,255 @@ function parseCurrentWallpaperPaths(output: string) {
   return paths
 }
 
-function WallpaperPreview({
-  item,
-  activePath,
-  onApply,
-}: {
-  item: WallpaperItem
-  activePath: () => string
-  onApply: (item: WallpaperItem) => void
-}) {
-  const [hovered, setHovered] = createState(false)
-  const wrapClass = createComputed(() => {
-    const classes = ["wallpaper-thumb-wrap"]
+function delayMs(ms: number) {
+  return new Promise<void>((resolve) => {
+    GLib.timeout_add(GLib.PRIORITY_DEFAULT, ms, () => {
+      resolve()
+      return GLib.SOURCE_REMOVE
+    })
+  })
+}
 
-    if (activePath() === item.path) classes.push("wallpaper-thumb-wrap-active")
-    if (hovered()) classes.push("wallpaper-thumb-wrap-hover")
+function isTrackedLiveWallpaperRunning(path?: string) {
+  return Boolean(liveWallpaperProcess && (!path || liveWallpaperPath === path))
+}
 
-    return classes.join(" ")
+function terminateTrackedLiveWallpaper() {
+  const proc = liveWallpaperProcess
+  liveWallpaperProcess = null
+  liveWallpaperPath = ""
+
+  if (!proc) return
+
+  const subprocessLike = proc as {
+    force_exit?: () => void
+    kill?: () => void
+    send_signal?: (signal: number) => void
+  }
+
+  try {
+    if (typeof subprocessLike.force_exit === "function") subprocessLike.force_exit()
+    else if (typeof subprocessLike.kill === "function") subprocessLike.kill()
+    else if (typeof subprocessLike.send_signal === "function") subprocessLike.send_signal(15)
+  } catch (error) {
+    console.error(error)
+  }
+}
+
+async function isExactProcessNameRunning(processName: string) {
+  if (!PGREP_BIN) return false
+
+  try {
+    await execAsync([PGREP_BIN, "-x", processName])
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function waitForExactProcessNameToExit(processName: string) {
+  if (!PGREP_BIN) {
+    await delayMs(WALLPAPER_BACKEND_SETTLE_MS)
+    return
+  }
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    if (!(await isExactProcessNameRunning(processName))) return
+    await delayMs(WALLPAPER_BACKEND_SETTLE_MS)
+  }
+}
+
+async function pkillExactProcessName(processName: string, signal = "-TERM") {
+  if (!PKILL_BIN) return
+
+  try {
+    await execAsync([PKILL_BIN, signal, "-x", processName])
+  } catch {
+  }
+}
+
+async function stopLiveWallpaperProcesses() {
+  terminateTrackedLiveWallpaper()
+
+  for (const processName of LIVE_WALLPAPER_PROCESS_NAMES) {
+    await pkillExactProcessName(processName, "-TERM")
+    await waitForExactProcessNameToExit(processName)
+
+    if (await isExactProcessNameRunning(processName)) {
+      await pkillExactProcessName(processName, "-KILL")
+      await waitForExactProcessNameToExit(processName)
+    }
+  }
+}
+
+async function stopStaticWallpaperDaemons() {
+  for (const daemonName of STATIC_WALLPAPER_DAEMON_NAMES) {
+    await pkillExactProcessName(daemonName, "-TERM")
+    await waitForExactProcessNameToExit(daemonName)
+
+    if (await isExactProcessNameRunning(daemonName)) {
+      await pkillExactProcessName(daemonName, "-KILL")
+      await waitForExactProcessNameToExit(daemonName)
+    }
+  }
+}
+
+async function startLiveWallpaperProcess(path: string) {
+  if (!MPVPAPER_BIN) throw new Error("mpvpaper is required for live wallpapers")
+
+  let stderr = ""
+  const command = [MPVPAPER_BIN, "-o", getMpvpaperOptions(), MPVPAPER_OUTPUT, path]
+  const proc = subprocess({
+    cmd: command,
+    err: (error) => {
+      stderr += String(error)
+      console.error(error)
+    },
   })
 
-  const pictureClass = createComputed(() => {
-    const classes = ["wallpaper-thumb"]
+  liveWallpaperProcess = proc
+  liveWallpaperPath = path
 
-    if (activePath() === item.path) classes.push("wallpaper-thumb-active")
-    if (hovered()) classes.push("wallpaper-thumb-hover")
+  await new Promise<void>((resolve, reject) => {
+    let settled = false
 
-    return classes.join(" ")
+    proc.connect("exit", (_self, code: number, signaled: boolean) => {
+      if (liveWallpaperProcess === proc) {
+        liveWallpaperProcess = null
+        liveWallpaperPath = ""
+      }
+
+      if (settled) return
+      settled = true
+
+      const details = stderr.trim()
+      reject(new Error(`mpvpaper exited with code ${code}${signaled ? " (signaled)" : ""}${details ? `: ${details}` : ""}`))
+    })
+
+    GLib.timeout_add(GLib.PRIORITY_DEFAULT, 350, () => {
+      if (!settled) {
+        settled = true
+        resolve()
+      }
+
+      return GLib.SOURCE_REMOVE
+    })
+  })
+}
+
+function addCssClasses(widget: Gtk.Widget, classes: string) {
+  for (const klass of classes.split(/\s+/)) {
+    if (klass) widget.add_css_class(klass)
+  }
+}
+
+function createWallpaperPreview(
+  item: WallpaperItem,
+  isActive: boolean,
+  onApply: (item: WallpaperItem) => void,
+) {
+  let cancelTextureRequest = () => {}
+  let destroyed = false
+
+  const picture = new Gtk.Picture()
+  addCssClasses(picture, "wallpaper-thumb")
+  picture.set_content_fit(Gtk.ContentFit.COVER)
+  picture.set_can_shrink(false)
+  picture.set_overflow(Gtk.Overflow.HIDDEN)
+  picture.set_halign(Gtk.Align.FILL)
+  picture.set_valign(Gtk.Align.FILL)
+  picture.set_hexpand(false)
+  picture.set_vexpand(false)
+  picture.set_size_request(CARD_WIDTH, CARD_HEIGHT)
+
+  const thumbStack = new Gtk.Fixed({
+    hexpand: false,
+    vexpand: false,
+    halign: Gtk.Align.START,
+    valign: Gtk.Align.START,
+  })
+  addCssClasses(thumbStack, "wallpaper-thumb-stack")
+  thumbStack.set_overflow(Gtk.Overflow.HIDDEN)
+  thumbStack.set_size_request(CARD_WIDTH, CARD_HEIGHT)
+  thumbStack.put(picture, 0, 0)
+
+  if (isVideoWallpaperPath(item.path)) {
+    const playIcon = new Gtk.Label({
+      label: "󰐊",
+      halign: Gtk.Align.START,
+      valign: Gtk.Align.START,
+    })
+    addCssClasses(playIcon, "wallpaper-video-play-icon")
+    playIcon.set_can_target(false)
+    thumbStack.put(playIcon, 8, 6)
+  }
+
+  const wrap = new Gtk.Box({
+    orientation: Gtk.Orientation.VERTICAL,
+    hexpand: false,
+    vexpand: false,
+    halign: Gtk.Align.START,
+    valign: Gtk.Align.START,
+  })
+  addCssClasses(wrap, "wallpaper-thumb-wrap")
+  wrap.set_overflow(Gtk.Overflow.HIDDEN)
+  wrap.set_size_request(CARD_WIDTH, CARD_HEIGHT)
+  wrap.append(thumbStack)
+
+  const button = new Gtk.Button({
+    child: wrap,
+    hexpand: false,
+    vexpand: false,
+    halign: Gtk.Align.START,
+    valign: Gtk.Align.START,
+  })
+  addCssClasses(button, "flat wallpaper-card")
+  button.set_has_frame(false)
+  button.set_focus_on_click(false)
+  button.set_focusable(false)
+  button.set_can_target(true)
+  button.set_can_shrink(false)
+  button.set_overflow(Gtk.Overflow.HIDDEN)
+  button.set_size_request(CARD_WIDTH, CARD_HEIGHT)
+
+  if (isActive) {
+    wrap.add_css_class("wallpaper-thumb-wrap-active")
+    picture.add_css_class("wallpaper-thumb-active")
+  }
+
+  const beginTextureLoad = () => {
+    cancelTextureRequest()
+    picture.set_paintable(null)
+
+    const cachedTexture = wallpaperTextureCache.get(item.path)
+    if (cachedTexture !== undefined) {
+      if (cachedTexture) picture.set_paintable(cachedTexture)
+      return
+    }
+
+    if (!getExistingWallpaperThumbnail(item.path)) return
+
+    cancelTextureRequest = requestWallpaperTexture(item.path, (texture) => {
+      cancelTextureRequest = () => {}
+      if (destroyed || !texture) return
+      picture.set_paintable(texture)
+    })
+  }
+
+  const cancelPendingTextureLoad = () => {
+    cancelTextureRequest()
+    cancelTextureRequest = () => {}
+  }
+
+  button.connect("clicked", () => onApply(item))
+  picture.connect("map", beginTextureLoad)
+  picture.connect("unmap", cancelPendingTextureLoad)
+  picture.connect("destroy", () => {
+    destroyed = true
+    cancelPendingTextureLoad()
   })
 
-  return (
-    <button
-      class="flat wallpaper-card"
-      widthRequest={CARD_WIDTH}
-      heightRequest={CARD_HEIGHT}
-      hexpand={false}
-      vexpand={false}
-      halign={Gtk.Align.START}
-      valign={Gtk.Align.START}
-      onClicked={() => onApply(item)}
-      $={(self) => {
-        const motion = new Gtk.EventControllerMotion()
-        motion.connect("enter", () => setHovered(true))
-        motion.connect("leave", () => setHovered(false))
-        self.add_controller(motion)
-
-        self.set_has_frame(false)
-        self.set_focus_on_click(false)
-        self.set_focusable(false)
-        self.set_can_target(true)
-        self.set_can_shrink(false)
-        self.set_overflow(Gtk.Overflow.HIDDEN)
-        self.set_halign(Gtk.Align.START)
-        self.set_valign(Gtk.Align.START)
-        self.set_size_request(CARD_WIDTH, CARD_HEIGHT)
-      }}
-    >
-      <box
-        class={wrapClass}
-        widthRequest={CARD_WIDTH}
-        heightRequest={CARD_HEIGHT}
-        hexpand={false}
-        vexpand={false}
-        halign={Gtk.Align.START}
-        valign={Gtk.Align.START}
-        overflow={Gtk.Overflow.HIDDEN}
-      >
-
-        <Gtk.Picture
-          class={pictureClass}
-          widthRequest={CARD_WIDTH}
-          heightRequest={CARD_HEIGHT}
-          hexpand={false}
-          vexpand={false}
-          halign={Gtk.Align.FILL}
-          valign={Gtk.Align.FILL}
-          $={(self) => {
-            let cancelTextureRequest = () => {}
-            let destroyed = false
-
-            self.set_content_fit(Gtk.ContentFit.COVER)
-            self.set_can_shrink(false)
-            self.set_overflow(Gtk.Overflow.HIDDEN)
-            self.set_halign(Gtk.Align.FILL)
-            self.set_valign(Gtk.Align.FILL)
-            self.set_hexpand(false)
-            self.set_vexpand(false)
-            self.set_size_request(CARD_WIDTH, CARD_HEIGHT)
-
-            const beginTextureLoad = () => {
-              cancelTextureRequest()
-              self.set_paintable(null)
-
-              const cachedTexture = wallpaperTextureCache.get(item.path)
-              if (cachedTexture !== undefined) {
-                if (cachedTexture) self.set_paintable(cachedTexture)
-                return
-              }
-
-              if (!getExistingWallpaperThumbnail(item.path)) return
-
-              cancelTextureRequest = requestWallpaperTexture(item.path, (texture) => {
-                cancelTextureRequest = () => {}
-                if (destroyed || !texture) return
-                self.set_paintable(texture)
-              })
-            }
-
-            const cancelPendingTextureLoad = () => {
-              cancelTextureRequest()
-              cancelTextureRequest = () => {}
-            }
-
-            self.connect("map", beginTextureLoad)
-            self.connect("unmap", cancelPendingTextureLoad)
-            self.connect("destroy", () => {
-              destroyed = true
-              cancelPendingTextureLoad()
-            })
-          }}
-        />
-      </box>
-    </button>
-  )
+  return button
 }
 
 export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
@@ -600,18 +963,84 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
 
   const countLabel = createComputed(() => `${wallpapers().length}`)
   const [visibleCount, setVisibleCount] = createState(WALLPAPER_INITIAL_VISIBLE_ITEMS)
-  const visibleWallpapers = createComputed(() => wallpapers().slice(0, visibleCount()))
-  const wallpaperRows = createComputed(() => chunkWallpapers(visibleWallpapers(), GRID_COLUMNS))
-  const emptyMetaLabel = createComputed(() => `Put PNG, JPG or WEBP files into ${formatWallpaperDirectory(wallpaperDir())}`)
+  const emptyMetaLabel = createComputed(() => `Put PNG, JPG, WEBP, MP4, MKV, WEBM or MOV files into ${formatWallpaperDirectory(wallpaperDir())}`)
+
+  let wallpaperGridRef: Gtk.Box | null = null
+  let wallpaperGridRenderSourceId = 0
+
+  const clearWallpaperGridRender = () => {
+    if (wallpaperGridRenderSourceId === 0) return
+    GLib.source_remove(wallpaperGridRenderSourceId)
+    wallpaperGridRenderSourceId = 0
+  }
+
+  const clearWallpaperGridChildren = (grid: Gtk.Box) => {
+    let child = grid.get_first_child()
+
+    while (child) {
+      const next = child.get_next_sibling()
+      grid.remove(child)
+      child = next
+    }
+  }
+
+  const renderWallpaperGrid = () => {
+    const grid = wallpaperGridRef
+    if (!grid) return
+
+    clearWallpaperGridChildren(grid)
+
+    const rows = chunkWallpapers(wallpapers().slice(0, visibleCount()), GRID_COLUMNS)
+
+    for (const row of rows) {
+      const rowBox = new Gtk.Box({
+        orientation: Gtk.Orientation.HORIZONTAL,
+        spacing: GRID_GAP,
+        hexpand: false,
+        vexpand: false,
+        halign: Gtk.Align.START,
+        valign: Gtk.Align.START,
+      })
+
+      rowBox.add_css_class("wallpaper-grid-row")
+
+      for (const item of row) {
+        rowBox.append(createWallpaperPreview(
+          item,
+          activePath() === item.path,
+          (selected) => void applyWallpaper(selected),
+        ))
+      }
+
+      grid.append(rowBox)
+    }
+  }
+
+  const scheduleWallpaperGridRender = () => {
+    if (wallpaperGridRenderSourceId !== 0) return
+
+    wallpaperGridRenderSourceId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+      wallpaperGridRenderSourceId = 0
+      renderWallpaperGrid()
+      return GLib.SOURCE_REMOVE
+    })
+  }
+
+  const setActiveWallpaperPath = (path: string) => {
+    setActivePath(path)
+    scheduleWallpaperGridRender()
+  }
 
   const resetVisibleWallpapers = (items: WallpaperItem[] = wallpapers()) => {
     setVisibleCount(Math.min(items.length, WALLPAPER_INITIAL_VISIBLE_ITEMS))
+    scheduleWallpaperGridRender()
   }
 
   const loadMoreWallpapers = () => {
     const total = wallpapers().length
     if (visibleCount() >= total) return
     setVisibleCount((current) => Math.min(total, current + WALLPAPER_LOAD_MORE_ITEMS))
+    scheduleWallpaperGridRender()
   }
 
   const settleUiFrame = () => new Promise<void>((resolve) => {
@@ -624,8 +1053,13 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   const syncActiveWallpaper = async () => {
     const savedPath = readWallpaperSettings().currentWallpaper ?? ""
 
+    if (isTrackedLiveWallpaperRunning()) {
+      setActiveWallpaperPath(liveWallpaperPath)
+      return
+    }
+
     if (!WALLPAPER_CLI_BIN) {
-      setActivePath(savedPath)
+      setActiveWallpaperPath(savedPath)
       return
     }
 
@@ -634,100 +1068,88 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       const currentPaths = parseCurrentWallpaperPaths(String(output ?? ""))
       if (currentPaths.size === 1) {
         const [onlyPath] = [...currentPaths]
-        setActivePath(onlyPath ?? "")
+        setActiveWallpaperPath(onlyPath ?? "")
         return
       }
     } catch {
     }
 
-    setActivePath(savedPath)
+    setActiveWallpaperPath(savedPath)
   }
 
-  const runWallpaperApplyCommand = async (path: string) => {
-    if (!WALLPAPER_CLI_BIN) {
-      throw new Error("Neither awww nor swww is available in PATH")
+  const ensureStaticWallpaperDaemon = async () => {
+    if (!WALLPAPER_DAEMON_BIN) return false
+
+    try {
+      await execAsync([WALLPAPER_CLI_BIN, "query"])
+      return true
+    } catch {
     }
 
-    const ensureDaemon = async () => {
-      if (!WALLPAPER_DAEMON_BIN) return false
+    try {
+      void execAsync([WALLPAPER_DAEMON_BIN])
+    } catch {
+    }
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await new Promise<void>((resolve) => {
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 80, () => {
+          resolve()
+          return GLib.SOURCE_REMOVE
+        })
+      })
 
       try {
         await execAsync([WALLPAPER_CLI_BIN, "query"])
         return true
       } catch {
       }
-
-      try {
-        void execAsync([WALLPAPER_DAEMON_BIN])
-      } catch {
-      }
-
-      for (let attempt = 0; attempt < 8; attempt += 1) {
-        await new Promise<void>((resolve) => {
-          GLib.timeout_add(GLib.PRIORITY_DEFAULT, 80, () => {
-            resolve()
-            return GLib.SOURCE_REMOVE
-          })
-        })
-
-        try {
-          await execAsync([WALLPAPER_CLI_BIN, "query"])
-          return true
-        } catch {
-        }
-      }
-
-      return false
     }
 
-    await ensureDaemon()
+    return false
+  }
 
-    const commands = [
-      [
-        WALLPAPER_CLI_BIN,
-        "img",
-        path,
-        "--transition-type",
-        "grow",
-        "--transition-pos",
-        "center",
-        "--transition-duration",
-        "0.9",
-        "--transition-fps",
-        "120",
-        "--transition-step",
-        "28",
-      ],
-      [
-        WALLPAPER_CLI_BIN,
-        "img",
-        path,
-        "--transition-type",
-        "outer",
-        "--transition-pos",
-        "center",
-        "--transition-duration",
-        "0.8",
-        "--transition-fps",
-        "120",
-        "--transition-step",
-        "24",
-      ],
-      [
-        WALLPAPER_CLI_BIN,
-        "img",
-        path,
-        "--transition-type",
-        "simple",
-        "--transition-duration",
-        "0.7",
-        "--transition-fps",
-        "120",
-        "--transition-step",
-        "8",
-      ],
-      [WALLPAPER_CLI_BIN, "img", path],
-    ]
+  const runStaticWallpaperApplyCommand = async (path: string, animated = true) => {
+    if (!WALLPAPER_CLI_BIN) {
+      throw new Error("awww is not available in PATH")
+    }
+
+    await ensureStaticWallpaperDaemon()
+
+    const commands = animated
+      ? [
+        [WALLPAPER_CLI_BIN, "img", path, ...WALLPAPER_STATIC_TRANSITION_ARGS],
+        [
+          WALLPAPER_CLI_BIN,
+          "img",
+          path,
+          "--transition-type",
+          "outer",
+          "--transition-pos",
+          "center",
+          "--transition-duration",
+          "0.8",
+          "--transition-fps",
+          "120",
+          "--transition-step",
+          "24",
+        ],
+        [
+          WALLPAPER_CLI_BIN,
+          "img",
+          path,
+          "--transition-type",
+          "simple",
+          "--transition-duration",
+          "0.7",
+          "--transition-fps",
+          "120",
+          "--transition-step",
+          "8",
+        ],
+        [WALLPAPER_CLI_BIN, "img", path],
+      ]
+      : [[WALLPAPER_CLI_BIN, "img", path]]
 
     let lastError: unknown = null
 
@@ -741,6 +1163,87 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
     }
 
     throw lastError ?? new Error("Failed to apply wallpaper")
+  }
+
+  const prepareLiveWallpaperTransitionFrame = async (path: string) => {
+    const stillPath = await ensureVideoWallpaperStill(path)
+    if (!stillPath || !WALLPAPER_CLI_BIN) return false
+
+    try {
+      await runStaticWallpaperApplyCommand(stillPath)
+      await delayMs(WALLPAPER_VIDEO_TRANSITION_MS)
+      return true
+    } catch (error) {
+      console.error(error)
+      return false
+    }
+  }
+
+  const prepareStaticWallpaperReturnFrame = async () => {
+    const currentLivePath = liveWallpaperPath
+    if (!currentLivePath || !WALLPAPER_CLI_BIN) return false
+
+    const stillPath = await ensureVideoWallpaperStill(currentLivePath)
+    if (!stillPath) return false
+
+    try {
+      await runStaticWallpaperApplyCommand(stillPath, false)
+      await delayMs(WALLPAPER_BACKEND_SETTLE_MS)
+      return true
+    } catch (error) {
+      console.error(error)
+      return false
+    }
+  }
+
+  const runWallpaperApplyCommand = async (path: string) => {
+    if (isVideoWallpaperPath(path)) {
+      if (isTrackedLiveWallpaperRunning(path)) return
+      if (!MPVPAPER_BIN) throw new Error("mpvpaper is required for live wallpapers")
+
+      if (isTrackedLiveWallpaperRunning()) {
+        await prepareStaticWallpaperReturnFrame()
+      }
+
+      await stopLiveWallpaperProcesses()
+      const animatedHandoff = await prepareLiveWallpaperTransitionFrame(path)
+      await startLiveWallpaperProcess(path)
+      if (animatedHandoff) await delayMs(WALLPAPER_VIDEO_HANDOFF_MS)
+      await stopStaticWallpaperDaemons()
+      return
+    }
+
+    if (!WALLPAPER_CLI_BIN) {
+      throw new Error("awww is not available in PATH")
+    }
+
+    if (isTrackedLiveWallpaperRunning()) {
+      await prepareStaticWallpaperReturnFrame()
+    }
+
+    await stopLiveWallpaperProcesses()
+    await runStaticWallpaperApplyCommand(path)
+  }
+
+  const restoreSavedWallpaperOnce = () => {
+    if (wallpaperStartupRestoreStarted) return
+    wallpaperStartupRestoreStarted = true
+
+    GLib.timeout_add(GLib.PRIORITY_DEFAULT, 350, () => {
+      void (async () => {
+        const savedPath = readWallpaperSettings().currentWallpaper ?? ""
+        if (!savedPath) return
+
+        try {
+          await runWallpaperApplyCommand(savedPath)
+          setActiveWallpaperPath(savedPath)
+        } catch (error) {
+          console.error(error)
+        }
+      })()
+
+      return GLib.SOURCE_REMOVE
+    })
   }
 
   const refreshWallpapers = async () => {
@@ -782,7 +1285,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   const applyWallpaper = async (item: WallpaperItem) => {
     if (refreshing() || applying()) return
 
-    if (activePath() === item.path) {
+    if (activePath() === item.path && isVideoWallpaperPath(item.path) && isTrackedLiveWallpaperRunning(item.path)) {
       setNotice("Wallpaper already active")
       return
     }
@@ -794,7 +1297,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
     try {
       await runWallpaperApplyCommand(item.path)
       saveWallpaperSettings({ currentWallpaper: item.path })
-      setActivePath(item.path)
+      setActiveWallpaperPath(item.path)
 
       applyingCleanupTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 180, () => {
         setNotice("Wallpaper applied")
@@ -983,30 +1486,16 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
               vexpand={false}
               halign={Gtk.Align.START}
               valign={Gtk.Align.START}
-            >
-              <For each={wallpaperRows}>
-                {(row) => (
-                  <box
-                    class="wallpaper-grid-row"
-                    spacing={GRID_GAP}
-                    hexpand={false}
-                    vexpand={false}
-                    halign={Gtk.Align.START}
-                    valign={Gtk.Align.START}
-                  >
-                    <For each={() => row}>
-                      {(item) => (
-                        <WallpaperPreview
-                          item={item}
-                          activePath={activePath}
-                          onApply={(selected) => void applyWallpaper(selected)}
-                        />
-                      )}
-                    </For>
-                  </box>
-                )}
-              </For>
-            </box>
+              $={(self) => {
+                wallpaperGridRef = self
+                scheduleWallpaperGridRender()
+
+                self.connect("destroy", () => {
+                  if (wallpaperGridRef === self) wallpaperGridRef = null
+                  clearWallpaperGridRender()
+                })
+              }}
+            />
           </Gtk.ScrolledWindow>
         </box>
 
@@ -1035,7 +1524,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
     </box>
   )
 
-  let trigger: Gtk.Button | null = null
+  let trigger: Gtk.ToggleButton | null = null
   let popupWindowRef: Gtk.Window | null = null
   let popupRevealer: Gtk.Revealer | null = null
   let popupFrame: Gtk.Box | null = null
@@ -1060,9 +1549,8 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   }
 
   const setTriggerOpen = (open: boolean) => {
-    if (!trigger) return
-    if (open) trigger.add_css_class("widget-trigger-open")
-    else trigger.remove_css_class("widget-trigger-open")
+    if (!trigger || trigger.active === open) return
+    trigger.active = open
   }
 
   const syncPopupPosition = () => {
@@ -1082,8 +1570,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
 
   const isPopupRevealed = () => Boolean(popupRevealer?.get_reveal_child())
 
-  const resetStalePopupState = (reason: string) => {
-    console.warn(`[popup:${popupRegistryId}] reset stale state: ${reason}`)
+  const resetStalePopupState = () => {
     finishClosePopup()
   }
 
@@ -1119,7 +1606,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
 
   const openPopup = () => {
     if (windowVisible()) {
-      if (closingPopup || !isPopupRevealed()) resetStalePopupState("open requested while visible but not revealed")
+      if (closingPopup || !isPopupRevealed()) resetStalePopupState()
       else {
         syncPopupPosition()
         return
@@ -1135,7 +1622,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       if (!windowVisible() || closingPopup) return GLib.SOURCE_REMOVE
       syncPopupPosition()
       if (popupRevealer) popupRevealer.revealChild = true
-      else resetStalePopupState("revealer missing after open")
+      else resetStalePopupState()
       popupRoot?.grab_focus()
       return GLib.SOURCE_REMOVE
     })
@@ -1148,7 +1635,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
 
     if (windowVisible()) {
       if (!isPopupRevealed()) {
-        resetStalePopupState("toggle requested while visible but not revealed")
+        resetStalePopupState()
         openPopup()
         return
       }
@@ -1225,7 +1712,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   void popupWindow
 
   return (
-    <button
+    <Gtk.ToggleButton
       class="wallpaper-widget-trigger left-module-button"
       onClicked={() => {
         togglePopup()
@@ -1235,6 +1722,7 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
         attachShellTooltip(self, "Wallpapers")
 
         void syncActiveWallpaper()
+        restoreSavedWallpaperOnce()
         self.connect("destroy", () => {
           clearCloseTimeout()
           clearApplyingCleanupTimeout()
@@ -1245,6 +1733,6 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       }}
     >
       <label class="wallpaper-trigger-icon" label={"󰸉"} />
-    </button>
+    </Gtk.ToggleButton>
   )
 }

@@ -1,9 +1,49 @@
 import Gtk from "gi://Gtk?version=4.0"
 import Pango from "gi://Pango"
 import Mpris from "gi://AstalMpris"
+import GLib from "gi://GLib"
 
 import { With, createBinding, createComputed, createState } from "ags"
 import { attachShellTooltip } from "./ShellTooltip"
+
+const _coverArtCache = new Map<string, string>()
+
+function resolveCoverArtUrl(url: string | null | undefined): string | null {
+  if (!url) return null
+
+  const dataPrefix = "data:"
+  if (!url.startsWith(dataPrefix)) return url
+
+  if (_coverArtCache.has(url)) return _coverArtCache.get(url)!
+
+  try {
+    const commaIdx = url.indexOf(",")
+    if (commaIdx === -1) return null
+
+    const meta = url.slice(dataPrefix.length, commaIdx)
+    const payload = url.slice(commaIdx + 1)
+
+    const isBase64 = meta.includes(";base64")
+    const mimeType = meta.split(";")[0]
+    const ext = mimeType.split("/")[1] ?? "jpg"
+
+    const bytes: GLib.Bytes = isBase64
+      ? GLib.base64_decode(payload)
+      : new GLib.Bytes(Array.from(payload).map((c) => c.charCodeAt(0)))
+
+    const tmpDir = GLib.get_tmp_dir()
+    const path = `${tmpDir}/ags-cover-${GLib.get_monotonic_time()}.${ext}`
+
+    const [ok] = GLib.file_set_contents(path, bytes.get_data()!)
+    if (!ok) return null
+
+    const fileUrl = `file://${path}`
+    _coverArtCache.set(url, fileUrl)
+    return fileUrl
+  } catch (e) {
+    return null
+  }
+}
 
 const mpris = Mpris.get_default()
 
@@ -96,7 +136,8 @@ function currentVersionOf(player: Player | null, list: Player[]) {
 }
 
 function pickActivePlayer(previousPlayer: Player | null = null) {
-  const list = players().filter(isAvailable)
+  let list: Player[] = []
+  try { list = players().filter(isAvailable) } catch { return null }
   const previous = currentVersionOf(previousPlayer, list)
 
   if (previous && isPlayingStatus(playbackStatus(previous))) return previous
@@ -140,7 +181,6 @@ function disconnectSignal(object: Player, id: number) {
   } catch {}
 }
 
-
 function ActivePlayerWatcher({
   rootClass,
   playerClass,
@@ -182,7 +222,10 @@ function ActivePlayerWatcher({
         const watchPlayers = () => {
           disconnectPlayers()
 
-          for (const player of players()) {
+          let list: Player[] = []
+          try { list = players() } catch { list = [] }
+
+          for (const player of list) {
             for (const signal of [
               "notify::available",
               "notify::playback-status",
@@ -190,8 +233,10 @@ function ActivePlayerWatcher({
               "notify::can-go-next",
               "notify::can-go-previous",
             ]) {
-              const id = connectSignal(player, signal, sync)
-              if (id) playerSignalIds.push([player, id])
+              try {
+                const id = connectSignal(player, signal, sync)
+                if (id) playerSignalIds.push([player, id])
+              } catch {}
             }
           }
 
@@ -252,6 +297,26 @@ function PlayerInline({
   const canGoNext = createBinding(player, "can-go-next")
   const canControl = createBinding(player, "can-control")
   const playbackStatusBinding = createBinding(player, "playback-status")
+
+  try {
+    const rawUrl: string | null = player.get_cover_art?.() ?? null
+    const resolved = resolveCoverArtUrl(rawUrl)
+    if (resolved && resolved !== rawUrl) {
+      player.set_cover_art?.(resolved)
+    }
+  } catch {}
+
+  try {
+    connectSignal(player, "notify::cover-art", () => {
+      try {
+        const rawUrl: string | null = player.get_cover_art?.() ?? null
+        const resolved = resolveCoverArtUrl(rawUrl)
+        if (resolved && resolved !== rawUrl) {
+          player.set_cover_art?.(resolved)
+        }
+      } catch {}
+    })
+  } catch {}
 
   const verticalLayout = layout === "vertical"
   const [metaRevealed, setMetaRevealed] = createState(false)

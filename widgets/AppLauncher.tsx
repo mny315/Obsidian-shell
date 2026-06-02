@@ -6,6 +6,7 @@ import Gtk from "gi://Gtk?version=4.0"
 import Pango from "gi://Pango"
 
 import { For, createComputed, createState } from "ags"
+import { AGS_STATE_DIR } from "../config"
 import { attachEscapeKey } from "./EscapeKey"
 import { LEFT_TOP_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, attachPopupFocusDismiss, clipRoundedWidget, placeLayerWindowAtTopEdge } from "./FloatingPopup"
 import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
@@ -17,24 +18,37 @@ type LaunchableApp = {
   name: string
   description: string
   executable: string
+  categories: string[]
+  shouldShow: boolean
   icon: Gio.Icon | null
   searchBlob: string
   appInfo: Gio.AppInfo
 }
+
+type LauncherCategoryId = "all" | "internet" | "media" | "office" | "games" | "development" | "system"
+
+type LauncherCategory = {
+  id: LauncherCategoryId
+  label: string
+  matches: string[]
+}
+
+const LAUNCHER_CATEGORIES: LauncherCategory[] = [
+  { id: "all", label: "All", matches: [] },
+  { id: "internet", label: "Web", matches: ["Network", "WebBrowser", "Email", "Chat", "InstantMessaging", "FileTransfer", "P2P"] },
+  { id: "media", label: "Media", matches: ["AudioVideo", "Audio", "Video", "Player", "Recorder", "Music", "Photography", "Graphics"] },
+  { id: "office", label: "Office", matches: ["Office", "WordProcessor", "Spreadsheet", "Presentation", "Calendar", "ContactManagement", "Education", "Science"] },
+  { id: "games", label: "Games", matches: ["Game"] },
+  { id: "development", label: "Dev", matches: ["Development", "IDE", "TextEditor", "Debugger", "GUIDesigner", "Profiling", "RevisionControl"] },
+  { id: "system", label: "System", matches: ["System", "Settings", "Utility", "Security", "Monitor", "TerminalEmulator", "FileManager"] },
+]
 
 const LAUNCHER_TRIGGER_ICON = "󰀻"
 const LAUNCHER_FALLBACK_ICON = "󰀻"
 const LAUNCHER_HIDE_ICON = "󰛑"
 const LAUNCHER_RESTORE_ICON = "󰗡"
 
-const STATE_HOME = (() => {
-  const configured = GLib.getenv("XDG_STATE_HOME")?.trim() ?? ""
-  if (configured.length > 0 && GLib.path_is_absolute(configured)) return configured
-  return GLib.build_filenamev([GLib.get_home_dir(), ".local", "state"])
-})()
-
-const LAUNCHER_STATE_DIR = GLib.build_filenamev([STATE_HOME, "ags"])
-const HIDDEN_APPS_STATE_PATH = GLib.build_filenamev([LAUNCHER_STATE_DIR, "hidden-launcher-apps.json"])
+const HIDDEN_APPS_STATE_PATH = GLib.build_filenamev([AGS_STATE_DIR, "hidden-launcher-apps.json"])
 
 const launcherControllers = new Set<{ toggle: () => void; close: () => void }>()
 let requestHandlerRegistered = false
@@ -96,6 +110,18 @@ function getKeywords(info: Gio.AppInfo) {
   }
 }
 
+function getCategories(info: Gio.AppInfo) {
+  try {
+    const raw = (info as Gio.DesktopAppInfo).get_categories?.()
+    if (Array.isArray(raw)) return raw.map(safeText).filter(Boolean)
+    if (typeof raw !== "string") return []
+
+    return raw.split(";").map(safeText).filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
 function buildAppKey(id: string, name: string, executable: string) {
   const normalizedId = safeText(id)
   if (normalizedId) return `id:${normalizedId}`
@@ -103,6 +129,14 @@ function buildAppKey(id: string, name: string, executable: string) {
   const normalizedExecutable = safeText(executable)
   const normalizedName = safeText(name)
   return `fallback:${normalizedExecutable}::${normalizedName}`
+}
+
+function getShouldShow(info: Gio.AppInfo) {
+  try {
+    return info.should_show()
+  } catch {
+    return false
+  }
 }
 
 function readHiddenAppKeys() {
@@ -121,7 +155,7 @@ function readHiddenAppKeys() {
 
 function saveHiddenAppKeys(keys: string[]) {
   try {
-    GLib.mkdir_with_parents(LAUNCHER_STATE_DIR, 0o700)
+    GLib.mkdir_with_parents(AGS_STATE_DIR, 0o700)
     GLib.file_set_contents(HIDDEN_APPS_STATE_PATH, JSON.stringify(keys))
   } catch {}
 }
@@ -131,12 +165,7 @@ function readApps(): LaunchableApp[] {
   const apps: LaunchableApp[] = []
 
   for (const info of Gio.AppInfo.get_all()) {
-    try {
-      if (!info.should_show()) continue
-    } catch {
-      continue
-    }
-
+    const shouldShow = getShouldShow(info)
     const name = safeText(info.get_display_name?.() ?? info.get_name?.())
     if (!name) continue
 
@@ -144,6 +173,7 @@ function readApps(): LaunchableApp[] {
     const executable = safeText(info.get_executable?.())
     const description = getDescription(info)
     const keywords = getKeywords(info)
+    const categories = getCategories(info)
     const dedupeKey = `${id}::${name}::${executable}`
 
     if (seen.has(dedupeKey)) continue
@@ -155,8 +185,10 @@ function readApps(): LaunchableApp[] {
       name,
       description,
       executable,
+      categories,
+      shouldShow,
       icon: info.get_icon?.() ?? null,
-      searchBlob: normalizeText([name, description, executable, keywords, id].filter(Boolean).join(" ")),
+      searchBlob: normalizeText([name, description, executable, keywords, id, categories.join(" ")].filter(Boolean).join(" ")),
       appInfo: info,
     })
   }
@@ -168,6 +200,9 @@ function readApps(): LaunchableApp[] {
 const APP_LIST_REFRESH_DEBOUNCE_MS = 180
 const LAUNCHER_POPOVER_REVEAL_DURATION_MS = 170
 const LAUNCHER_POPOVER_WIDTH = 392
+const LAUNCHER_LIST_HEIGHT = 300
+const LAUNCHER_CATEGORY_FADE_DURATION_MS = 120
+const LAUNCHER_CATEGORY_SWITCH_DELAY_MS = 70
 
 function getApplicationMonitorRoots() {
   const roots = new Set<string>()
@@ -184,11 +219,32 @@ function getApplicationMonitorRoots() {
   return [...roots]
 }
 
-
 function formatError(error: unknown) {
   if (error instanceof Error && error.message) return error.message
   if (typeof error === "string" && error.trim().length > 0) return error.trim()
   return "Failed to launch application"
+}
+
+function getLauncherCategory(id: LauncherCategoryId) {
+  return LAUNCHER_CATEGORIES.find((category) => category.id === id) ?? LAUNCHER_CATEGORIES[0]
+}
+
+const LAUNCHER_CATEGORY_PRIORITY: LauncherCategoryId[] = ["games", "development", "internet", "media", "office", "system"]
+
+function getAppPrimaryCategory(app: LaunchableApp): LauncherCategoryId | null {
+  const appCategories = new Set(app.categories.map((value) => value.toLowerCase()))
+
+  for (const categoryId of LAUNCHER_CATEGORY_PRIORITY) {
+    const category = getLauncherCategory(categoryId)
+    if (category.matches.some((value) => appCategories.has(value.toLowerCase()))) return categoryId
+  }
+
+  return null
+}
+
+function appMatchesCategory(app: LaunchableApp, categoryId: LauncherCategoryId) {
+  if (categoryId === "all") return true
+  return getAppPrimaryCategory(app) === categoryId
 }
 
 export function AppLauncherControl({
@@ -200,13 +256,14 @@ export function AppLauncherControl({
 } = {
   monitor: 0,
 }) {
-  let trigger: Gtk.Button | null = null
+  let trigger: Gtk.ToggleButton | null = null
   let popupWindowRef: Gtk.Window | null = null
   let popupRevealer: Gtk.Revealer | null = null
   let popupFrame: Gtk.Box | null = null
   let popupRoot: Gtk.Box | null = null
   let searchEntry: Gtk.SearchEntry | null = null
   let launcherScrollWindow: Gtk.ScrolledWindow | null = null
+  let categoryTransitionTimeoutId = 0
   let scrollAnimationId = 0
   let scrollTarget = 0
   let closeTimeoutId = 0
@@ -220,25 +277,35 @@ export function AppLauncherControl({
   const [notice, setNotice] = createState<string | null>(null)
   const [installedApps, setInstalledApps] = createState<LaunchableApp[]>(readApps())
   const [hiddenAppKeys, setHiddenAppKeysState] = createState<string[]>(readHiddenAppKeys())
+  const [selectedCategory, setSelectedCategory] = createState<LauncherCategoryId>("all")
+  const [renderedCategory, setRenderedCategory] = createState<LauncherCategoryId>("all")
+  const [listRevealed, setListRevealed] = createState(true)
   let appDirectoryMonitors: Gio.FileMonitor[] = []
   let appRefreshTimeoutId = 0
   const [showHiddenApps, setShowHiddenApps] = createState(false)
 
   const hiddenAppKeySet = createComputed(() => new Set(hiddenAppKeys()))
-  const visibleApps = createComputed(() => installedApps().filter((app) => !hiddenAppKeySet().has(app.key)))
+  const normalizedQuery = createComputed(() => normalizeText(query()))
+  const visibleApps = createComputed(() => installedApps().filter((app) => app.shouldShow && !hiddenAppKeySet().has(app.key)))
   const hiddenApps = createComputed(() => installedApps().filter((app) => hiddenAppKeySet().has(app.key)))
   const hiddenAppsCount = createComputed(() => hiddenApps().length)
   const hiddenToggleVisible = createComputed(() => hiddenAppsCount() > 0 || showHiddenApps())
   const hiddenToggleLabel = createComputed(() => (showHiddenApps() ? "Back" : `Hidden ${hiddenAppsCount()}`))
   const filteredApps = createComputed(() => {
-    const source = showHiddenApps() ? hiddenApps() : visibleApps()
-    const value = normalizeText(query())
-    if (!value) return source
-    return source.filter((app) => app.searchBlob.includes(value))
+    const category = renderedCategory()
+    const value = normalizedQuery()
+    const source = showHiddenApps() ? hiddenApps() : value ? installedApps() : visibleApps()
+    const categoryApps = source.filter((app) => appMatchesCategory(app, category))
+    if (!value) return categoryApps
+    return categoryApps.filter((app) => app.searchBlob.includes(value))
   })
   const launcherTitle = createComputed(() => {
     const count = filteredApps().length
-    return showHiddenApps() ? `Hidden applications ${count}` : `Applications ${count}`
+    if (showHiddenApps()) return `Hidden applications ${count}`
+
+    const category = renderedCategory()
+    const title = category === "all" ? "Applications" : getLauncherCategory(category).label
+    return `${title} ${count}`
   })
 
   const clearAppRefreshTimeout = () => {
@@ -300,11 +367,48 @@ export function AppLauncherControl({
     }
   }
 
+  const clearCategoryTransitionTimeout = () => {
+    if (categoryTransitionTimeoutId !== 0) {
+      GLib.source_remove(categoryTransitionTimeoutId)
+      categoryTransitionTimeoutId = 0
+    }
+  }
+
   const stopSmoothScroll = () => {
     if (scrollAnimationId !== 0) {
       GLib.source_remove(scrollAnimationId)
       scrollAnimationId = 0
     }
+  }
+
+  const scrollLauncherListToTop = () => {
+    stopSmoothScroll()
+    const adjustment = launcherScrollWindow?.get_vadjustment()
+    if (!adjustment) return
+
+    adjustment.set_value(adjustment.get_lower())
+    scrollTarget = adjustment.get_lower()
+  }
+
+  const selectCategory = (category: LauncherCategoryId) => {
+    if (selectedCategory() === category && renderedCategory() === category) return
+
+    clearCategoryTransitionTimeout()
+    setSelectedCategory(category)
+    setListRevealed(false)
+
+    categoryTransitionTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, LAUNCHER_CATEGORY_SWITCH_DELAY_MS, () => {
+      categoryTransitionTimeoutId = 0
+      setRenderedCategory(category)
+      scrollLauncherListToTop()
+
+      GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+        setListRevealed(true)
+        return GLib.SOURCE_REMOVE
+      })
+
+      return GLib.SOURCE_REMOVE
+    })
   }
 
   const animateLauncherScroll = (dy: number) => {
@@ -335,9 +439,8 @@ export function AppLauncherControl({
   }
 
   const setTriggerOpen = (open: boolean) => {
-    if (!trigger) return
-    if (open) trigger.add_css_class("widget-trigger-open")
-    else trigger.remove_css_class("widget-trigger-open")
+    if (!trigger || trigger.active === open) return
+    trigger.active = open
   }
 
   const syncPopupPosition = () => {
@@ -356,8 +459,7 @@ export function AppLauncherControl({
 
   const isPopupRevealed = () => Boolean(popupRevealer?.get_reveal_child())
 
-  const resetStalePopupState = (reason: string) => {
-    console.warn(`[popup:${popupRegistryId}] reset stale state: ${reason}`)
+  const resetStalePopupState = () => {
     finishClosePopup()
   }
 
@@ -393,7 +495,7 @@ export function AppLauncherControl({
 
   const openPopup = () => {
     if (windowVisible()) {
-      if (closingPopup || !isPopupRevealed()) resetStalePopupState("open requested while visible but not revealed")
+      if (closingPopup || !isPopupRevealed()) resetStalePopupState()
       else {
         syncPopupPosition()
         return
@@ -408,13 +510,17 @@ export function AppLauncherControl({
     setTriggerOpen(true)
     setNotice(null)
     setShowHiddenApps(false)
+    clearCategoryTransitionTimeout()
+    setSelectedCategory("all")
+    setRenderedCategory("all")
+    setListRevealed(true)
     setQuery("")
     if (searchEntry) searchEntry.set_text("")
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
       if (!windowVisible() || closingPopup) return GLib.SOURCE_REMOVE
       syncPopupPosition()
       if (popupRevealer) popupRevealer.revealChild = true
-      else resetStalePopupState("revealer missing after open")
+      else resetStalePopupState()
       popupRoot?.grab_focus()
       searchEntry?.grab_focus()
       return GLib.SOURCE_REMOVE
@@ -428,7 +534,7 @@ export function AppLauncherControl({
 
     if (windowVisible()) {
       if (!isPopupRevealed()) {
-        resetStalePopupState("toggle requested while visible but not revealed")
+        resetStalePopupState()
         openPopup()
         return
       }
@@ -528,9 +634,8 @@ export function AppLauncherControl({
         vscrollbarPolicy={Gtk.PolicyType.AUTOMATIC}
         kineticScrolling
         vexpand
-        minContentHeight={160}
-        maxContentHeight={300}
-        propagateNaturalHeight
+        minContentHeight={LAUNCHER_LIST_HEIGHT}
+        maxContentHeight={LAUNCHER_LIST_HEIGHT}
         $={(self) => {
           launcherScrollWindow = self
           self.connect("destroy", () => {
@@ -547,10 +652,16 @@ export function AppLauncherControl({
             return true
           }}
         />
-        <box class="launcher-list-content" orientation={Gtk.Orientation.VERTICAL} spacing={4} marginEnd={6}>
-          <For each={filteredApps}>
-            {(app) => (
-              <box class="launcher-app-card" hexpand spacing={0} valign={Gtk.Align.CENTER}>
+        <revealer
+          class="launcher-list-revealer"
+          revealChild={listRevealed}
+          transitionType={Gtk.RevealerTransitionType.CROSSFADE}
+          transitionDuration={LAUNCHER_CATEGORY_FADE_DURATION_MS}
+        >
+          <box class="launcher-list-content" orientation={Gtk.Orientation.VERTICAL} spacing={4} marginEnd={6}>
+            <For each={filteredApps}>
+              {(app) => (
+                <box class="launcher-app-card" hexpand spacing={0} valign={Gtk.Align.CENTER}>
                 <button class="flat launcher-app-main" hexpand onClicked={() => void launchApp(app)}>
                   <box class="launcher-app-row" spacing={10} hexpand valign={Gtk.Align.CENTER}>
                     <box class="launcher-app-icon-wrap" valign={Gtk.Align.CENTER} halign={Gtk.Align.CENTER}>
@@ -592,30 +703,45 @@ export function AppLauncherControl({
 
                 <button
                   class="flat launcher-app-side-button"
-                  onClicked={() => (showHiddenApps() ? restoreApp(app) : hideApp(app))}
+                  onClicked={() => (hiddenAppKeySet().has(app.key) ? restoreApp(app) : hideApp(app))}
                   valign={Gtk.Align.CENTER}
-                  $={(self) => attachShellTooltip(self, () => showHiddenApps() ? "Restore application" : "Hide application")}
+                  $={(self) => attachShellTooltip(self, () => hiddenAppKeySet().has(app.key) ? "Restore application" : "Hide application")}
                 >
                   <label
                     class="launcher-side-icon launcher-material-icon"
-                    label={showHiddenApps() ? LAUNCHER_RESTORE_ICON : LAUNCHER_HIDE_ICON}
+                    label={hiddenAppKeys((keys) => keys.includes(app.key) ? LAUNCHER_RESTORE_ICON : LAUNCHER_HIDE_ICON)}
                   />
                 </button>
-              </box>
-            )}
-          </For>
+                </box>
+              )}
+            </For>
 
-          <box
-            visible={filteredApps((list) => list.length === 0)}
-            orientation={Gtk.Orientation.VERTICAL}
-            halign={Gtk.Align.CENTER}
-            valign={Gtk.Align.CENTER}
-            vexpand
-          >
-            <label class="launcher-empty-title" label={showHiddenApps((value) => (value ? "No hidden applications" : "Nothing found"))} />
+            <box
+              visible={filteredApps((list) => list.length === 0)}
+              orientation={Gtk.Orientation.VERTICAL}
+              halign={Gtk.Align.CENTER}
+              valign={Gtk.Align.CENTER}
+              vexpand
+            >
+              <label class="launcher-empty-title" label={showHiddenApps((value) => (value ? "No hidden applications" : "Nothing found"))} />
+            </box>
           </box>
-        </box>
+        </revealer>
       </Gtk.ScrolledWindow>
+
+      <box class="launcher-category-bar" spacing={6} valign={Gtk.Align.CENTER}>
+        <For each={() => LAUNCHER_CATEGORIES}>
+          {(category) => (
+            <Gtk.ToggleButton
+              class="flat launcher-category-button"
+              active={selectedCategory((value) => value === category.id)}
+              onClicked={() => selectCategory(category.id)}
+            >
+              <label class="launcher-category-label" label={category.label} />
+            </Gtk.ToggleButton>
+          )}
+        </For>
+      </box>
 
       <label
         class="launcher-notice"
@@ -684,7 +810,7 @@ export function AppLauncherControl({
 
   return (
     <box class="launcher-shell" valign={Gtk.Align.CENTER}>
-      <button
+      <Gtk.ToggleButton
         class="app-launcher-trigger"
         valign={Gtk.Align.CENTER}
         onClicked={() => {
@@ -697,6 +823,7 @@ export function AppLauncherControl({
           self.connect("destroy", () => {
             clearCloseTimeout()
             clearAppRefreshTimeout()
+            clearCategoryTransitionTimeout()
             destroyApplicationDirectoryMonitors()
             stopSmoothScroll()
             unregisterPopupController()
@@ -707,7 +834,7 @@ export function AppLauncherControl({
         }}
       >
         <label class="launcher-trigger-icon launcher-material-icon" label={LAUNCHER_TRIGGER_ICON} />
-      </button>
+      </Gtk.ToggleButton>
     </box>
   )
 }

@@ -710,7 +710,7 @@ export function BluetoothControl({
 } = {
   monitor: 0,
 }) {
-  let trigger: Gtk.Button | null = null
+  let trigger: Gtk.ToggleButton | null = null
   let popupWindowRef: Gtk.Window | null = null
   let popupRevealer: Gtk.Revealer | null = null
   let popupRoot: Gtk.Box | null = null
@@ -853,9 +853,8 @@ export function BluetoothControl({
   }
 
   const setTriggerOpen = (open: boolean) => {
-    if (!trigger) return
-    if (open) trigger.add_css_class("widget-trigger-open")
-    else trigger.remove_css_class("widget-trigger-open")
+    if (!trigger || trigger.active === open) return
+    trigger.active = open
   }
 
   const syncPopupPosition = () => {
@@ -873,8 +872,7 @@ export function BluetoothControl({
 
   const isPopupRevealed = () => Boolean(popupRevealer?.get_reveal_child())
 
-  const resetStalePopupState = (reason: string) => {
-    console.warn(`[popup:${popupRegistryId}] reset stale state: ${reason}`)
+  const resetStalePopupState = () => {
     finishClosePopup()
   }
 
@@ -920,7 +918,7 @@ export function BluetoothControl({
     }
 
     if (windowVisible()) {
-      if (closingPopup || !isPopupRevealed()) resetStalePopupState("open requested while visible but not revealed")
+      if (closingPopup || !isPopupRevealed()) resetStalePopupState()
       else {
         syncPopupPosition()
         return
@@ -941,7 +939,7 @@ export function BluetoothControl({
       if (!windowVisible() || closingPopup) return GLib.SOURCE_REMOVE
       syncPopupPosition()
       if (popupRevealer) popupRevealer.revealChild = true
-      else resetStalePopupState("revealer missing after open")
+      else resetStalePopupState()
       popupRoot?.grab_focus()
       return GLib.SOURCE_REMOVE
     })
@@ -954,7 +952,7 @@ export function BluetoothControl({
 
     if (windowVisible()) {
       if (!isPopupRevealed()) {
-        resetStalePopupState("toggle requested while visible but not revealed")
+        resetStalePopupState()
         openPopup()
         return
       }
@@ -1194,7 +1192,7 @@ export function BluetoothControl({
 
   return (
     <box class="network-shell" valign={Gtk.Align.CENTER} visible={hasBluetoothAdapter}>
-      <button class="bluetooth-trigger" valign={Gtk.Align.CENTER} sensitive={hasBluetoothAdapter} onClicked={() => {
+      <Gtk.ToggleButton class="bluetooth-trigger" valign={Gtk.Align.CENTER} sensitive={hasBluetoothAdapter} onClicked={() => {
         togglePopup()
       }} $={(self) => {
         attachShellTooltip(self, triggerTooltip)
@@ -1272,7 +1270,7 @@ export function BluetoothControl({
         })
       }}>
         <label class="module-icon" label={triggerIcon} />
-      </button>
+      </Gtk.ToggleButton>
     </box>
   )
 }

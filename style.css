@@ -43,7 +43,6 @@
 @define-color soft_overlay_100 @theme_fg_color;
 @define-color accent_overlay_08 alpha(@theme_selected_bg_color,0.08);
 @define-color accent_overlay_12 alpha(@theme_selected_bg_color,0.12);
-@define-color accent_overlay_13 alpha(@theme_selected_bg_color,0.13);
 @define-color accent_overlay_18 alpha(@theme_selected_bg_color,0.18);
 @define-color accent_overlay_20 alpha(@theme_selected_bg_color,0.20);
 @define-color accent_overlay_26 alpha(@theme_selected_bg_color,0.26);
@@ -107,7 +106,8 @@ window.audio-thread-window.background {
 .wallpaper-trigger-icon,
 .wallpaper-header-icon,
 .wallpaper-refresh-icon,
-.wallpaper-empty-icon {
+.wallpaper-empty-icon,
+.wallpaper-video-play-icon {
   font-family: "Material Design Icons";
   font-size: 15px;
   font-style: normal;
@@ -117,6 +117,7 @@ window.audio-thread-window.background {
 }
 
 .tray-item image {
+  -gtk-icon-size: 21px;
   font-family: "Material Design Icons";
 }
 
@@ -387,10 +388,6 @@ button.network-icon-button:hover,
 .player-main-button:hover,
 .player-transport-button:hover {
   background: @hover_bg;
-}
-
-.tray-item image {
-  -gtk-icon-size: 21px;
 }
 
 .controls-shell {
@@ -965,7 +962,6 @@ window.shell-tooltip-window .shell-tooltip-frame,
   box-shadow: none;
 }
 
-
 window.shell-tooltip-window > box.shell-tooltip-frame,
 window.shell-tooltip-window .shell-tooltip-frame,
 .shell-tooltip-frame {
@@ -1053,7 +1049,6 @@ popover.tray-menu-popover-window contents .tray-menu-pango-label {
   text-shadow: none;
 }
 
-
 popover.tray-menu-popover-window contents button:disabled,
 popover.tray-menu-popover-window contents button.model:disabled,
 popover.tray-menu-popover-window contents label:disabled,
@@ -1102,11 +1097,11 @@ popover.tray-menu-popover-window contents separator {
   min-height: 28px;
 }
 
-.network-trigger.widget-trigger-open,
-.bluetooth-trigger.widget-trigger-open,
-.app-launcher-trigger.widget-trigger-open,
-.wallpaper-widget-trigger.widget-trigger-open,
-.clock-trigger.widget-trigger-open {
+.network-trigger:checked,
+.bluetooth-trigger:checked,
+.app-launcher-trigger:checked,
+.wallpaper-widget-trigger:checked,
+.clock-trigger:checked {
   background: @active_bg;
   background-image: none;
   box-shadow: none;
@@ -1431,10 +1426,17 @@ menubutton.app-launcher-trigger button.toggle:focus-visible {
 }
 
 .launcher-list-wrap {
+  min-height: 300px;
   padding-right: 0;
 }
 
+.launcher-list-revealer,
+.launcher-list-revealer > * {
+  min-height: 300px;
+}
+
 .launcher-list-content {
+  min-height: 300px;
   padding-right: 12px;
 }
 
@@ -1460,7 +1462,8 @@ menubutton.app-launcher-trigger button.toggle:focus-visible {
 .wallpaper-trigger-icon,
 .wallpaper-header-icon,
 .wallpaper-refresh-icon,
-.wallpaper-empty-icon {
+.wallpaper-empty-icon,
+.wallpaper-video-play-icon {
   font-family: "Material Design Icons";
   font-style: normal;
   font-weight: 400;
@@ -1514,6 +1517,43 @@ entry.launcher-search {
 .hidden-toggle:active {
   background: @soft_overlay_12;
   border-color: @accent_overlay_20;
+}
+
+.launcher-category-bar {
+  min-height: 32px;
+  padding: 2px 2px 0 2px;
+}
+
+.launcher-category-button {
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: @theme_card_bg_mid;
+  border: 1px solid @soft_overlay_08;
+  box-shadow: none;
+}
+
+.launcher-category-button:hover {
+  background: @soft_overlay_08;
+  border-color: @glass_border;
+}
+
+.launcher-category-button:checked {
+  background: @active_bg;
+  border-color: @accent_overlay_20;
+}
+
+.launcher-category-button:active {
+  background: @soft_overlay_12;
+  border-color: @accent_overlay_20;
+}
+
+.launcher-category-label {
+  min-height: 18px;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .launcher-app-card {
@@ -1717,7 +1757,6 @@ popover.wallpaper-popover-window,
   opacity: 0.76;
 }
 
-
 .wallpaper-path-actions,
 .network-header-action-capsule {
   min-height: 28px;
@@ -1741,7 +1780,6 @@ button.wallpaper-refresh-button {
   border: none;
   box-shadow: none;
 }
-
 
 .wallpaper-path-actions button.wallpaper-refresh-button,
 .network-header-action-capsule button.wallpaper-refresh-button {
@@ -1778,8 +1816,10 @@ button.wallpaper-refresh-button.wallpaper-refresh-button-active:focus-visible {
   min-width: 448px;
   padding: 10px;
   border-radius: 18px;
-  background: @soft_overlay_03;
+  background: @popup_list_bg;
+  background-image: none;
   border: 1px solid @soft_overlay_08;
+  box-shadow: none;
 }
 
 .wallpaper-list-wrap {
@@ -1828,7 +1868,7 @@ button.wallpaper-card:checked {
   transition: none;
 }
 
-.wallpaper-thumb-wrap-hover {
+button.wallpaper-card:hover .wallpaper-thumb-wrap {
   background: @soft_overlay_12;
   border-color: @soft_overlay_08;
 }
@@ -1838,11 +1878,12 @@ button.wallpaper-card:checked {
   border-color: @accent_overlay_26;
 }
 
-.wallpaper-thumb-wrap-active.wallpaper-thumb-wrap-hover {
+button.wallpaper-card:hover .wallpaper-thumb-wrap-active {
   background: @accent_overlay_18;
   border-color: @accent_overlay_26;
 }
 
+.wallpaper-thumb-stack,
 .wallpaper-thumb {
   min-width: 144px;
   min-height: 84px;
@@ -1851,12 +1892,29 @@ button.wallpaper-card:checked {
   transition: none;
 }
 
-.wallpaper-thumb-hover {
+button.wallpaper-card:hover .wallpaper-thumb {
   opacity: 0.78;
 }
 
-.wallpaper-thumb-active.wallpaper-thumb-hover {
+button.wallpaper-card:hover .wallpaper-thumb-active {
   opacity: 0.80;
+}
+
+.wallpaper-video-play-icon {
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  outline: none;
+  color: @fg;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1;
+  opacity: 0.92;
 }
 
 .wallpaper-empty {
@@ -2224,7 +2282,7 @@ button.audio-sink-side-button:active {
   box-shadow: none;
 }
 
-.audio-trigger.widget-trigger-open {
+.audio-trigger:checked {
   background: @active_bg;
   background-image: none;
   box-shadow: none;
@@ -2258,14 +2316,6 @@ button.audio-sink-side-button:active {
   background-image: none;
   box-shadow: none;
   border: none;
-}
-
-.wallpaper-gallery-frame {
-  background: transparent;
-  background-color: @popup_list_bg;
-  background-image: none;
-  border: 1px solid @soft_overlay_08;
-  box-shadow: none;
 }
 
 .network-row-shell,

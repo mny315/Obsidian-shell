@@ -17,7 +17,6 @@ function toNumber(value: unknown, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback
 }
 
-
 const TRAY_MENU_TEXT_OVERSCAN_X = 2
 const TRAY_MENU_TEXT_PADDING_TOP = 3
 const TRAY_MENU_TEXT_PADDING_BOTTOM = 4

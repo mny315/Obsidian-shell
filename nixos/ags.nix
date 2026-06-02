@@ -25,6 +25,9 @@ in
         networkmanager
         wireplumber
         awww
+        mpvpaper
+        ffmpeg
+        systemd
         hypridle
         hyprlock
         gsettings-desktop-schemas
@@ -36,6 +39,7 @@ in
       ])
       ++ [
         agsPkgs.bluetooth
+        agsPkgs.cava
         agsPkgs.hyprland
         agsPkgs.mpris
         agsPkgs.network

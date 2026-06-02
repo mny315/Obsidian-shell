@@ -43,7 +43,6 @@ let activeSerial = 0
 const sourceByWidget = new WeakMap<Gtk.Widget, TooltipSource>()
 const optionsByWidget = new WeakMap<Gtk.Widget, TooltipOptions>()
 
-
 const SHELL_TEXT_FONT_SIZE_PX = 14
 const SHELL_TEXT_FONT_WEIGHT = Pango.Weight.NORMAL
 
@@ -85,7 +84,7 @@ function readFontDescriptionFromString(fontName: string) {
   }
 }
 
-export function readShellTextFontDescription(fallbackWidget: Gtk.Widget | null = null) {
+function readShellTextFontDescription(fallbackWidget: Gtk.Widget | null = null) {
   const description = readFontDescriptionFromString(readGtkFontName())
     ?? readWidgetFontDescription(fallbackWidget)
 

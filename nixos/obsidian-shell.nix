@@ -46,6 +46,9 @@ let
   wallpaperStateFile = "${wallpaperStateDir}/last-wallpaper";
   wallpaperWidgetStateDir = "${config.home.homeDirectory}/.local/state/ags";
   wallpaperWidgetSettingsFile = "${wallpaperWidgetStateDir}/wallpaper-widget.json";
+  videoWallpaperUnit = "obsidian-shell-video-wallpaper";
+  videoWallpaperService = "${videoWallpaperUnit}.service";
+  mpvpaperOptions = "--no-audio --loop-file=inf --hwdec=auto-safe --profile=fast";
 
   runtimePackages = with pkgs; [
     bash
@@ -56,6 +59,8 @@ let
     procps
     systemd
     awww
+    mpvpaper
+    ffmpeg
     brightnessctl
     ddcutil
     gtk3
@@ -82,6 +87,7 @@ let
     astal.io
     astal.astal4
     astal.bluetooth
+    astal.cava
     astal.hyprland
     astal.mpris
     astal.network
@@ -131,65 +137,146 @@ let
   saveWallpaperScript = pkgs.writeShellScriptBin "obsidian-shell-set-wallpaper" ''
     set -eu
 
-    img="''${1:-}"
-    if [ -z "$img" ]; then
-      ${pkgs.coreutils}/bin/printf '%s\n' "usage: obsidian-shell-set-wallpaper /path/to/image" >&2
+    wallpaper="''${1:-}"
+    if [ -z "$wallpaper" ]; then
+      ${pkgs.coreutils}/bin/printf '%s\n' "usage: obsidian-shell-set-wallpaper /path/to/image-or-video" >&2
       exit 2
     fi
 
-    if [ ! -f "$img" ]; then
-      ${pkgs.coreutils}/bin/printf 'wallpaper does not exist: %s\n' "$img" >&2
+    if [ ! -f "$wallpaper" ]; then
+      ${pkgs.coreutils}/bin/printf 'wallpaper does not exist: %s\n' "$wallpaper" >&2
       exit 1
     fi
 
-    img="$(${pkgs.coreutils}/bin/readlink -f -- "$img")"
+    detect_kind() {
+      case "''${1,,}" in
+        *.jpg|*.jpeg|*.png|*.webp|*.gif) ${pkgs.coreutils}/bin/printf '%s\n' image ;;
+        *.mp4|*.webm|*.mkv|*.mov|*.m4v) ${pkgs.coreutils}/bin/printf '%s\n' video ;;
+        *) return 1 ;;
+      esac
+    }
+
+    stop_video_wallpaper() {
+      ${pkgs.systemd}/bin/systemctl --user stop ${lib.escapeShellArg videoWallpaperService} >/dev/null 2>&1 || true
+    }
+
+    stop_awww_wallpaper() {
+      ${pkgs.systemd}/bin/systemctl --user stop awww-wallpaper.service >/dev/null 2>&1 || true
+      ${pkgs.systemd}/bin/systemctl --user stop awww-daemon.service >/dev/null 2>&1 || true
+    }
+
+    start_awww_daemon() {
+      ${pkgs.systemd}/bin/systemctl --user start awww-daemon.service >/dev/null 2>&1 || true
+    }
+
+    wallpaper="$(${pkgs.coreutils}/bin/readlink -f -- "$wallpaper")"
+    kind="$(detect_kind "$wallpaper")" || {
+      ${pkgs.coreutils}/bin/printf 'unsupported wallpaper format: %s\n' "$wallpaper" >&2
+      exit 1
+    }
+
     ${pkgs.coreutils}/bin/mkdir -p ${lib.escapeShellArg wallpaperStateDir} ${lib.escapeShellArg wallpaperWidgetStateDir}
-    ${pkgs.coreutils}/bin/printf '%s\n' "$img" > ${lib.escapeShellArg wallpaperStateFile}
+    ${pkgs.coreutils}/bin/printf '%s\n' "$wallpaper" > ${lib.escapeShellArg wallpaperStateFile}
 
     tmp=${lib.escapeShellArg "${wallpaperWidgetSettingsFile}.tmp"}.$$
     if [ -f ${lib.escapeShellArg wallpaperWidgetSettingsFile} ]; then
-      if ${pkgs.jq}/bin/jq --arg img "$img" '. + { currentWallpaper: $img }' ${lib.escapeShellArg wallpaperWidgetSettingsFile} > "$tmp"; then
+      if ${pkgs.jq}/bin/jq --arg wallpaper "$wallpaper" --arg kind "$kind" '. + { currentWallpaper: $wallpaper, currentWallpaperKind: $kind }' ${lib.escapeShellArg wallpaperWidgetSettingsFile} > "$tmp"; then
         ${pkgs.coreutils}/bin/mv -f -- "$tmp" ${lib.escapeShellArg wallpaperWidgetSettingsFile}
       else
         ${pkgs.coreutils}/bin/rm -f -- "$tmp"
-        ${pkgs.jq}/bin/jq -n --arg img "$img" '{ currentWallpaper: $img }' > ${lib.escapeShellArg wallpaperWidgetSettingsFile}
+        ${pkgs.jq}/bin/jq -n --arg wallpaper "$wallpaper" --arg kind "$kind" '{ currentWallpaper: $wallpaper, currentWallpaperKind: $kind }' > ${lib.escapeShellArg wallpaperWidgetSettingsFile}
       fi
     else
-      ${pkgs.jq}/bin/jq -n --arg img "$img" '{ currentWallpaper: $img }' > ${lib.escapeShellArg wallpaperWidgetSettingsFile}
+      ${pkgs.jq}/bin/jq -n --arg wallpaper "$wallpaper" --arg kind "$kind" '{ currentWallpaper: $wallpaper, currentWallpaperKind: $kind }' > ${lib.escapeShellArg wallpaperWidgetSettingsFile}
     fi
 
+    if [ "$kind" = video ]; then
+      stop_video_wallpaper
+      stop_awww_wallpaper
+      exec ${pkgs.systemd}/bin/systemd-run --user --unit=${lib.escapeShellArg videoWallpaperUnit} --collect \
+        ${pkgs.mpvpaper}/bin/mpvpaper --auto-pause -o ${lib.escapeShellArg mpvpaperOptions} ALL "$wallpaper"
+    fi
+
+    stop_video_wallpaper
+    start_awww_daemon
     ${waitForAwwwScript}
-    exec ${pkgs.awww}/bin/awww img "$img" --transition-type none --transition-step 255
+    exec ${pkgs.awww}/bin/awww img "$wallpaper" --transition-type none --transition-step 255
   '';
 
   restoreWallpaperScript = pkgs.writeShellScript "obsidian-shell-restore-wallpaper" ''
     set -eu
 
     ${pkgs.coreutils}/bin/mkdir -p ${lib.escapeShellArg wallpaperStateDir} ${lib.escapeShellArg wallpaperWidgetStateDir}
-    ${waitForAwwwScript}
 
-    img=""
+    detect_kind() {
+      case "''${1,,}" in
+        *.jpg|*.jpeg|*.png|*.webp|*.gif) ${pkgs.coreutils}/bin/printf '%s\n' image ;;
+        *.mp4|*.webm|*.mkv|*.mov|*.m4v) ${pkgs.coreutils}/bin/printf '%s\n' video ;;
+        *) return 1 ;;
+      esac
+    }
+
+    stop_video_wallpaper() {
+      ${pkgs.systemd}/bin/systemctl --user stop ${lib.escapeShellArg videoWallpaperService} >/dev/null 2>&1 || true
+    }
+
+    stop_awww_wallpaper() {
+      ${pkgs.systemd}/bin/systemctl --user stop awww-wallpaper.service >/dev/null 2>&1 || true
+      ${pkgs.systemd}/bin/systemctl --user stop awww-daemon.service >/dev/null 2>&1 || true
+    }
+
+    start_awww_daemon() {
+      ${pkgs.systemd}/bin/systemctl --user start awww-daemon.service >/dev/null 2>&1 || true
+    }
+
+    apply_wallpaper() {
+      wallpaper="''${1:-}"
+      explicit_kind="''${2:-}"
+
+      if [ -z "$wallpaper" ] || [ ! -f "$wallpaper" ]; then
+        return 1
+      fi
+
+      wallpaper="$(${pkgs.coreutils}/bin/readlink -f -- "$wallpaper")"
+      kind="$explicit_kind"
+      if [ "$kind" != image ] && [ "$kind" != video ]; then
+        kind="$(detect_kind "$wallpaper")" || return 1
+      fi
+
+      ${pkgs.coreutils}/bin/printf '%s\n' "$wallpaper" > ${lib.escapeShellArg wallpaperStateFile}
+
+      if [ "$kind" = video ]; then
+        stop_video_wallpaper
+        stop_awww_wallpaper
+        exec ${pkgs.systemd}/bin/systemd-run --user --unit=${lib.escapeShellArg videoWallpaperUnit} --collect \
+          ${pkgs.mpvpaper}/bin/mpvpaper --auto-pause -o ${lib.escapeShellArg mpvpaperOptions} ALL "$wallpaper"
+      fi
+
+      stop_video_wallpaper
+      start_awww_daemon
+      ${waitForAwwwScript}
+      exec ${pkgs.awww}/bin/awww img "$wallpaper" --transition-type none --transition-step 255
+    }
+
+    wallpaper=""
+    kind=""
 
     if [ -f ${lib.escapeShellArg wallpaperWidgetSettingsFile} ]; then
-      img="$(${pkgs.jq}/bin/jq -r '.currentWallpaper // empty' ${lib.escapeShellArg wallpaperWidgetSettingsFile} 2>/dev/null || true)"
+      wallpaper="$(${pkgs.jq}/bin/jq -r '.currentWallpaper // empty' ${lib.escapeShellArg wallpaperWidgetSettingsFile} 2>/dev/null || true)"
+      kind="$(${pkgs.jq}/bin/jq -r '.currentWallpaperKind // empty' ${lib.escapeShellArg wallpaperWidgetSettingsFile} 2>/dev/null || true)"
     fi
 
-    if [ -z "$img" ] && [ -f ${lib.escapeShellArg wallpaperStateFile} ]; then
-      IFS= read -r img < ${lib.escapeShellArg wallpaperStateFile} || img=""
+    if [ -z "$wallpaper" ] && [ -f ${lib.escapeShellArg wallpaperStateFile} ]; then
+      IFS= read -r wallpaper < ${lib.escapeShellArg wallpaperStateFile} || wallpaper=""
     fi
 
-    if [ -n "$img" ] && [ -f "$img" ]; then
-      img="$(${pkgs.coreutils}/bin/readlink -f -- "$img")"
-      ${pkgs.coreutils}/bin/printf '%s\n' "$img" > ${lib.escapeShellArg wallpaperStateFile}
-      exec ${pkgs.awww}/bin/awww img "$img" --transition-type none --transition-step 255
-    fi
+    apply_wallpaper "$wallpaper" "$kind" || true
 
     ${lib.optionalString (cfg.defaultWallpaper != null) ''
       if [ -f ${lib.escapeShellArg cfg.defaultWallpaper} ]; then
-        img="$(${pkgs.coreutils}/bin/readlink -f -- ${lib.escapeShellArg cfg.defaultWallpaper})"
-        ${pkgs.coreutils}/bin/printf '%s\n' "$img" > ${lib.escapeShellArg wallpaperStateFile}
-        ${pkgs.jq}/bin/jq -n --arg img "$img" '{ currentWallpaper: $img }' > ${lib.escapeShellArg wallpaperWidgetSettingsFile}
-        exec ${pkgs.awww}/bin/awww img "$img" --transition-type none --transition-step 255
+        wallpaper="$(${pkgs.coreutils}/bin/readlink -f -- ${lib.escapeShellArg cfg.defaultWallpaper})"
+        ${pkgs.jq}/bin/jq -n --arg wallpaper "$wallpaper" '{ currentWallpaper: $wallpaper, currentWallpaperKind: "image" }' > ${lib.escapeShellArg wallpaperWidgetSettingsFile}
+        apply_wallpaper "$wallpaper" image
       fi
     ''}
 
@@ -329,8 +416,7 @@ in
     systemd.user.services.awww-wallpaper = {
       Unit = {
         Description = "Restore Obsidian shell wallpaper";
-        Requires = [ "awww-daemon.service" ];
-        After = [ "graphical-session.target" "awww-daemon.service" ];
+        After = [ "graphical-session.target" ];
         PartOf = [ "graphical-session.target" ];
       };
 

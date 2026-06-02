@@ -5,17 +5,10 @@ import AstalCava from "gi://AstalCava"
 
 import { createComputed, createState } from "ags"
 import { Astal } from "ags/gtk4"
+import { AGS_STATE_DIR, WALLPAPER_SETTINGS_PATH } from "../config"
 
 const { BOTTOM, LEFT, RIGHT } = Astal.WindowAnchor
 
-const STATE_HOME = (() => {
-  const configured = GLib.getenv("XDG_STATE_HOME")?.trim() ?? ""
-  if (configured.length > 0 && GLib.path_is_absolute(configured)) return configured
-  return GLib.build_filenamev([GLib.get_home_dir(), ".local", "state"])
-})()
-
-const AUDIO_THREAD_STATE_DIR = GLib.build_filenamev([STATE_HOME, "ags"])
-const WALLPAPER_SETTINGS_PATH = GLib.build_filenamev([AUDIO_THREAD_STATE_DIR, "wallpaper-widget.json"])
 const CAVA_BARS = 128
 const VISUALIZER_FPS = 75
 const VISUALIZER_FRAME_MS = Math.round(1000 / VISUALIZER_FPS)
@@ -70,7 +63,7 @@ function saveAudioThreadVisualizerEnabled(enabled: boolean) {
       audioThreadVisualizerEnabled: enabled,
     }
 
-    GLib.mkdir_with_parents(AUDIO_THREAD_STATE_DIR, 0o700)
+    GLib.mkdir_with_parents(AGS_STATE_DIR, 0o700)
     GLib.file_set_contents(WALLPAPER_SETTINGS_PATH, JSON.stringify(next))
   } catch (error) {
     console.error(error)
@@ -381,7 +374,7 @@ function drawAudioThread(area: Gtk.DrawingArea, cr: any, width: number, height: 
   cr.restore()
 }
 
-export { audioThreadVisualizerEnabled, setAudioThreadVisualizerEnabled, toggleAudioThreadVisualizer }
+export { audioThreadVisualizerEnabled, toggleAudioThreadVisualizer }
 
 export function AudioThreadVisualizerWindow({ monitor }: { monitor: number }) {
   const geometry = readMonitorGeometry(monitor)

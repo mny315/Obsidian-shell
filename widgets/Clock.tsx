@@ -17,7 +17,7 @@ const CALENDAR_POPOVER_OFFSET_X = -30
 const CALENDAR_POPOVER_OFFSET_Y = 15
 
 export function Clock({ monitor }: { monitor: number }) {
-  let trigger: Gtk.Button | null = null
+  let trigger: Gtk.ToggleButton | null = null
   let popupWindowRef: Gtk.Window | null = null
   let popupRevealer: Gtk.Revealer | null = null
   let popupFrame: Gtk.Box | null = null
@@ -47,9 +47,8 @@ export function Clock({ monitor }: { monitor: number }) {
   }
 
   const setTriggerOpen = (open: boolean) => {
-    if (!trigger) return
-    if (open) trigger.add_css_class("widget-trigger-open")
-    else trigger.remove_css_class("widget-trigger-open")
+    if (!trigger || trigger.active === open) return
+    trigger.active = open
   }
 
   const syncPopupPosition = () => {
@@ -69,8 +68,7 @@ export function Clock({ monitor }: { monitor: number }) {
 
   const isPopupRevealed = () => Boolean(popupRevealer?.get_reveal_child())
 
-  const resetStalePopupState = (reason: string) => {
-    console.warn(`[popup:${popupRegistryId}] reset stale state: ${reason}`)
+  const resetStalePopupState = () => {
     finishClosePopup()
   }
 
@@ -106,7 +104,7 @@ export function Clock({ monitor }: { monitor: number }) {
 
   const openPopup = () => {
     if (windowVisible()) {
-      if (closingPopup || !isPopupRevealed()) resetStalePopupState("open requested while visible but not revealed")
+      if (closingPopup || !isPopupRevealed()) resetStalePopupState()
       else {
         syncPopupPosition()
         return
@@ -122,7 +120,7 @@ export function Clock({ monitor }: { monitor: number }) {
       if (!windowVisible() || closingPopup) return GLib.SOURCE_REMOVE
       syncPopupPosition()
       if (popupRevealer) popupRevealer.revealChild = true
-      else resetStalePopupState("revealer missing after open")
+      else resetStalePopupState()
       popupRoot?.grab_focus()
       return GLib.SOURCE_REMOVE
     })
@@ -133,7 +131,7 @@ export function Clock({ monitor }: { monitor: number }) {
 
     if (windowVisible()) {
       if (!isPopupRevealed()) {
-        resetStalePopupState("toggle requested while visible but not revealed")
+        resetStalePopupState()
         openPopup()
         return
       }
@@ -213,7 +211,7 @@ export function Clock({ monitor }: { monitor: number }) {
   return (
     <box class="left-module-content clock-module-content" spacing={4} valign={Gtk.Align.CENTER}>
       <WallpaperWidgetButton monitor={monitor} />
-      <button
+      <Gtk.ToggleButton
         class="clock-trigger left-module-button"
         valign={Gtk.Align.CENTER}
         onClicked={togglePopup}
@@ -232,7 +230,7 @@ export function Clock({ monitor }: { monitor: number }) {
           <label class="clock-icon" label={"󰅐"} />
           <label class="clock left-module-label" label={time} />
         </box>
-      </button>
+      </Gtk.ToggleButton>
     </box>
   )
 }

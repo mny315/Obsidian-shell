@@ -6,7 +6,6 @@ import Gtk from "gi://Gtk?version=4.0"
 import { For, createState } from "ags"
 import { attachShellTooltip } from "./ShellTooltip"
 
-
 type WorkspaceChip = {
   key: string
   className: string
@@ -14,7 +13,6 @@ type WorkspaceChip = {
   tooltip: string
   onActivate: () => void
 }
-
 
 type NiriWorkspace = {
   id: number

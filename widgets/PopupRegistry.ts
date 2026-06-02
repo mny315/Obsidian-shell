@@ -26,4 +26,3 @@ export function closeOtherPopups(activeId: string) {
     }
   }
 }
-

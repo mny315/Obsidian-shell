@@ -1,15 +1,9 @@
 import GLib from "gi://GLib"
 
 import { createState } from "ags"
+import { AGS_STATE_DIR } from "../config"
 
-const STATE_HOME = (() => {
-  const configured = GLib.getenv("XDG_STATE_HOME")?.trim() ?? ""
-  if (configured.length > 0 && GLib.path_is_absolute(configured)) return configured
-  return GLib.build_filenamev([GLib.get_home_dir(), ".local", "state"])
-})()
-
-const STATE_DIR = GLib.build_filenamev([STATE_HOME, "ags"])
-const PLAYER_PIN_STATE_PATH = GLib.build_filenamev([STATE_DIR, "player-pin-state.json"])
+const PLAYER_PIN_STATE_PATH = GLib.build_filenamev([AGS_STATE_DIR, "player-pin-state.json"])
 
 type PlayerPinStateSnapshot = {
   pinned?: boolean
@@ -30,7 +24,7 @@ function readPlayerPinnedState() {
 
 function savePlayerPinnedState(value: boolean) {
   try {
-    GLib.mkdir_with_parents(STATE_DIR, 0o700)
+    GLib.mkdir_with_parents(AGS_STATE_DIR, 0o700)
     GLib.file_set_contents(PLAYER_PIN_STATE_PATH, JSON.stringify({ pinned: value }))
   } catch {}
 }

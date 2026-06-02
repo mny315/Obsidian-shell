@@ -6,13 +6,13 @@ const { TOP, LEFT, RIGHT } = Astal.WindowAnchor
 
 export const RIGHT_TOP_POPUP_ANCHOR = TOP | RIGHT
 export const LEFT_TOP_POPUP_ANCHOR = TOP | LEFT
-export const DEFAULT_POPUP_X = 12
+const DEFAULT_POPUP_X = 12
 export const DEFAULT_POPUP_Y = 53
 export const TOP_BAR_POPUP_MARGIN_TOP = DEFAULT_POPUP_Y
 export const POPUP_SCREEN_RIGHT = 15
 const SCREEN_PADDING = 12
 
-export type PopupAlign = "start" | "center" | "end"
+type PopupAlign = "start" | "center" | "end"
 
 type PopupPlacementOptions = {
   offsetX?: number
@@ -116,7 +116,7 @@ export function attachPopupFocusDismiss(widget: Gtk.Widget, onClose: () => void)
   })
 }
 
-export type TopEdgePlacementOptions = {
+type TopEdgePlacementOptions = {
   top?: number
   right?: number
   left?: number
@@ -159,7 +159,7 @@ export function placeLayerWindowAtTopEdge(
   })
 }
 
-export type TopRightPlacementOptions = {
+type TopRightPlacementOptions = {
   top?: number
   right?: number
 }
@@ -226,4 +226,3 @@ export function placeLayerWindowFromTrigger(
 
   setLayerWindowMargins(layerWindow, { left: x, top: y })
 }
-

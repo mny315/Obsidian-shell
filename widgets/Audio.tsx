@@ -6,7 +6,7 @@ import { Astal } from "ags/gtk4"
 import { For, createComputed, createState } from "ags"
 import { execAsync } from "ags/process"
 
-import { VOLUME_STEP, clamp } from "../config"
+import { AGS_STATE_DIR, VOLUME_STEP, clamp } from "../config"
 import { suppressVolumeOsd } from "./Osd"
 import { attachEscapeKey } from "./EscapeKey"
 import {
@@ -23,13 +23,7 @@ import { attachShellTooltip } from "./ShellTooltip"
 const AUDIO_POPOVER_WIDTH = 392
 const AUDIO_LIST_MAX_HEIGHT = 242
 const POPOVER_REVEAL_DURATION_MS = 165
-const STATE_HOME = (() => {
-  const configured = GLib.getenv("XDG_STATE_HOME")?.trim() ?? ""
-  if (configured.length > 0 && GLib.path_is_absolute(configured)) return configured
-  return GLib.build_filenamev([GLib.get_home_dir(), ".local", "state"])
-})()
-const AUDIO_STATE_DIR = GLib.build_filenamev([STATE_HOME, "ags"])
-const HIDDEN_SINKS_PATH = GLib.build_filenamev([AUDIO_STATE_DIR, "audio-hidden-sinks.json"])
+const HIDDEN_SINKS_PATH = GLib.build_filenamev([AGS_STATE_DIR, "audio-hidden-sinks.json"])
 
 const AUDIO_HIDE_ICON = "󰛑"
 const AUDIO_RESTORE_ICON = "󰗡"
@@ -328,7 +322,7 @@ async function readHiddenSinkKeys() {
 
 async function writeHiddenSinkKeys(keys: string[]) {
   try {
-    GLib.mkdir_with_parents(AUDIO_STATE_DIR, 0o700)
+    GLib.mkdir_with_parents(AGS_STATE_DIR, 0o700)
     GLib.file_set_contents(HIDDEN_SINKS_PATH, JSON.stringify([...new Set(keys)].sort()))
   } catch (error) {
     console.error(error)
@@ -358,7 +352,7 @@ export function AudioControl({
   let popupWindowRef: Gtk.Window | null = null
   let popupRevealer: Gtk.Revealer | null = null
   let popupRoot: Gtk.Box | null = null
-  let trigger: Gtk.Button | null = null
+  let trigger: Gtk.ToggleButton | null = null
   let refreshTimer = 0
   let closeTimeoutId = 0
   let closingPopup = false
@@ -366,9 +360,8 @@ export function AudioControl({
   const popupRegistryId = `audio-devices-${monitor}`
 
   const setTriggerOpen = (open: boolean) => {
-    if (!trigger) return
-    if (open) trigger.add_css_class("widget-trigger-open")
-    else trigger.remove_css_class("widget-trigger-open")
+    if (!trigger || trigger.active === open) return
+    trigger.active = open
   }
 
   const clearCloseTimeout = () => {
@@ -395,8 +388,7 @@ export function AudioControl({
 
   const isDevicesPopupRevealed = () => Boolean(popupRevealer?.get_reveal_child())
 
-  const resetStaleDevicesPopupState = (reason: string) => {
-    console.warn(`[popup:${popupRegistryId}] reset stale state: ${reason}`)
+  const resetStaleDevicesPopupState = () => {
     finishCloseDevicesPopup()
   }
 
@@ -539,7 +531,7 @@ export function AudioControl({
 
   const openDevicesPopup = () => {
     if (windowVisible()) {
-      if (closingPopup || !isDevicesPopupRevealed()) resetStaleDevicesPopupState("open requested while visible but not revealed")
+      if (closingPopup || !isDevicesPopupRevealed()) resetStaleDevicesPopupState()
       else {
         syncDevicesPopupPosition()
         return
@@ -559,7 +551,7 @@ export function AudioControl({
       if (!windowVisible() || closingPopup) return GLib.SOURCE_REMOVE
       syncDevicesPopupPosition()
       if (popupRevealer) popupRevealer.revealChild = true
-      else resetStaleDevicesPopupState("revealer missing after open")
+      else resetStaleDevicesPopupState()
       popupRoot?.grab_focus()
       return GLib.SOURCE_REMOVE
     })
@@ -572,7 +564,7 @@ export function AudioControl({
 
     if (windowVisible()) {
       if (!isDevicesPopupRevealed()) {
-        resetStaleDevicesPopupState("toggle requested while visible but not revealed")
+        resetStaleDevicesPopupState()
         openDevicesPopup()
         return
       }
@@ -761,7 +753,7 @@ export function AudioControl({
         </box>
       </revealer>
 
-      <button class="icon-button quick-toggle audio-trigger flat" valign={Gtk.Align.CENTER} onClicked={() => {
+      <Gtk.ToggleButton class="icon-button quick-toggle audio-trigger flat" valign={Gtk.Align.CENTER} onClicked={() => {
         onToggle()
       }} $={(self) => {
         trigger = self
@@ -778,7 +770,7 @@ export function AudioControl({
           }}
         />
         <label class={showPercent((shown) => shown ? "module-percent volume-percent" : "module-icon")} label={triggerLabel} />
-      </button>
+      </Gtk.ToggleButton>
     </box>
   )
 }
