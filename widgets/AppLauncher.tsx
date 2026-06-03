@@ -11,6 +11,7 @@ import { attachEscapeKey } from "./EscapeKey"
 import { LEFT_TOP_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, attachPopupFocusDismiss, clipRoundedWidget, placeLayerWindowAtTopEdge } from "./FloatingPopup"
 import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
 import { attachShellTooltip } from "./ShellTooltip"
+import { attachSmoothVerticalScroll } from "./SmoothScroll"
 
 type LaunchableApp = {
   key: string
@@ -201,8 +202,6 @@ const APP_LIST_REFRESH_DEBOUNCE_MS = 180
 const LAUNCHER_POPOVER_REVEAL_DURATION_MS = 170
 const LAUNCHER_POPOVER_WIDTH = 392
 const LAUNCHER_LIST_HEIGHT = 300
-const LAUNCHER_CATEGORY_FADE_DURATION_MS = 120
-const LAUNCHER_CATEGORY_SWITCH_DELAY_MS = 70
 
 function getApplicationMonitorRoots() {
   const roots = new Set<string>()
@@ -263,9 +262,7 @@ export function AppLauncherControl({
   let popupRoot: Gtk.Box | null = null
   let searchEntry: Gtk.SearchEntry | null = null
   let launcherScrollWindow: Gtk.ScrolledWindow | null = null
-  let categoryTransitionTimeoutId = 0
-  let scrollAnimationId = 0
-  let scrollTarget = 0
+  let launcherSmoothScrollCleanup: (() => void) | null = null
   let closeTimeoutId = 0
   let closingPopup = false
   const [windowVisible, setWindowVisible] = createState(false)
@@ -279,7 +276,6 @@ export function AppLauncherControl({
   const [hiddenAppKeys, setHiddenAppKeysState] = createState<string[]>(readHiddenAppKeys())
   const [selectedCategory, setSelectedCategory] = createState<LauncherCategoryId>("all")
   const [renderedCategory, setRenderedCategory] = createState<LauncherCategoryId>("all")
-  const [listRevealed, setListRevealed] = createState(true)
   let appDirectoryMonitors: Gio.FileMonitor[] = []
   let appRefreshTimeoutId = 0
   const [showHiddenApps, setShowHiddenApps] = createState(false)
@@ -367,74 +363,29 @@ export function AppLauncherControl({
     }
   }
 
-  const clearCategoryTransitionTimeout = () => {
-    if (categoryTransitionTimeoutId !== 0) {
-      GLib.source_remove(categoryTransitionTimeoutId)
-      categoryTransitionTimeoutId = 0
-    }
-  }
-
-  const stopSmoothScroll = () => {
-    if (scrollAnimationId !== 0) {
-      GLib.source_remove(scrollAnimationId)
-      scrollAnimationId = 0
-    }
+  const detachLauncherSmoothScroll = () => {
+    launcherSmoothScrollCleanup?.()
+    launcherSmoothScrollCleanup = null
   }
 
   const scrollLauncherListToTop = () => {
-    stopSmoothScroll()
+    detachLauncherSmoothScroll()
     const adjustment = launcherScrollWindow?.get_vadjustment()
     if (!adjustment) return
 
     adjustment.set_value(adjustment.get_lower())
-    scrollTarget = adjustment.get_lower()
+    launcherSmoothScrollCleanup = attachSmoothVerticalScroll(launcherScrollWindow)
   }
 
   const selectCategory = (category: LauncherCategoryId) => {
     if (selectedCategory() === category && renderedCategory() === category) return
 
-    clearCategoryTransitionTimeout()
     setSelectedCategory(category)
-    setListRevealed(false)
+    setRenderedCategory(category)
 
-    categoryTransitionTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, LAUNCHER_CATEGORY_SWITCH_DELAY_MS, () => {
-      categoryTransitionTimeoutId = 0
-      setRenderedCategory(category)
+    GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
       scrollLauncherListToTop()
-
-      GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-        setListRevealed(true)
-        return GLib.SOURCE_REMOVE
-      })
-
       return GLib.SOURCE_REMOVE
-    })
-  }
-
-  const animateLauncherScroll = (dy: number) => {
-    const adjustment = launcherScrollWindow?.get_vadjustment()
-    if (!adjustment) return
-
-    const lower = adjustment.get_lower()
-    const upper = adjustment.get_upper() - adjustment.get_page_size()
-    const current = adjustment.get_value()
-    const delta = dy * 72
-
-    scrollTarget = Math.max(lower, Math.min(upper, (scrollAnimationId !== 0 ? scrollTarget : current) + delta))
-    if (scrollAnimationId !== 0) return
-
-    scrollAnimationId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1000 / 60, () => {
-      const nextCurrent = adjustment.get_value()
-      const nextValue = nextCurrent + (scrollTarget - nextCurrent) * 0.26
-
-      if (Math.abs(scrollTarget - nextCurrent) <= 0.8) {
-        adjustment.set_value(scrollTarget)
-        scrollAnimationId = 0
-        return GLib.SOURCE_REMOVE
-      }
-
-      adjustment.set_value(nextValue)
-      return GLib.SOURCE_CONTINUE
     })
   }
 
@@ -510,10 +461,8 @@ export function AppLauncherControl({
     setTriggerOpen(true)
     setNotice(null)
     setShowHiddenApps(false)
-    clearCategoryTransitionTimeout()
     setSelectedCategory("all")
     setRenderedCategory("all")
-    setListRevealed(true)
     setQuery("")
     if (searchEntry) searchEntry.set_text("")
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
@@ -632,36 +581,26 @@ export function AppLauncherControl({
         class="launcher-list-wrap"
         hscrollbarPolicy={Gtk.PolicyType.NEVER}
         vscrollbarPolicy={Gtk.PolicyType.AUTOMATIC}
-        kineticScrolling
-        vexpand
+        kineticScrolling={false}
+        vexpand={false}
+        heightRequest={LAUNCHER_LIST_HEIGHT}
         minContentHeight={LAUNCHER_LIST_HEIGHT}
         maxContentHeight={LAUNCHER_LIST_HEIGHT}
+        propagateNaturalHeight={false}
+        propagateNaturalWidth={false}
         $={(self) => {
           launcherScrollWindow = self
+          launcherSmoothScrollCleanup = attachSmoothVerticalScroll(self)
           self.connect("destroy", () => {
             launcherScrollWindow = null
-            stopSmoothScroll()
+            detachLauncherSmoothScroll()
           })
         }}
       >
-        <Gtk.EventControllerScroll
-          flags={Gtk.EventControllerScrollFlags.VERTICAL}
-          onScroll={(_, _dx, dy) => {
-            if (Math.abs(dy) < 0.0001) return false
-            animateLauncherScroll(dy)
-            return true
-          }}
-        />
-        <revealer
-          class="launcher-list-revealer"
-          revealChild={listRevealed}
-          transitionType={Gtk.RevealerTransitionType.CROSSFADE}
-          transitionDuration={LAUNCHER_CATEGORY_FADE_DURATION_MS}
-        >
-          <box class="launcher-list-content" orientation={Gtk.Orientation.VERTICAL} spacing={4} marginEnd={6}>
-            <For each={filteredApps}>
-              {(app) => (
-                <box class="launcher-app-card" hexpand spacing={0} valign={Gtk.Align.CENTER}>
+        <box class="launcher-list-content" orientation={Gtk.Orientation.VERTICAL} spacing={4} marginEnd={6}>
+          <For each={filteredApps}>
+            {(app) => (
+              <box class="launcher-app-card" hexpand spacing={0} valign={Gtk.Align.CENTER}>
                 <button class="flat launcher-app-main" hexpand onClicked={() => void launchApp(app)}>
                   <box class="launcher-app-row" spacing={10} hexpand valign={Gtk.Align.CENTER}>
                     <box class="launcher-app-icon-wrap" valign={Gtk.Align.CENTER} halign={Gtk.Align.CENTER}>
@@ -712,21 +651,20 @@ export function AppLauncherControl({
                     label={hiddenAppKeys((keys) => keys.includes(app.key) ? LAUNCHER_RESTORE_ICON : LAUNCHER_HIDE_ICON)}
                   />
                 </button>
-                </box>
-              )}
-            </For>
+              </box>
+            )}
+          </For>
 
-            <box
-              visible={filteredApps((list) => list.length === 0)}
-              orientation={Gtk.Orientation.VERTICAL}
-              halign={Gtk.Align.CENTER}
-              valign={Gtk.Align.CENTER}
-              vexpand
-            >
-              <label class="launcher-empty-title" label={showHiddenApps((value) => (value ? "No hidden applications" : "Nothing found"))} />
-            </box>
+          <box
+            visible={filteredApps((list) => list.length === 0)}
+            orientation={Gtk.Orientation.VERTICAL}
+            halign={Gtk.Align.CENTER}
+            valign={Gtk.Align.CENTER}
+            vexpand
+          >
+            <label class="launcher-empty-title" label={showHiddenApps((value) => (value ? "No hidden applications" : "Nothing found"))} />
           </box>
-        </revealer>
+        </box>
       </Gtk.ScrolledWindow>
 
       <box class="launcher-category-bar" spacing={6} valign={Gtk.Align.CENTER}>
@@ -823,9 +761,8 @@ export function AppLauncherControl({
           self.connect("destroy", () => {
             clearCloseTimeout()
             clearAppRefreshTimeout()
-            clearCategoryTransitionTimeout()
             destroyApplicationDirectoryMonitors()
-            stopSmoothScroll()
+            detachLauncherSmoothScroll()
             unregisterPopupController()
             launcherControllers.delete(controller)
             closingPopup = false

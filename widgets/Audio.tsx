@@ -613,7 +613,9 @@ export function AudioControl({
                 <box class={sink.current ? "network-row-shell audio-sink-row audio-sink-current" : "network-row-shell audio-sink-row"} orientation={Gtk.Orientation.HORIZONTAL} spacing={4} hexpand valign={Gtk.Align.CENTER}>
                   <button class="flat audio-sink-main" hexpand halign={Gtk.Align.FILL} onClicked={() => chooseSink(sink)}>
                     <box class="network-row-body audio-sink-body" orientation={Gtk.Orientation.HORIZONTAL} spacing={10} hexpand valign={Gtk.Align.CENTER}>
-                      <label class="network-row-icon audio-sink-icon" label={sink.icon} />
+                      <box class="audio-sink-icon-frame" valign={Gtk.Align.CENTER} halign={Gtk.Align.CENTER}>
+                        <label class="network-row-icon audio-sink-icon" label={sink.icon} xalign={0.5} yalign={0.5} valign={Gtk.Align.CENTER} halign={Gtk.Align.CENTER} />
+                      </box>
                       <box class="audio-sink-content" orientation={Gtk.Orientation.VERTICAL} spacing={2} hexpand valign={Gtk.Align.CENTER}>
                         <label class="network-row-title audio-sink-name" xalign={0} label={sink.name} ellipsize={Pango.EllipsizeMode.END} maxWidthChars={28} />
                         <label
@@ -624,7 +626,7 @@ export function AudioControl({
                           maxWidthChars={38}
                         />
                       </box>
-                      <label class="network-row-status audio-sink-status" label={sink.current ? "󰄬" : ""} />
+                      <label class="network-row-status audio-sink-status" label={sink.current ? "󰄬" : ""} xalign={0.5} yalign={0.5} valign={Gtk.Align.CENTER} halign={Gtk.Align.CENTER} />
                     </box>
                   </button>
                   <button

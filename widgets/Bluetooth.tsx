@@ -10,6 +10,7 @@ import { attachEscapeKey } from "./EscapeKey"
 import { RIGHT_TOP_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, attachPopupFocusDismiss, clipRoundedWidget, placeLayerWindowAtTopRight } from "./FloatingPopup"
 import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
 import { attachShellTooltip } from "./ShellTooltip"
+import { attachSmoothVerticalScroll } from "./SmoothScroll"
 
 const bluetooth = Bluetooth.get_default()
 
@@ -1087,7 +1088,15 @@ export function BluetoothControl({
           <box orientation={Gtk.Orientation.VERTICAL} spacing={6} vexpand>
             <label class="network-section-title" xalign={0} label="Devices" />
             <box class="network-list-capsule" orientation={Gtk.Orientation.VERTICAL} vexpand>
-              <Gtk.ScrolledWindow class="network-list-scroller" vexpand minContentHeight={120} maxContentHeight={220} propagateNaturalHeight>
+              <Gtk.ScrolledWindow
+                class="network-list-scroller"
+                vexpand
+                minContentHeight={120}
+                maxContentHeight={220}
+                propagateNaturalHeight
+                kineticScrolling={false}
+                $={(self) => attachSmoothVerticalScroll(self)}
+              >
                 <box class="network-list-inner" orientation={Gtk.Orientation.VERTICAL} spacing={0}>
                   <For each={visibleDevices}>
                     {(device) => (

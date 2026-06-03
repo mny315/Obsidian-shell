@@ -58,55 +58,6 @@ function compactLayoutName(name: string | null | undefined) {
   return raw.slice(0, 2).toUpperCase()
 }
 
-function parseHyprDevicesLayout(raw: string | null | undefined) {
-  if (typeof raw !== "string") return null
-
-  const trimmed = raw.trim()
-  if (!trimmed) return null
-
-  const jsonStartCandidates = [trimmed.indexOf("{"), trimmed.indexOf("[")].filter((index) => index >= 0)
-  const jsonStart = jsonStartCandidates.length > 0 ? Math.min(...jsonStartCandidates) : -1
-
-  if (jsonStart < 0) {
-    console.warn(`Hyprland devices reply is not JSON: ${trimmed.slice(0, 200)}`)
-    return null
-  }
-
-  const candidate = trimmed.slice(jsonStart)
-
-  try {
-    const parsed = JSON.parse(candidate)
-    const keyboards = Array.isArray(parsed?.keyboards) ? parsed.keyboards : []
-    const mainKeyboard = keyboards.find((keyboard) => keyboard?.main) ?? keyboards[0]
-    const activeKeymap = mainKeyboard?.active_keymap
-    return typeof activeKeymap === "string" ? activeKeymap : null
-  } catch (error) {
-    console.error(`Failed to parse Hyprland devices JSON: ${candidate.slice(0, 200)}`)
-    console.error(error)
-    return null
-  }
-}
-
-async function getHyprDevicesLayout(hyprland: { message_async: (msg: string, cancellable?: Gio.Cancellable | null) => Promise<string> }) {
-  try {
-    const raw = await hyprland.message_async("j/devices", null)
-    const active = parseHyprDevicesLayout(raw)
-    if (active) return active
-  } catch (error) {
-    console.error(error)
-  }
-
-  try {
-    const raw = await execAsync(["hyprctl", "-j", "devices"])
-    const active = parseHyprDevicesLayout(raw)
-    if (active) return active
-  } catch (error) {
-    console.error(error)
-  }
-
-  return null
-}
-
 function parseNiriLayouts(payload: unknown): NiriKeyboardLayouts | null {
   if (!payload || typeof payload !== "object") return null
 
@@ -161,50 +112,6 @@ function closeNiriConnection(connection: Gio.SocketConnection | null, stream: Gi
   try {
     connection?.close(null)
   } catch {}
-}
-
-async function initializeHyprland(
-  setLabel: (next: string | ((prev: string) => string)) => void,
-  setSwitchLayout: (next: () => void | Promise<void>) => void,
-) {
-  const { default: Hyprland } = await import("gi://AstalHyprland?version=0.1")
-  const hyprland = Hyprland.get_default()
-
-  setSwitchLayout(() => {
-    const switchNext = async () => {
-      try {
-        await hyprland.message_async("switchxkblayout all next", null)
-        return
-      } catch (error) {
-        console.error(error)
-      }
-
-      try {
-        await execAsync(["hyprctl", "switchxkblayout", "all", "next"])
-      } catch (error) {
-        console.error(error)
-      }
-    }
-
-    void switchNext()
-  })
-
-  try {
-    const active = await getHyprDevicesLayout(hyprland)
-    if (active) setLabel(compactLayoutName(active))
-  } catch (error) {
-    console.error(error)
-  }
-
-  const signalId = hyprland.connect("keyboard-layout", (_self, _keyboard: string, layout: string) => {
-    setLabel(compactLayoutName(layout))
-  })
-
-  return () => {
-    try {
-      hyprland.disconnect(signalId)
-    } catch {}
-  }
 }
 
 async function initializeNiri(
@@ -382,12 +289,6 @@ export function KeyboardLayout() {
 
         const start = async () => {
           try {
-            if (GLib.getenv("HYPRLAND_INSTANCE_SIGNATURE")) {
-              setVisible(true)
-              cleanup = await initializeHyprland(setLabel, setSwitchNextLayout)
-              return
-            }
-
             if (GLib.getenv("NIRI_SOCKET")) {
               setVisible(true)
               cleanup = await initializeNiri(setLabel, setSwitchNextLayout)

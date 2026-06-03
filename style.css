@@ -24,7 +24,6 @@
 @define-color soft_overlay_03 alpha(@theme_selected_bg_color,0.05);
 @define-color soft_overlay_05 alpha(@theme_selected_bg_color,0.08);
 @define-color soft_overlay_06 alpha(@theme_selected_bg_color,0.09);
-@define-color soft_overlay_07 alpha(@theme_selected_bg_color,0.10);
 @define-color soft_overlay_08 alpha(@theme_selected_bg_color,0.12);
 @define-color soft_overlay_09 alpha(@theme_fg_color,0.09);
 @define-color soft_overlay_10 alpha(@theme_selected_bg_color,0.16);
@@ -50,7 +49,6 @@
 @define-color danger_border alpha(@theme_selected_bg_color,0.18);
 @define-color urgent_bg alpha(@theme_selected_bg_color,0.16);
 @define-color urgent_core alpha(@theme_selected_bg_color,0.92);
-@define-color theme_card_bg_soft alpha(@card_tint,0.30);
 @define-color theme_card_bg_mid alpha(@panel_tint,0.56);
 @define-color theme_card_bg_panel alpha(@panel_tint,0.62);
 @define-color theme_card_bg_shell alpha(@shell_tint,0.66);
@@ -774,6 +772,10 @@ box.widget-popup-frame.wallpaper-popover-window,
   box-shadow: none;
 }
 
+.calendar-popover-window {
+  padding: 10px;
+}
+
 .wallpaper-popover-window,
 .wallpaper-popover,
 .wallpaper-gallery-frame,
@@ -788,13 +790,13 @@ button.wallpaper-card {
 }
 
 .calendar-popover {
-  min-width: 292px;
+  min-width: 244px;
   background: transparent;
 }
 
 .calendar-header {
-  min-height: 34px;
-  padding: 2px 2px 4px 2px;
+  min-height: 32px;
+  padding: 1px 2px 3px 2px;
 }
 
 .calendar-title {
@@ -807,63 +809,17 @@ button.wallpaper-card {
   opacity: 0.82;
 }
 
-calendar.calendar-widget,
-calendar.calendar-widget.view,
 .calendar-widget {
-  padding: 8px;
+  padding: 7px;
   border-radius: 14px;
-  background: @theme_card_bg_soft;
-  background-color: @theme_card_bg_soft;
+  background: alpha(@card_tint,0.22);
+  background-color: alpha(@card_tint,0.22);
   background-image: none;
-  border: 1px solid @soft_overlay_09;
-  box-shadow: inset 0 1px 0 @soft_overlay_07,inset 0 -1px 0 @shadow_06;
+  border: 1px solid alpha(@theme_fg_color,0.075);
+  box-shadow: inset 0 1px 0 alpha(@theme_fg_color,0.055);
 }
 
-calendar.calendar-widget > grid,
-calendar.calendar-widget.view > grid,
-.calendar-widget > grid {
-  background: transparent;
-  background-color: transparent;
-  background-image: none;
-}
-
-calendar.calendar-widget > header,
-.calendar-widget > header,
-calendar.calendar-widget header,
-.calendar-widget header,
-calendar.calendar-widget header stack,
-.calendar-widget header stack,
-calendar.calendar-widget header stack.month,
-.calendar-widget header stack.month,
-calendar.calendar-widget header label,
-.calendar-widget header label,
-calendar.calendar-widget header label.year,
-.calendar-widget header label.year {
-  min-height: 30px;
-  margin-bottom: 4px;
-  background: transparent;
-  background-color: transparent;
-  background-image: none;
-  border: none;
-  box-shadow: none;
-}
-
-calendar.calendar-widget header stack,
-.calendar-widget header stack,
-calendar.calendar-widget header stack.month,
-.calendar-widget header stack.month,
-calendar.calendar-widget header label,
-.calendar-widget header label,
-calendar.calendar-widget header label.year,
-.calendar-widget header label.year {
-  margin: 0;
-  padding: 0;
-}
-
-calendar.calendar-widget button,
-.calendar-widget button,
-calendar.calendar-widget header button,
-.calendar-widget header button {
+.calendar-widget button {
   min-width: 28px;
   min-height: 28px;
   padding: 0;
@@ -875,16 +831,83 @@ calendar.calendar-widget header button,
   box-shadow: none;
 }
 
-calendar.calendar-widget button:hover,
 .calendar-widget button:hover {
   background: @hover_bg;
+  background-color: @hover_bg;
+  background-image: none;
   box-shadow: none;
 }
 
-calendar.calendar-widget grid label,
-.calendar-widget grid label {
+.custom-calendar-widget {
+  min-width: 214px;
+}
+
+.calendar-widget-slot {
+  min-width: 0;
+  min-height: 0;
+  background: transparent;
+  background-color: transparent;
+  background-image: none;
+}
+
+.calendar-nav {
+  min-height: 28px;
+}
+
+.calendar-heading-label {
+  min-height: 26px;
+  padding: 0 2px;
+  font-size: 14px;
+}
+
+.calendar-month-label {
+  min-width: 68px;
+}
+
+.calendar-year-label {
+  min-width: 42px;
+}
+
+button.calendar-nav-button,
+.calendar-nav-button {
+  min-width: 21px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 9px;
+}
+
+.calendar-month-stack {
+  min-width: 214px;
+  min-height: 190px;
+  background: transparent;
+  background-color: transparent;
+  background-image: none;
+}
+
+.calendar-month-page {
+  min-width: 214px;
+  min-height: 190px;
+  background: transparent;
+  background-color: transparent;
+  background-image: none;
+}
+
+.calendar-grid-row {
+  min-height: 28px;
+  background: transparent;
+  background-color: transparent;
+  background-image: none;
+}
+
+.calendar-day-name,
+.calendar-day-button,
+.calendar-day-label {
   min-width: 28px;
   min-height: 28px;
+}
+
+.calendar-day-name,
+.calendar-day-label {
   padding: 0;
   border-radius: 9px;
   font-size: 13px;
@@ -893,8 +916,34 @@ calendar.calendar-widget grid label,
   background-image: none;
 }
 
-calendar.calendar-widget grid label.today,
-.calendar-widget grid label.today {
+.calendar-day-name {
+  opacity: 0.76;
+  font-weight: 500;
+}
+
+button.calendar-day-button,
+.calendar-day-button {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 9px;
+  background: transparent;
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+}
+
+button.calendar-day-button:hover,
+.calendar-day-button:hover {
+  background: @hover_bg;
+  background-color: @hover_bg;
+  background-image: none;
+  box-shadow: none;
+}
+
+.calendar-day-label.today,
+.calendar-day-label.selected {
   background: @active_bg;
   background-color: @active_bg;
   background-image: none;
@@ -902,24 +951,8 @@ calendar.calendar-widget grid label.today,
   font-weight: 600;
 }
 
-calendar.calendar-widget grid label:selected,
-.calendar-widget grid label:selected {
-  background: @active_bg;
-  background-color: @active_bg;
-  background-image: none;
-}
-
-calendar.calendar-widget grid label.other-month,
-.calendar-widget grid label.other-month,
-calendar.calendar-widget grid label.week-number,
-.calendar-widget grid label.week-number {
+.calendar-day-label.other-month {
   opacity: 0.46;
-}
-
-calendar.calendar-widget grid label.day-name,
-.calendar-widget grid label.day-name {
-  opacity: 0.76;
-  font-weight: 500;
 }
 
 popover.network-popover-window > arrow,
@@ -1430,10 +1463,11 @@ menubutton.app-launcher-trigger button.toggle:focus-visible {
   padding-right: 0;
 }
 
-.launcher-list-revealer,
-.launcher-list-revealer > * {
+.launcher-list-wrap > viewport,
+.launcher-list-wrap viewport {
   min-height: 300px;
 }
+
 
 .launcher-list-content {
   min-height: 300px;
@@ -2230,20 +2264,32 @@ window.widget-popup-window box.widget-popup-frame.audio-popover-window,
 }
 
 .audio-sink-content {
-  min-height: 48px;
   min-width: 0;
-  padding: 1px 0 0 0;
+  padding: 0;
+  margin: 0;
+}
+
+.audio-sink-icon-frame {
+  min-width: 24px;
+  min-height: 48px;
+  padding: 0;
   margin: 0;
 }
 
 .audio-sink-icon {
   min-width: 22px;
+  min-height: 22px;
+  padding: 0;
+  margin: 0;
   font-size: 18px;
   opacity: 0.92;
 }
 
 .audio-sink-status {
   min-width: 18px;
+  min-height: 22px;
+  padding: 0;
+  margin: 0;
   font-size: 18px;
 }
 

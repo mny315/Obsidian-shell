@@ -3,8 +3,9 @@ import Gio from "gi://Gio"
 import GLib from "gi://GLib"
 import Gtk from "gi://Gtk?version=4.0"
 
-import { For, createState } from "ags"
+import { For, createComputed, createState } from "ags"
 import { attachShellTooltip } from "./ShellTooltip"
+import { workspaceIndicatorVisible } from "./WorkspaceIndicatorState"
 
 type WorkspaceChip = {
   key: string
@@ -81,13 +82,6 @@ function shouldRenderWorkspace({ active, focused, urgent, occupied }: { active: 
   return active || focused || urgent || occupied
 }
 
-function workspaceChipLabel(id: number, fallbackName: string | null) {
-  const fallback = compactText(fallbackName)
-  if (Number.isFinite(id) && id > 0) return `${id}`
-  if (fallback) return fallback.slice(0, 3).toUpperCase()
-  return "?"
-}
-
 function workspaceChipTooltip(label: string, name: string | null, active: boolean, focused: boolean, urgent: boolean, occupied: boolean) {
   const parts = [`Workspace ${label}`]
   const title = compactText(name)
@@ -97,26 +91,6 @@ function workspaceChipTooltip(label: string, name: string | null, active: boolea
   if (occupied) parts.push("occupied")
   if (urgent) parts.push("urgent")
   return parts.join(" • ")
-}
-
-function arrayFromUnknown<T>(value: unknown): T[] {
-  if (!value) return []
-  if (Array.isArray(value)) return [...value] as T[]
-
-  try {
-    if (typeof (value as Iterable<T>)[Symbol.iterator] === "function") {
-      return Array.from(value as Iterable<T>)
-    }
-  } catch {}
-
-  try {
-    const length = Number((value as { length?: number }).length)
-    if (Number.isFinite(length) && length >= 0) {
-      return Array.from(value as ArrayLike<T>)
-    }
-  } catch {}
-
-  return []
 }
 
 function encodeUtf8(value: string) {
@@ -263,216 +237,6 @@ function niriWorkspaceItems(workspaces: NiriWorkspace[], monitor: number) {
         },
       }
     })
-}
-
-function getHyprlandMonitors(hyprland: Record<string, unknown>) {
-  try {
-    const getMonitors = hyprland.get_monitors as (() => unknown) | undefined
-    if (typeof getMonitors === "function") return arrayFromUnknown(getMonitors())
-  } catch {}
-
-  return arrayFromUnknown(hyprland.monitors)
-}
-
-function getHyprlandWorkspaces(hyprland: Record<string, unknown>) {
-  try {
-    const getWorkspaces = hyprland.get_workspaces as (() => unknown) | undefined
-    if (typeof getWorkspaces === "function") return arrayFromUnknown(getWorkspaces())
-  } catch {}
-
-  return arrayFromUnknown(hyprland.workspaces)
-}
-
-function getHyprWorkspaceId(workspace: Record<string, unknown>) {
-  try {
-    const getId = workspace.get_id as (() => number) | undefined
-    if (typeof getId === "function") return Number(getId())
-  } catch {}
-
-  return Number(workspace.id)
-}
-
-function getHyprWorkspaceName(workspace: Record<string, unknown>) {
-  try {
-    const getName = workspace.get_name as (() => string | null) | undefined
-    if (typeof getName === "function") return compactText(getName()) || null
-  } catch {}
-
-  return compactText(workspace.name) || null
-}
-
-function getHyprWorkspaceMonitorName(workspace: Record<string, unknown>) {
-  try {
-    const getMonitor = workspace.get_monitor as (() => Record<string, unknown> | null) | undefined
-    const monitor = typeof getMonitor === "function" ? getMonitor() : (workspace.monitor as Record<string, unknown> | null)
-    if (!monitor) return null
-
-    const getName = monitor.get_name as (() => string | null) | undefined
-    if (typeof getName === "function") return compactText(getName()) || null
-    return compactText(monitor.name) || null
-  } catch {
-    return null
-  }
-}
-
-function getHyprWorkspaceClients(workspace: Record<string, unknown>) {
-  try {
-    const getClients = workspace.get_clients as (() => unknown) | undefined
-    if (typeof getClients === "function") return arrayFromUnknown(getClients())
-  } catch {}
-
-  return arrayFromUnknown(workspace.clients)
-}
-
-function getHyprMonitorName(monitor: Record<string, unknown>) {
-  try {
-    const getName = monitor.get_name as (() => string | null) | undefined
-    if (typeof getName === "function") return compactText(getName()) || null
-  } catch {}
-
-  return compactText(monitor.name) || null
-}
-
-function getHyprMonitorActiveWorkspaceId(monitor: Record<string, unknown>) {
-  try {
-    const getActiveWorkspace = monitor.get_active_workspace as (() => Record<string, unknown> | null) | undefined
-    const workspace = typeof getActiveWorkspace === "function"
-      ? getActiveWorkspace()
-      : (monitor["active-workspace"] as Record<string, unknown> | null) ?? (monitor.active_workspace as Record<string, unknown> | null)
-
-    if (!workspace) return null
-    const id = getHyprWorkspaceId(workspace)
-    return Number.isFinite(id) ? id : null
-  } catch {
-    return null
-  }
-}
-
-function getHyprFocusedWorkspaceId(hyprland: Record<string, unknown>) {
-  try {
-    const getFocusedWorkspace = hyprland.get_focused_workspace as (() => Record<string, unknown> | null) | undefined
-    const workspace = typeof getFocusedWorkspace === "function"
-      ? getFocusedWorkspace()
-      : (hyprland["focused-workspace"] as Record<string, unknown> | null) ?? (hyprland.focused_workspace as Record<string, unknown> | null)
-
-    if (!workspace) return null
-    const id = getHyprWorkspaceId(workspace)
-    return Number.isFinite(id) ? id : null
-  } catch {
-    return null
-  }
-}
-
-function hyprlandWorkspaceItems(hyprland: Record<string, unknown>, monitor: number) {
-  const targetMonitorName = getMonitorConnectorName(monitor)
-  const monitors = getHyprlandMonitors(hyprland)
-  const workspaces = getHyprlandWorkspaces(hyprland) as Array<Record<string, unknown>>
-  const focusedWorkspaceId = getHyprFocusedWorkspaceId(hyprland)
-
-  const activeWorkspaceByMonitor = new Map<string, number>()
-  for (const entry of monitors as Array<Record<string, unknown>>) {
-    const name = getHyprMonitorName(entry)
-    const activeId = getHyprMonitorActiveWorkspaceId(entry)
-    if (name && activeId !== null) activeWorkspaceByMonitor.set(name, activeId)
-  }
-
-  let filtered = targetMonitorName
-    ? workspaces.filter((workspace) => getHyprWorkspaceMonitorName(workspace) === targetMonitorName)
-    : [...workspaces]
-
-  if (filtered.length === 0 && focusedWorkspaceId !== null) {
-    filtered = workspaces.filter((workspace) => getHyprWorkspaceId(workspace) === focusedWorkspaceId)
-  }
-
-  if (filtered.length === 0) filtered = [...workspaces]
-
-  return filtered
-    .filter((workspace) => {
-      const id = getHyprWorkspaceId(workspace)
-      return Number.isFinite(id) && id > 0
-    })
-    .sort((a, b) => getHyprWorkspaceId(a) - getHyprWorkspaceId(b))
-    .map((workspace) => {
-      const id = getHyprWorkspaceId(workspace)
-      const name = getHyprWorkspaceName(workspace)
-      const monitorName = getHyprWorkspaceMonitorName(workspace)
-      const activeId = monitorName ? activeWorkspaceByMonitor.get(monitorName) ?? null : null
-      const focused = focusedWorkspaceId === id
-      const active = activeId === id || focused
-      const occupied = getHyprWorkspaceClients(workspace).length > 0
-      const urgent = false
-      const label = workspaceChipLabel(id, name)
-
-      return { workspace, id, name, label, state: { active, focused, urgent, occupied } }
-    })
-    .filter(({ state }) => shouldRenderWorkspace(state))
-    .map<WorkspaceChip>(({ workspace, id, name, label, state }) => {
-      const { active, focused, urgent, occupied } = state
-
-      return {
-        key: `hypr-${id}`,
-        className: workspaceChipClass(state),
-        coreClassName: workspaceChipCoreClass(state),
-        tooltip: workspaceChipTooltip(label, name, active, focused, urgent, occupied),
-        onActivate: () => {
-          try {
-            const focus = workspace.focus as (() => void) | undefined
-            if (typeof focus === "function") {
-              focus.call(workspace)
-              return
-            }
-          } catch (error) {
-            console.error(error)
-          }
-
-          const messageAsync = hyprland.message_async as ((msg: string, cancellable?: Gio.Cancellable | null) => Promise<string>) | undefined
-          if (typeof messageAsync === "function") {
-            void messageAsync(`dispatch workspace ${id}`, null).catch(console.error)
-          }
-        },
-      }
-    })
-}
-
-async function initializeHyprland(monitor: number, setItems: (value: WorkspaceChip[]) => void, setVisible: (value: boolean) => void) {
-  const { default: Hyprland } = await import("gi://AstalHyprland?version=0.1")
-  const hyprland = Hyprland.get_default() as Record<string, unknown>
-
-  const sync = () => {
-    try {
-      const next = hyprlandWorkspaceItems(hyprland, monitor)
-      setItems(next)
-      setVisible(next.length > 1)
-    } catch (error) {
-      console.error(error)
-      setItems([])
-      setVisible(false)
-    }
-  }
-
-  sync()
-
-  const signalIds = [
-    hyprland.connect("event", sync),
-    hyprland.connect("notify::workspaces", sync),
-    hyprland.connect("notify::focused-workspace", sync),
-    hyprland.connect("notify::monitors", sync),
-    hyprland.connect("client-added", sync),
-    hyprland.connect("client-removed", sync),
-    hyprland.connect("client-moved", sync),
-    hyprland.connect("workspace-added", sync),
-    hyprland.connect("workspace-removed", sync),
-    hyprland.connect("monitor-added", sync),
-    hyprland.connect("monitor-removed", sync),
-  ]
-
-  return () => {
-    for (const signalId of signalIds) {
-      try {
-        hyprland.disconnect(signalId)
-      } catch {}
-    }
-  }
 }
 
 async function initializeNiri(monitor: number, setItems: (value: WorkspaceChip[]) => void, setVisible: (value: boolean) => void) {
@@ -641,25 +405,20 @@ async function initializeNiri(monitor: number, setItems: (value: WorkspaceChip[]
 export function WorkspaceIndicator({ monitor }: { monitor: number }) {
   const [items, setItems] = createState<WorkspaceChip[]>([])
   const [visible, setVisible] = createState(false)
+  const shouldShow = createComputed(() => Boolean(workspaceIndicatorVisible() && visible()))
 
   return (
     <box
       class="section section-center workspace-indicator-shell"
       spacing={0}
       valign={Gtk.Align.CENTER}
-      visible={visible}
+      visible={shouldShow}
       $={(self) => {
         let cleanup: (() => void) | undefined
         let destroyed = false
 
         const start = async () => {
           try {
-            if (GLib.getenv("HYPRLAND_INSTANCE_SIGNATURE")) {
-              cleanup = await initializeHyprland(monitor, setItems, setVisible)
-              if (destroyed) cleanup?.()
-              return
-            }
-
             if (GLib.getenv("NIRI_SOCKET")) {
               cleanup = await initializeNiri(monitor, setItems, setVisible)
               if (destroyed) cleanup?.()

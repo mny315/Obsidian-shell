@@ -11,6 +11,7 @@ import { attachEscapeKey } from "./EscapeKey"
 import { RIGHT_TOP_POPUP_ANCHOR, POPUP_SCREEN_RIGHT, attachPopupFocusDismiss, clipRoundedWidget, placeLayerWindowAtTopRight } from "./FloatingPopup"
 import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
 import { attachShellTooltip } from "./ShellTooltip"
+import { attachSmoothVerticalScroll } from "./SmoothScroll"
 
 const POPOVER_REVEAL_DURATION_MS = 165
 const NETWORK_POPOVER_WIDTH = 392
@@ -1396,6 +1397,8 @@ export function NetworkControl({
             class="network-list-scroller"
             propagateNaturalHeight
             maxContentHeight={220}
+            kineticScrolling={false}
+            $={(self) => attachSmoothVerticalScroll(self)}
           >
             <box class="network-list-inner" orientation={Gtk.Orientation.VERTICAL} spacing={0} $={(self) => wifiListBox = self} />
           </Gtk.ScrolledWindow>

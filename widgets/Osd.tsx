@@ -161,37 +161,11 @@ export function suppressBrightnessOsd(ms = OSD_BAR_SUPPRESS_MS) {
   brightnessSuppressUntil = suppressForBar(ms)
 }
 
-const IS_HYPRLAND_SESSION = Boolean(GLib.getenv("HYPRLAND_INSTANCE_SIGNATURE"))
-
-async function isFullscreenActive() {
-  if (!IS_HYPRLAND_SESSION) {
-    return true
-  }
-
-  try {
-    const raw = await execAsync(["hyprctl", "-j", "activewindow"])
-    const trimmed = raw.trim()
-    if (!trimmed) return false
-
-    const parsed = JSON.parse(trimmed) as { fullscreen?: unknown; fullscreenClient?: unknown } | null
-    if (!parsed || typeof parsed !== "object") return false
-
-    const fullscreen = parsed.fullscreen
-    const fullscreenClient = parsed.fullscreenClient
-
-    const matches = (value: unknown) => value === true || value === 1 || value === 2
-    return matches(fullscreen) || matches(fullscreenClient)
-  } catch (error) {
-    console.error(error)
-    return true
-  }
-}
-
 async function shouldNotifyForExternalChange(kind: OsdKind) {
   if (GLib.get_monotonic_time() < startupSuppressUntil) return false
   if (kind === "volume" && isSuppressed(volumeSuppressUntil)) return false
   if (kind === "brightness" && isSuppressed(brightnessSuppressUntil)) return false
-  return await isFullscreenActive()
+  return true
 }
 
 function isOsdRevealed() {
@@ -397,7 +371,7 @@ export function OsdWindow() {
         <revealer
           class="osd-revealer"
           revealChild={false}
-          transitionType={Gtk.RevealerTransitionType.SLIDE_UP}
+          transitionType={Gtk.RevealerTransitionType.CROSSFADE}
           transitionDuration={OSD_REVEAL_DURATION_MS}
           $={(self) => {
             osdRevealer = self

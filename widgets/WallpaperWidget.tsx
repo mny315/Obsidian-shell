@@ -15,6 +15,7 @@ import { LEFT_TOP_POPUP_ANCHOR, attachPopupFocusDismiss, clipRoundedWidget, plac
 import { closeOtherPopups, registerPopupController } from "./PopupRegistry"
 import { attachShellTooltip } from "./ShellTooltip"
 import { audioThreadVisualizerEnabled, toggleAudioThreadVisualizer } from "./AudioThreadVisualizer"
+import { workspaceIndicatorVisible, toggleWorkspaceIndicatorVisible } from "./WorkspaceIndicatorState"
 
 type WallpaperItem = {
   name: string
@@ -64,6 +65,10 @@ const WALLPAPER_POPOVER_OFFSET_Y = 15
 const WALLPAPER_INITIAL_VISIBLE_ITEMS = GRID_COLUMNS * GRID_VISIBLE_ROWS
 const WALLPAPER_LOAD_MORE_ITEMS = GRID_COLUMNS * 2
 const WALLPAPER_LOAD_MORE_THRESHOLD = CARD_HEIGHT + GRID_GAP
+const WALLPAPER_SMOOTH_SCROLL_STEP = 72
+const WALLPAPER_SMOOTH_SCROLL_TIME_CONSTANT_MS = 58
+const WALLPAPER_SMOOTH_SCROLL_MAX_FRAME_MS = 24
+const WALLPAPER_SMOOTH_SCROLL_SNAP_DISTANCE = 0.35
 const WALLPAPER_TEXTURE_QUEUE_INTERVAL_MS = 12
 const WALLPAPER_THUMBNAIL_VERSION = "cover-fill-v3"
 const WALLPAPER_CACHE_DIR = GLib.build_filenamev([GLib.get_user_cache_dir(), "obsidian-shell", "wallpaper-thumbs"])
@@ -967,11 +972,84 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
 
   let wallpaperGridRef: Gtk.Box | null = null
   let wallpaperGridRenderSourceId = 0
+  let wallpaperGridRenderedCount = 0
+  let wallpaperScrollWindow: Gtk.ScrolledWindow | null = null
+  let wallpaperScrollAnimationTickId = 0
+  let wallpaperScrollAnimationWidget: Gtk.Widget | null = null
+  let wallpaperScrollLastFrameTimeUs = 0
+  let wallpaperScrollTarget = 0
 
   const clearWallpaperGridRender = () => {
     if (wallpaperGridRenderSourceId === 0) return
     GLib.source_remove(wallpaperGridRenderSourceId)
     wallpaperGridRenderSourceId = 0
+  }
+
+  const stopWallpaperSmoothScroll = () => {
+    if (wallpaperScrollAnimationTickId === 0) return
+
+    const tickId = wallpaperScrollAnimationTickId
+    const tickWidget = wallpaperScrollAnimationWidget
+    wallpaperScrollAnimationTickId = 0
+    wallpaperScrollAnimationWidget = null
+    wallpaperScrollLastFrameTimeUs = 0
+
+    try {
+      tickWidget?.remove_tick_callback(tickId)
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
+  const finishWallpaperSmoothScroll = (adjustment: Gtk.Adjustment) => {
+    adjustment.set_value(wallpaperScrollTarget)
+    wallpaperScrollAnimationTickId = 0
+    wallpaperScrollAnimationWidget = null
+    wallpaperScrollLastFrameTimeUs = 0
+  }
+
+  const animateWallpaperScroll = (dy: number) => {
+    const scroller = wallpaperScrollWindow
+    const adjustment = scroller?.get_vadjustment()
+    if (!scroller || !adjustment) return false
+
+    const lower = adjustment.get_lower()
+    const upper = Math.max(lower, adjustment.get_upper() - adjustment.get_page_size())
+    if (upper <= lower) return false
+
+    const current = adjustment.get_value()
+    const delta = dy * WALLPAPER_SMOOTH_SCROLL_STEP
+    const base = wallpaperScrollAnimationTickId !== 0 ? wallpaperScrollTarget : current
+    wallpaperScrollTarget = Math.max(lower, Math.min(upper, base + delta))
+
+    if (wallpaperScrollAnimationTickId !== 0) return true
+
+    wallpaperScrollLastFrameTimeUs = scroller.get_frame_clock()?.get_frame_time() ?? 0
+    wallpaperScrollAnimationWidget = scroller
+    wallpaperScrollAnimationTickId = scroller.add_tick_callback((_widget, frameClock) => {
+      const nextCurrent = adjustment.get_value()
+      const nextLower = adjustment.get_lower()
+      const nextUpper = Math.max(nextLower, adjustment.get_upper() - adjustment.get_page_size())
+      wallpaperScrollTarget = Math.max(nextLower, Math.min(nextUpper, wallpaperScrollTarget))
+
+      const distance = wallpaperScrollTarget - nextCurrent
+      if (Math.abs(distance) <= WALLPAPER_SMOOTH_SCROLL_SNAP_DISTANCE) {
+        finishWallpaperSmoothScroll(adjustment)
+        return false
+      }
+
+      const frameTimeUs = frameClock.get_frame_time()
+      const elapsedMs = wallpaperScrollLastFrameTimeUs > 0
+        ? Math.max(0, Math.min(WALLPAPER_SMOOTH_SCROLL_MAX_FRAME_MS, (frameTimeUs - wallpaperScrollLastFrameTimeUs) / 1000))
+        : 1000 / 300
+      wallpaperScrollLastFrameTimeUs = frameTimeUs
+
+      const progress = 1 - Math.exp(-elapsedMs / WALLPAPER_SMOOTH_SCROLL_TIME_CONSTANT_MS)
+      adjustment.set_value(nextCurrent + distance * progress)
+      return true
+    })
+
+    return true
   }
 
   const clearWallpaperGridChildren = (grid: Gtk.Box) => {
@@ -982,15 +1060,15 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
       grid.remove(child)
       child = next
     }
+
+    wallpaperGridRenderedCount = 0
   }
 
-  const renderWallpaperGrid = () => {
+  const appendWallpaperGridRows = (startIndex: number, endIndex: number) => {
     const grid = wallpaperGridRef
-    if (!grid) return
+    if (!grid || endIndex <= startIndex) return false
 
-    clearWallpaperGridChildren(grid)
-
-    const rows = chunkWallpapers(wallpapers().slice(0, visibleCount()), GRID_COLUMNS)
+    const rows = chunkWallpapers(wallpapers().slice(startIndex, endIndex), GRID_COLUMNS)
 
     for (const row of rows) {
       const rowBox = new Gtk.Box({
@@ -1014,6 +1092,17 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
 
       grid.append(rowBox)
     }
+
+    wallpaperGridRenderedCount = endIndex
+    return true
+  }
+
+  const renderWallpaperGrid = () => {
+    const grid = wallpaperGridRef
+    if (!grid) return
+
+    clearWallpaperGridChildren(grid)
+    appendWallpaperGridRows(0, visibleCount())
   }
 
   const scheduleWallpaperGridRender = () => {
@@ -1038,8 +1127,17 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
 
   const loadMoreWallpapers = () => {
     const total = wallpapers().length
-    if (visibleCount() >= total) return
-    setVisibleCount((current) => Math.min(total, current + WALLPAPER_LOAD_MORE_ITEMS))
+    const currentCount = visibleCount()
+    if (currentCount >= total) return
+
+    const nextCount = Math.min(total, currentCount + WALLPAPER_LOAD_MORE_ITEMS)
+    setVisibleCount(nextCount)
+
+    if (wallpaperGridRenderSourceId === 0 && wallpaperGridRenderedCount === currentCount) {
+      appendWallpaperGridRows(currentCount, nextCount)
+      return
+    }
+
     scheduleWallpaperGridRender()
   }
 
@@ -1425,6 +1523,19 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
           </button>
 
           <button
+            class={workspaceIndicatorVisible((value) => value
+              ? "flat wallpaper-refresh-button wallpaper-refresh-button-active"
+              : "flat wallpaper-refresh-button")}
+            onClicked={() => toggleWorkspaceIndicatorVisible()}
+            $={(self) => {
+              prepareHeaderActionButton(self)
+              attachShellTooltip(self, () => workspaceIndicatorVisible() ? "Hide workspace indicator" : "Show workspace indicator")
+            }}
+          >
+            <label class="wallpaper-refresh-icon" label={"󰕰"} />
+          </button>
+
+          <button
             class={playerPinned((value) => value
               ? "flat wallpaper-refresh-button wallpaper-refresh-button-active"
               : "flat wallpaper-refresh-button")}
@@ -1450,12 +1561,15 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
             maxContentHeight={SCROLLER_HEIGHT}
             propagateNaturalHeight={true}
             propagateNaturalWidth={false}
+            kineticScrolling={false}
             vexpand={false}
             hexpand={false}
             valign={Gtk.Align.START}
             halign={Gtk.Align.START}
             $={(self) => {
+              wallpaperScrollWindow = self
               self.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+              self.set_kinetic_scrolling(false)
 
               const adjustment = self.get_vadjustment()
               const maybeLoadMore = () => {
@@ -1472,11 +1586,20 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
               })
 
               self.connect("destroy", () => {
+                if (wallpaperScrollWindow === self) wallpaperScrollWindow = null
+                stopWallpaperSmoothScroll()
                 adjustment.disconnect(valueChangedId)
                 adjustment.disconnect(changedId)
               })
             }}
           >
+            <Gtk.EventControllerScroll
+              flags={Gtk.EventControllerScrollFlags.VERTICAL}
+              onScroll={(_, _dx, dy) => {
+                if (Math.abs(dy) < 0.0001) return false
+                return animateWallpaperScroll(dy)
+              }}
+            />
             <box
               class="wallpaper-grid-rows"
               orientation={Gtk.Orientation.VERTICAL}

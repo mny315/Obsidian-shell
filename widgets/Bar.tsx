@@ -63,7 +63,7 @@ export function Bar({ monitor }: { monitor: number }) {
       <revealer
         class="bar-revealer"
         revealChild={false}
-        transitionType={Gtk.RevealerTransitionType.SLIDE_DOWN}
+        transitionType={Gtk.RevealerTransitionType.CROSSFADE}
         transitionDuration={260}
         $={(self) => {
           revealer = self
