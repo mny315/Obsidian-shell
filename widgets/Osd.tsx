@@ -42,7 +42,7 @@ let pollSourceId = 0
 let hideSourceId = 0
 let valueAnimationSourceId = 0
 let osdWindow: Gtk.Widget | null = null
-let osdFrame: Gtk.Widget | null = null
+let osdRevealer: Gtk.Revealer | null = null
 let closingOsd = false
 let closeAnimationSourceId = 0
 let volumeBusy = false
@@ -166,15 +166,11 @@ async function shouldNotifyForExternalChange(kind: OsdKind) {
 }
 
 function setOsdFramePresented(presented: boolean) {
-  if (!osdFrame) return
+  if (!osdRevealer) return
 
-  if (presented) {
-    osdFrame.remove_css_class("osd-hidden")
-    osdFrame.add_css_class("osd-visible")
-  } else {
-    osdFrame.remove_css_class("osd-visible")
-    osdFrame.add_css_class("osd-hidden")
-  }
+  try {
+    osdRevealer.revealChild = presented
+  } catch {}
 }
 
 function hideOsdWindowNow() {
@@ -348,11 +344,13 @@ export function OsdWindow() {
       class="osd-window"
       exclusivity={Astal.Exclusivity.IGNORE}
       keymode={Astal.Keymode.NONE}
-      layer={Astal.Layer.OVERLAY}
+      layer={Astal.Layer.TOP}
       anchor={BOTTOM}
       $={(self) => {
         try {
           self.set_default_size(-1, -1)
+          self.set_can_target(false)
+          self.set_focusable(false)
         } catch {}
         osdWindow = self
         setLayerWindowMargins(self, { bottom: OSD_BOTTOM_MARGIN })
@@ -370,7 +368,7 @@ export function OsdWindow() {
           volumeSuppressUntil = 0
           brightnessSuppressUntil = 0
           osdWindow = null
-          osdFrame = null
+          osdRevealer = null
           closingOsd = false
         })
       }}
@@ -379,31 +377,52 @@ export function OsdWindow() {
         class="osd-placement"
         halign={Gtk.Align.CENTER}
         valign={Gtk.Align.END}
+        $={(self) => {
+          self.set_can_target(false)
+          self.set_focusable(false)
+        }}
       >
-        <box class="osd-frame osd-hidden" widthRequest={300} $={(self) => {
-          osdFrame = self
-          clipRoundedWidget(self)
-        }}>
-          <box class="osd-body" orientation={Gtk.Orientation.VERTICAL} spacing={10}>
-            <box class="osd-header" spacing={10} valign={Gtk.Align.CENTER}>
-              <label class="osd-icon" label={icon} />
-              <label class="osd-title" xalign={0} hexpand label={title} />
-              <label class="osd-percent" label={percent} />
-            </box>
+        <revealer
+          class="osd-revealer"
+          revealChild={false}
+          transitionType={Gtk.RevealerTransitionType.SLIDE_UP}
+          transitionDuration={OSD_REVEAL_DURATION_MS}
+          $={(self) => {
+            osdRevealer = self
+            self.set_can_target(false)
+            self.set_focusable(false)
+          }}
+        >
+          <box
+            class="osd-frame"
+            widthRequest={300}
+            $={(self) => {
+              self.set_can_target(false)
+              self.set_focusable(false)
+              clipRoundedWidget(self)
+            }}
+          >
+            <box class="osd-body" orientation={Gtk.Orientation.VERTICAL} spacing={10}>
+              <box class="osd-header" spacing={10} valign={Gtk.Align.CENTER}>
+                <label class="osd-icon" label={icon} />
+                <label class="osd-title" xalign={0} hexpand label={title} />
+                <label class="osd-percent" label={percent} />
+              </box>
 
-            <slider
-              class="slider-control osd-slider"
-              sensitive={false}
-              canFocus={false}
-              hexpand
-              drawValue={false}
-              min={0}
-              max={1}
-              step={0.01}
-              value={value}
-            />
+              <slider
+                class="slider-control osd-slider"
+                sensitive={false}
+                canFocus={false}
+                hexpand
+                drawValue={false}
+                min={0}
+                max={1}
+                step={0.01}
+                value={value}
+              />
+            </box>
           </box>
-        </box>
+        </revealer>
       </box>
     </window>
   )

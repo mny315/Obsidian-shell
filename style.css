@@ -4,6 +4,7 @@
 @define-color card_tint mix(@theme_bg_color,@theme_selected_bg_color,0.08);
 @define-color glass_bg alpha(@shell_tint,0.68);
 @define-color popup_surface_bg alpha(@panel_tint,0.54);
+@define-color osd_surface_bg alpha(@panel_tint,0.39);
 @define-color popup_surface_border alpha(@theme_selected_bg_color,0.22);
 @define-color glass_border alpha(@theme_selected_bg_color,0.34);
 @define-color section_bg alpha(@panel_tint,0.50);
@@ -1974,7 +1975,8 @@ button.wallpaper-card:disabled {
 }
 
 window.osd-window,
-.osd-placement {
+.osd-placement,
+.osd-revealer {
   background: transparent;
   background-image: none;
   border: none;
@@ -1996,25 +1998,13 @@ window.osd-window,
 
 box.osd-frame {
   min-width: 300px;
-  background: @popup_surface_bg;
+  background: @osd_surface_bg;
+  background-color: @osd_surface_bg;
   color: @fg;
   border: 1px solid @popup_surface_border;
   border-radius: 18px;
   background-clip: padding-box;
   box-shadow: none;
-  opacity: 1;
-  transform: translate(0px, 0px);
-  transition: transform 220ms ease,opacity 220ms ease;
-}
-
-box.osd-frame.osd-hidden {
-  opacity: 0;
-  transform: translate(0px, 28px);
-}
-
-box.osd-frame.osd-visible {
-  opacity: 1;
-  transform: translate(0px, 0px);
 }
 
 .osd-body {
