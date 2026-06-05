@@ -1974,8 +1974,7 @@ button.wallpaper-card:disabled {
 }
 
 window.osd-window,
-.osd-placement,
-.osd-revealer {
+.osd-placement {
   background: transparent;
   background-image: none;
   border: none;
@@ -2003,6 +2002,19 @@ box.osd-frame {
   border-radius: 18px;
   background-clip: padding-box;
   box-shadow: none;
+  opacity: 1;
+  transform: translate(0px, 0px);
+  transition: transform 220ms ease,opacity 220ms ease;
+}
+
+box.osd-frame.osd-hidden {
+  opacity: 0;
+  transform: translate(0px, 28px);
+}
+
+box.osd-frame.osd-visible {
+  opacity: 1;
+  transform: translate(0px, 0px);
 }
 
 .osd-body {

@@ -40,10 +40,11 @@ const [muted, setMuted] = createState(false)
 let initialized = false
 let pollSourceId = 0
 let hideSourceId = 0
-let closeSourceId = 0
 let valueAnimationSourceId = 0
-let osdRevealer: Gtk.Revealer | null = null
+let osdWindow: Gtk.Widget | null = null
+let osdFrame: Gtk.Widget | null = null
 let closingOsd = false
+let closeAnimationSourceId = 0
 let volumeBusy = false
 let brightnessBusy = false
 let lastVolumeKey = ""
@@ -64,10 +65,6 @@ function clearSource(sourceId: number) {
 
 function clearHideTimeout() {
   hideSourceId = clearSource(hideSourceId)
-}
-
-function clearCloseTimeout() {
-  closeSourceId = clearSource(closeSourceId)
 }
 
 function clearValueAnimation() {
@@ -168,59 +165,73 @@ async function shouldNotifyForExternalChange(kind: OsdKind) {
   return true
 }
 
-function isOsdRevealed() {
-  return Boolean(osdRevealer?.get_reveal_child?.())
+function setOsdFramePresented(presented: boolean) {
+  if (!osdFrame) return
+
+  if (presented) {
+    osdFrame.remove_css_class("osd-hidden")
+    osdFrame.add_css_class("osd-visible")
+  } else {
+    osdFrame.remove_css_class("osd-visible")
+    osdFrame.add_css_class("osd-hidden")
+  }
+}
+
+function hideOsdWindowNow() {
+  closeAnimationSourceId = clearSource(closeAnimationSourceId)
+  setOsdFramePresented(false)
+
+  try {
+    osdWindow?.set_visible(false)
+  } catch {}
+
+  setWindowVisible(false)
+}
+
+function showOsdWindowNow() {
+  setWindowVisible(true)
+
+  try {
+    osdWindow?.set_visible(true)
+  } catch {}
 }
 
 function finishCloseOsd() {
-  clearCloseTimeout()
   closingOsd = false
-
-  if (osdRevealer) osdRevealer.revealChild = false
-  setWindowVisible(false)
+  hideOsdWindowNow()
 }
 
 function closeOsd() {
   clearHideTimeout()
+  closeAnimationSourceId = clearSource(closeAnimationSourceId)
 
   if (!windowVisible()) {
-    clearCloseTimeout()
     closingOsd = false
-    return
-  }
-
-  if (closingOsd) {
-    finishCloseOsd()
+    setOsdFramePresented(false)
     return
   }
 
   closingOsd = true
+  setOsdFramePresented(false)
 
-  if (isOsdRevealed()) {
-    osdRevealer!.revealChild = false
-    clearCloseTimeout()
-    closeSourceId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, OSD_REVEAL_DURATION_MS, () => {
-      closeSourceId = 0
-      finishCloseOsd()
-      return GLib.SOURCE_REMOVE
-    })
-    return
-  }
-
-  finishCloseOsd()
+  closeAnimationSourceId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, OSD_REVEAL_DURATION_MS, () => {
+    closeAnimationSourceId = 0
+    finishCloseOsd()
+    return GLib.SOURCE_REMOVE
+  })
 }
 
-function revealOsdWhenMapped() {
+function slideOsdInWhenMapped() {
   GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
     if (!windowVisible() || closingOsd) return GLib.SOURCE_REMOVE
-    if (osdRevealer) osdRevealer.revealChild = true
+    setOsdFramePresented(true)
     return GLib.SOURCE_REMOVE
   })
 }
 
 function presentOsd(nextKind: OsdKind, nextValue: number, nextIcon: string, isMuted = false) {
   clearHideTimeout()
-  clearCloseTimeout()
+  closeAnimationSourceId = clearSource(closeAnimationSourceId)
   closingOsd = false
 
   setKind(nextKind)
@@ -229,12 +240,11 @@ function presentOsd(nextKind: OsdKind, nextValue: number, nextIcon: string, isMu
   setMuted(isMuted)
 
   if (!windowVisible()) {
-    setWindowVisible(true)
-    revealOsdWhenMapped()
-  } else if (osdRevealer) {
-    osdRevealer.revealChild = true
+    setOsdFramePresented(false)
+    showOsdWindowNow()
+    slideOsdInWhenMapped()
   } else {
-    revealOsdWhenMapped()
+    setOsdFramePresented(true)
   }
 
   hideSourceId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, OSD_AUTO_HIDE_DELAY_MS, () => {
@@ -344,12 +354,13 @@ export function OsdWindow() {
         try {
           self.set_default_size(-1, -1)
         } catch {}
+        osdWindow = self
         setLayerWindowMargins(self, { bottom: OSD_BOTTOM_MARGIN })
         self.connect("destroy", () => {
           pollSourceId = clearSource(pollSourceId)
           hideSourceId = clearSource(hideSourceId)
-          closeSourceId = clearSource(closeSourceId)
           valueAnimationSourceId = clearSource(valueAnimationSourceId)
+          closeAnimationSourceId = clearSource(closeAnimationSourceId)
           initialized = false
           volumeBusy = false
           brightnessBusy = false
@@ -358,7 +369,8 @@ export function OsdWindow() {
           startupSuppressUntil = 0
           volumeSuppressUntil = 0
           brightnessSuppressUntil = 0
-          osdRevealer = null
+          osdWindow = null
+          osdFrame = null
           closingOsd = false
         })
       }}
@@ -368,37 +380,30 @@ export function OsdWindow() {
         halign={Gtk.Align.CENTER}
         valign={Gtk.Align.END}
       >
-        <revealer
-          class="osd-revealer"
-          revealChild={false}
-          transitionType={Gtk.RevealerTransitionType.CROSSFADE}
-          transitionDuration={OSD_REVEAL_DURATION_MS}
-          $={(self) => {
-            osdRevealer = self
-          }}
-        >
-          <box class="osd-frame" widthRequest={300} $={(self) => clipRoundedWidget(self)}>
-            <box class="osd-body" orientation={Gtk.Orientation.VERTICAL} spacing={10}>
-              <box class="osd-header" spacing={10} valign={Gtk.Align.CENTER}>
-                <label class="osd-icon" label={icon} />
-                <label class="osd-title" xalign={0} hexpand label={title} />
-                <label class="osd-percent" label={percent} />
-              </box>
-
-              <slider
-                class="slider-control osd-slider"
-                sensitive={false}
-                canFocus={false}
-                hexpand
-                drawValue={false}
-                min={0}
-                max={1}
-                step={0.01}
-                value={value}
-              />
+        <box class="osd-frame osd-hidden" widthRequest={300} $={(self) => {
+          osdFrame = self
+          clipRoundedWidget(self)
+        }}>
+          <box class="osd-body" orientation={Gtk.Orientation.VERTICAL} spacing={10}>
+            <box class="osd-header" spacing={10} valign={Gtk.Align.CENTER}>
+              <label class="osd-icon" label={icon} />
+              <label class="osd-title" xalign={0} hexpand label={title} />
+              <label class="osd-percent" label={percent} />
             </box>
+
+            <slider
+              class="slider-control osd-slider"
+              sensitive={false}
+              canFocus={false}
+              hexpand
+              drawValue={false}
+              min={0}
+              max={1}
+              step={0.01}
+              value={value}
+            />
           </box>
-        </revealer>
+        </box>
       </box>
     </window>
   )
