@@ -344,7 +344,7 @@ export function OsdWindow() {
       class="osd-window"
       exclusivity={Astal.Exclusivity.IGNORE}
       keymode={Astal.Keymode.NONE}
-      layer={Astal.Layer.TOP}
+      layer={Astal.Layer.OVERLAY}
       anchor={BOTTOM}
       $={(self) => {
         try {
