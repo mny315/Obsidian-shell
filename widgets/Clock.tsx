@@ -12,7 +12,7 @@ import { attachShellTooltip } from "./ShellTooltip"
 import { WallpaperWidgetButton } from "./WallpaperWidget"
 
 const CALENDAR_POPOVER_REVEAL_DURATION_MS = 165
-const CALENDAR_POPOVER_WIDTH = 296
+const CALENDAR_POPOVER_WIDTH = 252
 const CALENDAR_POPOVER_OFFSET_X = -20
 const CALENDAR_POPOVER_OFFSET_Y = 13
 const CALENDAR_PAGE_TRANSITION_MS = 185
@@ -163,7 +163,6 @@ function createCalendarMonthView() {
   const monthLabel = new Gtk.Label({
     label: CALENDAR_MONTH_NAMES[visibleMonth],
     xalign: 0.5,
-    hexpand: true,
   })
   addClasses(monthLabel, "calendar-heading-label calendar-month-label")
 
@@ -247,7 +246,7 @@ function createCalendarMonthView() {
   const nav = new Gtk.Box({
     orientation: Gtk.Orientation.HORIZONTAL,
     spacing: 2,
-    hexpand: true,
+    halign: Gtk.Align.CENTER,
     valign: Gtk.Align.CENTER,
   })
   addClasses(nav, "calendar-nav")

@@ -198,8 +198,34 @@ function readApps(): LaunchableApp[] {
   return apps
 }
 
+let launcherAppsCache: LaunchableApp[] | null = null
+const launcherAppsSubscribers = new Set<(apps: LaunchableApp[]) => void>()
+
+function getCachedApps() {
+  if (!launcherAppsCache) launcherAppsCache = readApps()
+  return launcherAppsCache
+}
+
+function refreshCachedApps() {
+  launcherAppsCache = readApps()
+
+  for (const subscriber of launcherAppsSubscribers) {
+    try {
+      subscriber(launcherAppsCache)
+    } catch {}
+  }
+
+  return launcherAppsCache
+}
+
+function subscribeCachedApps(subscriber: (apps: LaunchableApp[]) => void) {
+  launcherAppsSubscribers.add(subscriber)
+  return () => launcherAppsSubscribers.delete(subscriber)
+}
+
 const APP_LIST_REFRESH_DEBOUNCE_MS = 180
 const LAUNCHER_POPOVER_REVEAL_DURATION_MS = 170
+const LAUNCHER_LIST_SWITCH_ANIMATION_MS = 150
 const LAUNCHER_POPOVER_WIDTH = 392
 const LAUNCHER_LIST_HEIGHT = 300
 
@@ -262,7 +288,9 @@ export function AppLauncherControl({
   let popupRoot: Gtk.Box | null = null
   let searchEntry: Gtk.SearchEntry | null = null
   let launcherScrollWindow: Gtk.ScrolledWindow | null = null
+  let launcherListContent: Gtk.Box | null = null
   let launcherSmoothScrollCleanup: (() => void) | null = null
+  let launcherListAnimationTimeoutId = 0
   let closeTimeoutId = 0
   let closingPopup = false
   const [windowVisible, setWindowVisible] = createState(false)
@@ -272,10 +300,11 @@ export function AppLauncherControl({
 
   const [query, setQuery] = createState("")
   const [notice, setNotice] = createState<string | null>(null)
-  const [installedApps, setInstalledApps] = createState<LaunchableApp[]>(readApps())
+  const [installedApps, setInstalledApps] = createState<LaunchableApp[]>(getCachedApps())
   const [hiddenAppKeys, setHiddenAppKeysState] = createState<string[]>(readHiddenAppKeys())
   const [selectedCategory, setSelectedCategory] = createState<LauncherCategoryId>("all")
   const [renderedCategory, setRenderedCategory] = createState<LauncherCategoryId>("all")
+  const unsubscribeCachedApps = subscribeCachedApps(setInstalledApps)
   let appDirectoryMonitors: Gio.FileMonitor[] = []
   let appRefreshTimeoutId = 0
   const [showHiddenApps, setShowHiddenApps] = createState(false)
@@ -312,8 +341,7 @@ export function AppLauncherControl({
   }
 
   const refreshInstalledApps = () => {
-    const nextApps = readApps()
-    setInstalledApps(nextApps)
+    const nextApps = refreshCachedApps()
 
     const validKeys = new Set(nextApps.map((app) => app.key))
     setHiddenAppKeys((current) => current.filter((key) => validKeys.has(key)))
@@ -363,18 +391,74 @@ export function AppLauncherControl({
     }
   }
 
+  const clearLauncherListAnimationTimeout = () => {
+    if (launcherListAnimationTimeoutId !== 0) {
+      GLib.source_remove(launcherListAnimationTimeoutId)
+      launcherListAnimationTimeoutId = 0
+    }
+  }
+
+  const replayLauncherListSwitchAnimation = () => {
+    const target = launcherListContent
+    if (!target) return
+
+    clearLauncherListAnimationTimeout()
+    target.remove_css_class("launcher-list-switching")
+
+    GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+      const nextTarget = launcherListContent
+      if (!nextTarget) return GLib.SOURCE_REMOVE
+
+      nextTarget.remove_css_class("launcher-list-switching")
+      nextTarget.add_css_class("launcher-list-switching")
+      launcherListAnimationTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, LAUNCHER_LIST_SWITCH_ANIMATION_MS, () => {
+        launcherListAnimationTimeoutId = 0
+        launcherListContent?.remove_css_class("launcher-list-switching")
+        return GLib.SOURCE_REMOVE
+      })
+
+      return GLib.SOURCE_REMOVE
+    })
+  }
+
   const detachLauncherSmoothScroll = () => {
     launcherSmoothScrollCleanup?.()
     launcherSmoothScrollCleanup = null
   }
 
-  const scrollLauncherListToTop = () => {
+  const clampLauncherScrollValue = (value: number, adjustment: Gtk.Adjustment) => {
+    const lower = adjustment.get_lower()
+    const upper = Math.max(lower, adjustment.get_upper() - adjustment.get_page_size())
+    return Math.max(lower, Math.min(upper, value))
+  }
+
+  const restoreLauncherScrollValue = (value: number) => {
     detachLauncherSmoothScroll()
+
+    const adjustment = launcherScrollWindow?.get_vadjustment()
+    if (adjustment) adjustment.set_value(clampLauncherScrollValue(value, adjustment))
+
+    if (launcherScrollWindow) launcherSmoothScrollCleanup = attachSmoothVerticalScroll(launcherScrollWindow)
+  }
+
+  const preserveLauncherScrollDuring = (update: () => void) => {
+    const adjustment = launcherScrollWindow?.get_vadjustment()
+    const scrollValue = adjustment?.get_value() ?? 0
+
+    update()
+    restoreLauncherScrollValue(scrollValue)
+
+    GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+      restoreLauncherScrollValue(scrollValue)
+      return GLib.SOURCE_REMOVE
+    })
+  }
+
+  const scrollLauncherListToTop = () => {
     const adjustment = launcherScrollWindow?.get_vadjustment()
     if (!adjustment) return
 
-    adjustment.set_value(adjustment.get_lower())
-    launcherSmoothScrollCleanup = attachSmoothVerticalScroll(launcherScrollWindow)
+    restoreLauncherScrollValue(adjustment.get_lower())
   }
 
   const selectCategory = (category: LauncherCategoryId) => {
@@ -387,6 +471,11 @@ export function AppLauncherControl({
       scrollLauncherListToTop()
       return GLib.SOURCE_REMOVE
     })
+  }
+
+  const toggleHiddenAppsView = () => {
+    setShowHiddenApps((value) => !value)
+    replayLauncherListSwitchAnimation()
   }
 
   const setTriggerOpen = (open: boolean) => {
@@ -456,7 +545,6 @@ export function AppLauncherControl({
     closeOtherPopups(popupRegistryId)
     clearCloseTimeout()
     closingPopup = false
-    refreshInstalledApps()
     setWindowVisible(true)
     setTriggerOpen(true)
     setNotice(null)
@@ -537,11 +625,15 @@ export function AppLauncherControl({
   }
 
   const hideApp = (app: LaunchableApp) => {
-    setHiddenAppKeys((current) => [...current, app.key])
+    preserveLauncherScrollDuring(() => {
+      setHiddenAppKeys((current) => [...current, app.key])
+    })
   }
 
   const restoreApp = (app: LaunchableApp) => {
-    setHiddenAppKeys((current) => current.filter((key) => key !== app.key))
+    preserveLauncherScrollDuring(() => {
+      setHiddenAppKeys((current) => current.filter((key) => key !== app.key))
+    })
   }
 
   const openFirstMatch = () => {
@@ -571,7 +663,7 @@ export function AppLauncherControl({
           valign={Gtk.Align.CENTER}
           vexpand={false}
           visible={hiddenToggleVisible}
-          onClicked={() => setShowHiddenApps((value) => !value)}
+          onClicked={toggleHiddenAppsView}
         >
           <label class="hidden-toggle-label" valign={Gtk.Align.CENTER} label={hiddenToggleLabel} />
         </button>
@@ -597,7 +689,19 @@ export function AppLauncherControl({
           })
         }}
       >
-        <box class="launcher-list-content" orientation={Gtk.Orientation.VERTICAL} spacing={4} marginEnd={6}>
+        <box
+          class="launcher-list-content"
+          orientation={Gtk.Orientation.VERTICAL}
+          spacing={4}
+          marginEnd={6}
+          $={(self) => {
+            launcherListContent = self
+            self.connect("destroy", () => {
+              if (launcherListContent === self) launcherListContent = null
+              clearLauncherListAnimationTimeout()
+            })
+          }}
+        >
           <For each={filteredApps}>
             {(app) => (
               <box class="launcher-app-card" hexpand spacing={0} valign={Gtk.Align.CENTER}>
@@ -763,6 +867,7 @@ export function AppLauncherControl({
             clearAppRefreshTimeout()
             destroyApplicationDirectoryMonitors()
             detachLauncherSmoothScroll()
+            unsubscribeCachedApps()
             unregisterPopupController()
             launcherControllers.delete(controller)
             closingPopup = false

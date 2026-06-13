@@ -9,8 +9,8 @@ import { AGS_STATE_DIR, WALLPAPER_SETTINGS_PATH } from "../config"
 
 const { BOTTOM, LEFT, RIGHT } = Astal.WindowAnchor
 
-const CAVA_BARS = 128
-const VISUALIZER_FPS = 75
+const CAVA_BARS = 72
+const VISUALIZER_FPS = 48
 const VISUALIZER_FRAME_MS = Math.round(1000 / VISUALIZER_FPS)
 const VISUALIZER_MIN_HEIGHT = 120
 const VISUALIZER_SCREEN_FRACTION = 0.20
@@ -18,16 +18,27 @@ const LEVEL_ATTACK = 0.82
 const LEVEL_RELEASE = 0.46
 const SPATIAL_SMOOTHING_PASSES = 1
 const INPUT_NOISE_FLOOR = 0.018
+const SILENCE_HIDE_DELAY_MS = 5000
+
+type AudioThreadColor = { red: number; green: number; blue: number; alpha: number }
 
 let cava: any = null
 
 const [audioThreadVisualizerEnabled, setAudioThreadVisualizerEnabledState] = createState(readAudioThreadVisualizerEnabled())
 const drawingAreas = new Set<Gtk.DrawingArea>()
 let targetLevels = new Array<number>(CAVA_BARS).fill(0)
+let inputLevels = new Array<number>(CAVA_BARS).fill(0)
 let renderLevels = new Array<number>(CAVA_BARS).fill(0)
+let smoothedLevels = new Array<number>(CAVA_BARS).fill(0)
+let curveY = new Array<number>(CAVA_BARS).fill(0)
+let curveX = new Array<number>(CAVA_BARS).fill(0)
+let curveXWidth = 0
 let frameSourceId = 0
+let silenceReleaseSourceId = 0
+let silenceReleaseInProgress = false
 let cavaNotifyId = 0
 let themeWatchConfigured = false
+let cachedAudioThreadColor: AudioThreadColor | null = null
 
 function clearSource(sourceId: number) {
   if (sourceId === 0) return 0
@@ -95,15 +106,12 @@ function asNumberArray(raw: unknown) {
 }
 
 function normalizeCavaValues(values: number[]) {
-  const next = new Array<number>(CAVA_BARS).fill(0)
-  const limit = Math.min(CAVA_BARS, values.length)
-
-  for (let index = 0; index < limit; index += 1) {
+  for (let index = 0; index < CAVA_BARS; index += 1) {
     const value = Math.max(0, Math.min(1, values[index] ?? 0))
-    next[index] = value <= INPUT_NOISE_FLOOR ? 0 : (value - INPUT_NOISE_FLOOR) / (1 - INPUT_NOISE_FLOOR)
+    inputLevels[index] = value <= INPUT_NOISE_FLOOR ? 0 : (value - INPUT_NOISE_FLOOR) / (1 - INPUT_NOISE_FLOOR)
   }
 
-  return next
+  return inputLevels
 }
 
 function getPipewireInput() {
@@ -134,15 +142,70 @@ function getCava() {
   return cava
 }
 
+function hasVisibleLevel(levels: number[], threshold = 0.003) {
+  for (const level of levels) {
+    if ((level ?? 0) > threshold) return true
+  }
+
+  return false
+}
+
+function setTargetLevels(levels: number[]) {
+  for (let index = 0; index < CAVA_BARS; index += 1) {
+    targetLevels[index] = levels[index] ?? 0
+  }
+}
+
+function clearTargetLevels() {
+  for (let index = 0; index < CAVA_BARS; index += 1) {
+    targetLevels[index] = 0
+  }
+}
+
+function cancelSilenceReleaseTimer() {
+  silenceReleaseSourceId = clearSource(silenceReleaseSourceId)
+  silenceReleaseInProgress = false
+}
+
+function scheduleSilenceRelease() {
+  if (silenceReleaseSourceId !== 0) return
+
+  frameSourceId = clearSource(frameSourceId)
+
+  silenceReleaseSourceId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, SILENCE_HIDE_DELAY_MS, () => {
+    silenceReleaseSourceId = 0
+    silenceReleaseInProgress = true
+    clearTargetLevels()
+    startFrameClock()
+    return GLib.SOURCE_REMOVE
+  })
+}
+
 function readCavaValues() {
-  if (!cava) return
+  if (!cava) return false
 
   try {
     const raw = cava.values ?? cava.get_values?.()
-    targetLevels = normalizeCavaValues(asNumberArray(raw))
+    const nextLevels = normalizeCavaValues(asNumberArray(raw))
+
+    if (hasVisibleLevel(nextLevels)) {
+      cancelSilenceReleaseTimer()
+      setTargetLevels(nextLevels)
+      return true
+    }
+
+    if (silenceReleaseInProgress) {
+      setTargetLevels(nextLevels)
+    } else if (hasVisibleLevel(renderLevels) || hasVisibleLevel(targetLevels)) {
+      scheduleSilenceRelease()
+    } else {
+      setTargetLevels(nextLevels)
+    }
   } catch (error) {
     console.error(error)
   }
+
+  return false
 }
 
 function queueVisualizerDraw() {
@@ -153,14 +216,19 @@ function queueVisualizerDraw() {
   }
 }
 
+function invalidateAudioThreadColor() {
+  cachedAudioThreadColor = null
+  queueVisualizerDraw()
+}
+
 function ensureThemeRedrawWatch() {
   if (themeWatchConfigured) return
   themeWatchConfigured = true
 
   try {
     const settings = Gtk.Settings.get_default()
-    settings?.connect("notify::gtk-theme-name", queueVisualizerDraw)
-    settings?.connect("notify::gtk-application-prefer-dark-theme", queueVisualizerDraw)
+    settings?.connect("notify::gtk-theme-name", invalidateAudioThreadColor)
+    settings?.connect("notify::gtk-application-prefer-dark-theme", invalidateAudioThreadColor)
   } catch {}
 }
 
@@ -170,23 +238,27 @@ function clampColorChannel(value: unknown, fallback: number) {
   return Math.max(0, Math.min(1, numeric))
 }
 
-function readAudioThreadColor(area: Gtk.DrawingArea) {
+function readAudioThreadColor(area: Gtk.DrawingArea): AudioThreadColor {
+  if (cachedAudioThreadColor) return cachedAudioThreadColor
+
   try {
     const color = (area as any).get_style_context?.()?.get_color?.()
     if (color) {
-      return {
+      cachedAudioThreadColor = {
         red: clampColorChannel(color.red, 1),
         green: clampColorChannel(color.green, 1),
         blue: clampColorChannel(color.blue, 1),
         alpha: clampColorChannel(color.alpha, 1),
       }
+      return cachedAudioThreadColor
     }
   } catch {}
 
-  return { red: 1, green: 1, blue: 1, alpha: 1 }
+  cachedAudioThreadColor = { red: 1, green: 1, blue: 1, alpha: 1 }
+  return cachedAudioThreadColor
 }
 
-function setAudioThreadSource(cr: any, color: ReturnType<typeof readAudioThreadColor>, alpha: number) {
+function setAudioThreadSource(cr: any, color: AudioThreadColor, alpha: number) {
   cr.setSourceRGBA(color.red, color.green, color.blue, Math.max(0, Math.min(1, alpha * color.alpha)))
 }
 
@@ -212,8 +284,9 @@ function startFrameClock() {
   frameSourceId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, VISUALIZER_FRAME_MS, () => {
     const active = stepLevels()
 
-    if (!audioThreadVisualizerEnabled() && !active) {
+    if (!active) {
       frameSourceId = 0
+      silenceReleaseInProgress = false
       return GLib.SOURCE_REMOVE
     }
 
@@ -222,8 +295,10 @@ function startFrameClock() {
 }
 
 function resetLevels() {
-  targetLevels = new Array<number>(CAVA_BARS).fill(0)
-  renderLevels = new Array<number>(CAVA_BARS).fill(0)
+  cancelSilenceReleaseTimer()
+  targetLevels.fill(0)
+  inputLevels.fill(0)
+  renderLevels.fill(0)
   queueVisualizerDraw()
 }
 
@@ -234,14 +309,12 @@ function startCava() {
   try {
     if (cavaNotifyId === 0) {
       cavaNotifyId = cavaInstance.connect("notify::values", () => {
-        readCavaValues()
-        startFrameClock()
+        if (readCavaValues()) startFrameClock()
       })
     }
 
     cavaInstance.set_active?.(true)
-    readCavaValues()
-    startFrameClock()
+    if (readCavaValues()) startFrameClock()
   } catch (error) {
     console.error(error)
   }
@@ -294,82 +367,111 @@ function readMonitorGeometry(monitorIndex: number) {
   }
 }
 
-function smoothLevels(levels: number[]) {
-  let smoothed = levels.slice()
+function ensureReusableBuffers() {
+  if (smoothedLevels.length !== CAVA_BARS) smoothedLevels = new Array<number>(CAVA_BARS).fill(0)
+  if (curveY.length !== CAVA_BARS) curveY = new Array<number>(CAVA_BARS).fill(0)
+  if (curveX.length !== CAVA_BARS) {
+    curveX = new Array<number>(CAVA_BARS).fill(0)
+    curveXWidth = 0
+  }
+}
 
-  for (let pass = 0; pass < SPATIAL_SMOOTHING_PASSES; pass += 1) {
-    smoothed = smoothed.map((value, index) => {
-      const previous = smoothed[Math.max(0, index - 1)] ?? value
-      const next = smoothed[Math.min(smoothed.length - 1, index + 1)] ?? value
-      return previous * 0.12 + value * 0.76 + next * 0.12
-    })
+function updateCurveX(width: number, count: number) {
+  ensureReusableBuffers()
+  if (curveXWidth === width && curveX.length === count) return curveX
+
+  const xScale = count <= 1 ? 0 : width / (count - 1)
+  for (let index = 0; index < count; index += 1) {
+    curveX[index] = index * xScale
+  }
+  curveXWidth = width
+  return curveX
+}
+
+function updateSmoothedLevels() {
+  ensureReusableBuffers()
+
+  if (SPATIAL_SMOOTHING_PASSES <= 0) {
+    for (let index = 0; index < CAVA_BARS; index += 1) {
+      smoothedLevels[index] = renderLevels[index] ?? 0
+    }
+    return smoothedLevels
   }
 
-  return smoothed
+  for (let index = 0; index < CAVA_BARS; index += 1) {
+    const value = renderLevels[index] ?? 0
+    const previous = renderLevels[Math.max(0, index - 1)] ?? value
+    const next = renderLevels[Math.min(CAVA_BARS - 1, index + 1)] ?? value
+    smoothedLevels[index] = previous * 0.12 + value * 0.76 + next * 0.12
+  }
+
+  return smoothedLevels
+}
+
+function drawCurve(cr: any, width: number, yValues: number[], count: number) {
+  if (count <= 0) return
+
+  const xValues = updateCurveX(width, count)
+  cr.moveTo(0, yValues[0] ?? 0)
+
+  for (let index = 0; index < count - 1; index += 1) {
+    const p0Index = Math.max(0, index - 1)
+    const p1Index = index
+    const p2Index = index + 1
+    const p3Index = Math.min(count - 1, index + 2)
+
+    const p0x = xValues[p0Index] ?? 0
+    const p1x = xValues[p1Index] ?? 0
+    const p2x = xValues[p2Index] ?? 0
+    const p3x = xValues[p3Index] ?? p2x
+    const p0y = yValues[p0Index] ?? 0
+    const p1y = yValues[p1Index] ?? 0
+    const p2y = yValues[p2Index] ?? 0
+    const p3y = yValues[p3Index] ?? p2y
+
+    const cp1x = p1x + (p2x - p0x) / 6
+    const cp1y = p1y + (p2y - p0y) / 6
+    const cp2x = p2x - (p3x - p1x) / 6
+    const cp2y = p2y - (p3y - p1y) / 6
+    cr.curveTo(cp1x, cp1y, cp2x, cp2y, p2x, p2y)
+  }
 }
 
 function drawAudioThread(area: Gtk.DrawingArea, cr: any, width: number, height: number) {
   if (width <= 2 || height <= 2) return
 
   const color = readAudioThreadColor(area)
-  const levels = smoothLevels(renderLevels)
+  const levels = updateSmoothedLevels()
   const count = levels.length
   const bottom = height - 3
   const amplitude = Math.max(1, height * 0.86)
-  const points = levels.map((level, index) => {
-    const x = count <= 1 ? 0 : (index / (count - 1)) * width
-    const lifted = Math.pow(Math.max(0, Math.min(1, level)), 0.68) * amplitude
-    const y = bottom - lifted
-    return { x, y }
-  })
 
-  const drawCurve = () => {
-    const firstPoint = points[0]
-    if (!firstPoint) return
-
-    cr.moveTo(firstPoint.x, firstPoint.y)
-
-    for (let index = 0; index < points.length - 1; index += 1) {
-      const p0 = points[Math.max(0, index - 1)] ?? points[index]
-      const p1 = points[index]
-      const p2 = points[index + 1]
-      const p3 = points[Math.min(points.length - 1, index + 2)] ?? p2
-
-      if (!p0 || !p1 || !p2 || !p3) continue
-
-      const cp1x = p1.x + (p2.x - p0.x) / 6
-      const cp1y = p1.y + (p2.y - p0.y) / 6
-      const cp2x = p2.x - (p3.x - p1.x) / 6
-      const cp2y = p2.y - (p3.y - p1.y) / 6
-      cr.curveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y)
-    }
+  ensureReusableBuffers()
+  for (let index = 0; index < count; index += 1) {
+    const level = Math.max(0, Math.min(1, levels[index] ?? 0))
+    curveY[index] = bottom - Math.pow(level, 0.68) * amplitude
   }
 
   cr.save()
   cr.setLineCap(1)
   cr.setLineJoin(1)
 
-  drawCurve()
-  setAudioThreadSource(cr, color, 0.10)
-  cr.setLineWidth(14)
-  cr.stroke()
-
-  drawCurve()
-  setAudioThreadSource(cr, color, 0.22)
-  cr.setLineWidth(6)
-  cr.stroke()
-
-  drawCurve()
-  setAudioThreadSource(cr, color, 0.86)
-  cr.setLineWidth(2.2)
-  cr.stroke()
-
-  drawCurve()
+  drawCurve(cr, width, curveY, count)
   cr.lineTo(width, height)
   cr.lineTo(0, height)
   cr.closePath()
-  setAudioThreadSource(cr, color, 0.035)
+  setAudioThreadSource(cr, color, 0.028)
   cr.fill()
+
+  drawCurve(cr, width, curveY, count)
+  setAudioThreadSource(cr, color, 0.18)
+  cr.setLineWidth(7)
+  cr.stroke()
+
+  drawCurve(cr, width, curveY, count)
+  setAudioThreadSource(cr, color, 0.86)
+  cr.setLineWidth(2.1)
+  cr.stroke()
 
   cr.restore()
 }
@@ -442,6 +544,8 @@ export function AudioThreadVisualizerWindow({ monitor }: { monitor: number }) {
               if (drawingAreas.size === 0) {
                 stopCava(false)
                 frameSourceId = clearSource(frameSourceId)
+                silenceReleaseSourceId = clearSource(silenceReleaseSourceId)
+                silenceReleaseInProgress = false
 
                 if (cava && cavaNotifyId !== 0) {
                   try {

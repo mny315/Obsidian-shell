@@ -23,10 +23,12 @@ import { attachShellTooltip } from "./ShellTooltip"
 const AUDIO_POPOVER_WIDTH = 392
 const AUDIO_LIST_MAX_HEIGHT = 242
 const POPOVER_REVEAL_DURATION_MS = 165
+const AUDIO_LIST_SWITCH_ANIMATION_MS = 150
 const HIDDEN_SINKS_PATH = GLib.build_filenamev([AGS_STATE_DIR, "audio-hidden-sinks.json"])
 
 const AUDIO_HIDE_ICON = "󰛑"
 const AUDIO_RESTORE_ICON = "󰗡"
+const VOLUME_WRITE_DEBOUNCE_MS = 45
 
 type SinkInfo = {
   id: string
@@ -197,7 +199,7 @@ function parseWpctlProperties(output: string): WpctlProperties {
 
 async function getSinkProperties(id: string): Promise<WpctlProperties> {
   try {
-    return parseWpctlProperties(String(await execAsync(["bash", "-lc", `wpctl inspect -a ${id}`])))
+    return parseWpctlProperties(String(await execAsync(["wpctl", "inspect", "-a", id])))
   } catch {
     return {}
   }
@@ -302,7 +304,7 @@ function parseActiveStreams(status: string) {
 
 async function getWpctlStatus(useNodeNames = false) {
   try {
-    return String(await execAsync(["bash", "-lc", useNodeNames ? "wpctl status -n" : "wpctl status"])).trim()
+    return String(await execAsync(useNodeNames ? ["wpctl", "status", "-n"] : ["wpctl", "status"])).trim()
   } catch {
     return ""
   }
@@ -352,10 +354,16 @@ export function AudioControl({
   let popupWindowRef: Gtk.Window | null = null
   let popupRevealer: Gtk.Revealer | null = null
   let popupRoot: Gtk.Box | null = null
+  let audioListInner: Gtk.Box | null = null
   let trigger: Gtk.ToggleButton | null = null
   let refreshTimer = 0
+  let audioListAnimationTimeoutId = 0
   let closeTimeoutId = 0
   let closingPopup = false
+  let volumeWriteDebounceId = 0
+  let volumeWriteBusy = false
+  let pendingVolumeValue: number | null = null
+  let lastWrittenVolume = ""
 
   const popupRegistryId = `audio-devices-${monitor}`
 
@@ -369,6 +377,36 @@ export function AudioControl({
       GLib.source_remove(closeTimeoutId)
       closeTimeoutId = 0
     }
+  }
+
+  const clearAudioListAnimationTimeout = () => {
+    if (audioListAnimationTimeoutId !== 0) {
+      GLib.source_remove(audioListAnimationTimeoutId)
+      audioListAnimationTimeoutId = 0
+    }
+  }
+
+  const replayAudioListSwitchAnimation = () => {
+    const target = audioListInner
+    if (!target) return
+
+    clearAudioListAnimationTimeout()
+    target.remove_css_class("audio-list-switching")
+
+    GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+      const nextTarget = audioListInner
+      if (!nextTarget) return GLib.SOURCE_REMOVE
+
+      nextTarget.remove_css_class("audio-list-switching")
+      nextTarget.add_css_class("audio-list-switching")
+      audioListAnimationTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, AUDIO_LIST_SWITCH_ANIMATION_MS, () => {
+        audioListAnimationTimeoutId = 0
+        audioListInner?.remove_css_class("audio-list-switching")
+        return GLib.SOURCE_REMOVE
+      })
+
+      return GLib.SOURCE_REMOVE
+    })
   }
 
   const syncDevicesPopupPosition = () => {
@@ -444,7 +482,7 @@ export function AudioControl({
 
   const syncVolume = async () => {
     try {
-      const out = await execAsync(["bash", "-lc", "wpctl get-volume @DEFAULT_AUDIO_SINK@ || echo 'Volume: 0'"])
+      const out = await execAsync(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"])
       const parsed = parseVolume(out)
       setCurrent(parsed.volume)
       setMuted(parsed.muted)
@@ -477,13 +515,60 @@ export function AudioControl({
   })
   const muteTooltip = createComputed(() => muted() ? "Unmute sound" : "Mute sound")
 
+  const writeVolumeNow = async (nextValue: number) => {
+    const next = clamp(nextValue)
+    const serialized = next.toFixed(2)
+
+    if (volumeWriteBusy) {
+      pendingVolumeValue = next
+      return
+    }
+
+    if (serialized === lastWrittenVolume) return
+
+    volumeWriteBusy = true
+
+    try {
+      await execAsync(["wpctl", "set-volume", "-l", "1", "@DEFAULT_AUDIO_SINK@", serialized])
+      lastWrittenVolume = serialized
+    } catch (err) {
+      console.error(err)
+    } finally {
+      volumeWriteBusy = false
+
+      const pending = pendingVolumeValue
+      pendingVolumeValue = null
+
+      if (pending !== null && pending.toFixed(2) !== lastWrittenVolume) {
+        void writeVolumeNow(pending)
+      }
+    }
+  }
+
+  const scheduleVolumeWrite = (nextValue: number) => {
+    pendingVolumeValue = clamp(nextValue)
+
+    if (volumeWriteDebounceId !== 0) {
+      GLib.source_remove(volumeWriteDebounceId)
+      volumeWriteDebounceId = 0
+    }
+
+    volumeWriteDebounceId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, VOLUME_WRITE_DEBOUNCE_MS, () => {
+      volumeWriteDebounceId = 0
+      const pending = pendingVolumeValue
+      pendingVolumeValue = null
+      if (pending !== null) void writeVolumeNow(pending)
+      return GLib.SOURCE_REMOVE
+    })
+  }
+
   const setVolume = (nextValue: number) => {
     const next = clamp(nextValue)
     suppressVolumeOsd()
     setCurrent(next)
     setMuted(false)
     setIcon(pickIcon(next, false))
-    void execAsync(["bash", "-lc", `wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ ${next.toFixed(2)}`]).catch(console.error)
+    scheduleVolumeWrite(next)
   }
 
   const adjustVolume = (delta: number) => {
@@ -492,14 +577,14 @@ export function AudioControl({
       suppressVolumeOsd()
       setMuted(false)
       setIcon(pickIcon(next, false))
-      void execAsync(["bash", "-lc", `wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ ${next.toFixed(2)}`]).catch(console.error)
+      scheduleVolumeWrite(next)
       return next
     })
   }
 
   const toggleMute = () => {
     suppressVolumeOsd()
-    void execAsync(["bash", "-lc", "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"])
+    void execAsync(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"])
       .then(() => syncVolume())
       .catch(console.error)
   }
@@ -508,8 +593,8 @@ export function AudioControl({
     setStatusText(`Switching to ${sink.name}`)
     const status = await getWpctlStatus()
     const streams = parseActiveStreams(status)
-    const moveStreams = streams.map((id) => `wpctl move ${id} ${sink.id}`).join("; ")
-    await execAsync(["bash", "-lc", `wpctl set-default ${sink.id}${moveStreams ? `; ${moveStreams}` : ""}`]).catch(console.error)
+    await execAsync(["wpctl", "set-default", sink.id]).catch(console.error)
+    await Promise.all(streams.map((id) => execAsync(["wpctl", "move", id, sink.id]).catch(console.error)))
     await refresh()
   }
 
@@ -527,6 +612,11 @@ export function AudioControl({
     setHiddenSinkKeys(next)
     await writeHiddenSinkKeys(next).catch(console.error)
     await syncSinks()
+  }
+
+  const toggleHiddenSinksView = () => {
+    setShowHidden((value) => !value)
+    replayAudioListSwitchAnimation()
   }
 
   const openDevicesPopup = () => {
@@ -590,7 +680,7 @@ export function AudioControl({
           valign={Gtk.Align.CENTER}
           vexpand={false}
           visible={hiddenToggleVisible}
-          onClicked={() => setShowHidden((value) => !value)}
+          onClicked={toggleHiddenSinksView}
         >
           <label class="hidden-toggle-label" valign={Gtk.Align.CENTER} label={hiddenToggleLabel} />
         </button>
@@ -608,7 +698,18 @@ export function AudioControl({
             minContentHeight={96}
             maxContentHeight={AUDIO_LIST_MAX_HEIGHT}
           >
-            <box class="network-list-inner audio-list-inner" orientation={Gtk.Orientation.VERTICAL} spacing={0}>
+            <box
+              class="network-list-inner audio-list-inner"
+              orientation={Gtk.Orientation.VERTICAL}
+              spacing={0}
+              $={(self) => {
+                audioListInner = self
+                self.connect("destroy", () => {
+                  if (audioListInner === self) audioListInner = null
+                  clearAudioListAnimationTimeout()
+                })
+              }}
+            >
               <For each={visibleSinks}>{(sink) => (
                 <box class={sink.current ? "network-row-shell audio-sink-row audio-sink-current" : "network-row-shell audio-sink-row"} orientation={Gtk.Orientation.HORIZONTAL} spacing={4} hexpand valign={Gtk.Align.CENTER}>
                   <button class="flat audio-sink-main" hexpand halign={Gtk.Align.FILL} onClicked={() => chooseSink(sink)}>
@@ -720,15 +821,18 @@ export function AudioControl({
       halign={Gtk.Align.START}
       valign={Gtk.Align.CENTER}
       $={(self) => {
-        void refresh()
+        void syncVolume()
         refreshTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
-          void refresh()
+          if (windowVisible()) void refresh()
+          else void syncVolume()
           return GLib.SOURCE_CONTINUE
         })
         self.connect("destroy", () => {
           unregisterPopupController()
           if (refreshTimer) GLib.source_remove(refreshTimer)
+          if (volumeWriteDebounceId) GLib.source_remove(volumeWriteDebounceId)
           if (flashTimeoutId) GLib.source_remove(flashTimeoutId)
+          pendingVolumeValue = null
           clearCloseTimeout()
           closingPopup = false
           setWindowVisible(false)

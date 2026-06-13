@@ -14,7 +14,7 @@ const STATE_HOME = (() => {
 export const AGS_STATE_DIR = GLib.build_filenamev([STATE_HOME, "ags"])
 export const WALLPAPER_SETTINGS_PATH = GLib.build_filenamev([AGS_STATE_DIR, "wallpaper-widget.json"])
 
-export const OSD_POLL_INTERVAL_MS = 200
+export const OSD_POLL_INTERVAL_MS = 500
 export const OSD_AUTO_HIDE_DELAY_MS = 1200
 export const OSD_REVEAL_DURATION_MS = 220
 export const OSD_VALUE_ANIMATION_MS = 180

@@ -18,12 +18,14 @@ function toNumber(value: unknown, fallback = 0) {
 }
 
 const TRAY_MENU_TEXT_OVERSCAN_X = 2
-const TRAY_MENU_TEXT_PADDING_TOP = 3
-const TRAY_MENU_TEXT_PADDING_BOTTOM = 4
+const TRAY_MENU_TEXT_PADDING_Y = 2
+const TRAY_MENU_REVEAL_CLASS = "tray-menu-revealing"
+const TRAY_MENU_REVEAL_MS = 170
 
 const trayMenuPatchedLabels = new WeakSet<Gtk.Widget>()
 const trayMenuLabelAreas = new WeakMap<Gtk.Widget, Gtk.DrawingArea>()
 const trayMenuPatchSourceIds = new WeakMap<Gtk.PopoverMenu, number>()
+const trayMenuRevealSourceIds = new WeakMap<Gtk.PopoverMenu, number>()
 let openTrayMenu: Gtk.PopoverMenu | null = null
 
 function clearSource(id: number) {
@@ -163,7 +165,7 @@ function measureTrayMenuText(area: Gtk.DrawingArea, sourceLabel: Gtk.Widget, tex
 
   return {
     width: Math.max(1, Math.max(extents.logicalWidth, extents.inkWidth + leftOverscan) + TRAY_MENU_TEXT_OVERSCAN_X * 2),
-    height: Math.max(1, Math.max(extents.logicalHeight, extents.inkHeight + topOverscan) + TRAY_MENU_TEXT_PADDING_TOP + TRAY_MENU_TEXT_PADDING_BOTTOM),
+    height: Math.max(1, Math.max(extents.logicalHeight, extents.inkHeight + topOverscan) + TRAY_MENU_TEXT_PADDING_Y * 2),
   }
 }
 
@@ -192,18 +194,12 @@ function drawTrayMenuText(area: Gtk.DrawingArea, cr: any, width: number, height:
   const layoutHeight = Math.max(extents.logicalHeight, extents.inkHeight + Math.max(0, -extents.inkY))
 
   let sourceXalign = 0
-  let sourceYalign = 0.5
-
   try {
     sourceXalign = toNumber((sourceLabel as any).get_xalign?.(), 0)
   } catch {}
 
-  try {
-    sourceYalign = toNumber((sourceLabel as any).get_yalign?.(), 0.5)
-  } catch {}
-
   const x = Math.max(0, Math.round((width - layoutWidth) * sourceXalign) + TRAY_MENU_TEXT_OVERSCAN_X - Math.min(0, extents.inkX))
-  const y = Math.max(0, Math.round((height - layoutHeight) * sourceYalign) + TRAY_MENU_TEXT_PADDING_TOP - Math.min(0, extents.inkY))
+  const y = Math.max(0, Math.round((height - layoutHeight) * 0.5) - Math.min(0, extents.inkY))
 
   try {
     cr.save()
@@ -222,7 +218,7 @@ function copyTrayMenuLabelSizing(sourceLabel: Gtk.Widget, area: Gtk.DrawingArea)
   } catch {}
 
   try {
-    area.set_valign(sourceLabel.get_valign?.() ?? Gtk.Align.CENTER)
+    area.set_valign(Gtk.Align.CENTER)
   } catch {}
 
   try {
@@ -230,7 +226,7 @@ function copyTrayMenuLabelSizing(sourceLabel: Gtk.Widget, area: Gtk.DrawingArea)
   } catch {}
 
   try {
-    area.set_vexpand(Boolean(sourceLabel.get_vexpand?.()))
+    area.set_vexpand(false)
   } catch {}
 
   try {
@@ -388,17 +384,21 @@ function patchTrayMenuText(menu: Gtk.PopoverMenu | null) {
   })
 }
 
-function queueTrayMenuTextPatch(menu: Gtk.PopoverMenu | null) {
+function queueTrayMenuTextPatch(menu: Gtk.PopoverMenu | null, delayMs = 0) {
   if (!menu) return
 
   const previousSourceId = trayMenuPatchSourceIds.get(menu) ?? 0
   clearSource(previousSourceId)
 
-  const sourceId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+  const runPatch = () => {
     trayMenuPatchSourceIds.delete(menu)
     patchTrayMenuText(menu)
     return GLib.SOURCE_REMOVE
-  })
+  }
+
+  const sourceId = delayMs > 0
+    ? GLib.timeout_add(GLib.PRIORITY_DEFAULT, delayMs, runPatch)
+    : GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, runPatch)
 
   trayMenuPatchSourceIds.set(menu, sourceId)
 }
@@ -429,6 +429,37 @@ function syncTrayMenuOffset(trigger: Gtk.Widget | null, menu: Gtk.PopoverMenu | 
   } catch {}
 }
 
+function clearTrayMenuReveal(menu: Gtk.PopoverMenu) {
+  const sourceId = trayMenuRevealSourceIds.get(menu) ?? 0
+  clearSource(sourceId)
+  trayMenuRevealSourceIds.delete(menu)
+
+  try {
+    menu.remove_css_class(TRAY_MENU_REVEAL_CLASS)
+  } catch {}
+}
+
+function playTrayMenuReveal(menu: Gtk.PopoverMenu) {
+  clearTrayMenuReveal(menu)
+
+  try {
+    menu.add_css_class(TRAY_MENU_REVEAL_CLASS)
+    menu.queue_draw()
+  } catch {}
+
+  const sourceId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, TRAY_MENU_REVEAL_MS + 70, () => {
+    trayMenuRevealSourceIds.delete(menu)
+
+    try {
+      menu.remove_css_class(TRAY_MENU_REVEAL_CLASS)
+    } catch {}
+
+    return GLib.SOURCE_REMOVE
+  })
+
+  trayMenuRevealSourceIds.set(menu, sourceId)
+}
+
 function showTrayMenu(menu: Gtk.PopoverMenu | null) {
   if (!menu) return
 
@@ -439,11 +470,16 @@ function showTrayMenu(menu: Gtk.PopoverMenu | null) {
   }
 
   openTrayMenu = menu
+  patchTrayMenuText(menu)
+  playTrayMenuReveal(menu)
   menu.popup()
+  patchTrayMenuText(menu)
+  queueTrayMenuTextPatch(menu, TRAY_MENU_REVEAL_MS + 90)
 }
 
 function forgetTrayMenu(menu: Gtk.PopoverMenu) {
   if (openTrayMenu === menu) openTrayMenu = null
+  clearTrayMenuReveal(menu)
 }
 
 function TrayItem({ item }: { item: any }) {
@@ -516,9 +552,8 @@ function TrayItem({ item }: { item: any }) {
         onPressed={() => {
           try {
             syncTrayMenuOffset(trigger, menu)
-            queueTrayMenuTextPatch(menu)
+            patchTrayMenuText(menu)
             showTrayMenu(menu)
-            queueTrayMenuTextPatch(menu)
           } catch (error) {
           }
         }}
@@ -534,13 +569,16 @@ function TrayItem({ item }: { item: any }) {
           queueTrayMenuTextPatch(self)
 
           try {
-            self.connect("map", () => queueTrayMenuTextPatch(self))
+            self.connect("map", () => queueTrayMenuTextPatch(self, TRAY_MENU_REVEAL_MS + 90))
           } catch {}
 
           try {
             self.connect("notify::visible", () => {
-              if (!self.get_visible()) forgetTrayMenu(self)
-              queueTrayMenuTextPatch(self)
+              if (!self.get_visible()) {
+                forgetTrayMenu(self)
+              } else {
+                queueTrayMenuTextPatch(self, TRAY_MENU_REVEAL_MS + 90)
+              }
             })
           } catch {}
 

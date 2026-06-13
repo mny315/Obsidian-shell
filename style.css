@@ -669,6 +669,31 @@ popover.wallpaper-popover-window contents {
   animation: none;
 }
 
+
+@keyframes tray-menu-reveal-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes list-switch-reveal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 popover.tray-menu-popover-window,
 popover.tray-menu-popover-window.background,
 popover.tray-menu-popover-window.menu {
@@ -679,6 +704,10 @@ popover.tray-menu-popover-window.menu {
   background-image: none;
   border: none;
   box-shadow: none;
+}
+
+popover.tray-menu-popover-window.tray-menu-revealing contents {
+  animation: tray-menu-reveal-in 170ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 popover.tray-menu-popover-window contents {
@@ -791,7 +820,7 @@ button.wallpaper-card {
 }
 
 .calendar-popover {
-  min-width: 244px;
+  min-width: 226px;
   background: transparent;
 }
 
@@ -840,7 +869,7 @@ button.wallpaper-card {
 }
 
 .custom-calendar-widget {
-  min-width: 214px;
+  min-width: 208px;
 }
 
 .calendar-widget-slot {
@@ -862,23 +891,23 @@ button.wallpaper-card {
 }
 
 .calendar-month-label {
-  min-width: 68px;
+  min-width: 66px;
 }
 
 .calendar-year-label {
-  min-width: 42px;
+  min-width: 38px;
 }
 
 button.calendar-nav-button,
 .calendar-nav-button {
-  min-width: 21px;
-  min-height: 24px;
+  min-width: 18px;
+  min-height: 23px;
   padding: 0;
-  border-radius: 9px;
+  border-radius: 8px;
 }
 
 .calendar-month-stack {
-  min-width: 214px;
+  min-width: 208px;
   min-height: 190px;
   background: transparent;
   background-color: transparent;
@@ -886,7 +915,7 @@ button.calendar-nav-button,
 }
 
 .calendar-month-page {
-  min-width: 214px;
+  min-width: 208px;
   min-height: 190px;
   background: transparent;
   background-color: transparent;
@@ -1475,6 +1504,11 @@ menubutton.app-launcher-trigger button.toggle:focus-visible {
   padding-right: 12px;
 }
 
+.launcher-list-content.launcher-list-switching,
+.audio-list-inner.audio-list-switching {
+  animation: list-switch-reveal-in 150ms ease-out;
+}
+
 .launcher-list-wrap scrollbar.vertical,
 .launcher-list-wrap scrollbar.vertical:hover,
 .launcher-list-wrap scrollbar.vertical:active {
@@ -1975,7 +2009,15 @@ button.wallpaper-card:disabled {
 }
 
 window.osd-window,
-.osd-placement,
+.osd-placement {
+  min-width: 0;
+  min-height: 0;
+  background: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+}
+
 .osd-revealer {
   background: transparent;
   background-image: none;
@@ -1998,6 +2040,7 @@ window.osd-window,
 
 box.osd-frame {
   min-width: 300px;
+  min-height: 82px;
   background: @osd_surface_bg;
   background-color: @osd_surface_bg;
   color: @fg;

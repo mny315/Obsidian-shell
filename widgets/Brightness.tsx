@@ -213,19 +213,18 @@ export function BrightnessControl({
     }
   }
 
+  const getBrightnessWriteDelay = () => {
+    if (backend === "backlight") return 60
+    if (backend === "ddc") return 250
+    return 90
+  }
+
   const scheduleBrightnessWrite = (nextValue: number) => {
     const nextPercent = Math.round(clamp(nextValue, BRIGHTNESS_MIN, 1) * 100)
     pendingWritePercent = nextPercent
 
-    if (backend !== "ddc") {
-      const immediatePercent = pendingWritePercent
-      pendingWritePercent = null
-      if (immediatePercent !== null) void writeBrightnessNow(immediatePercent)
-      return
-    }
-
     writeDebounceId = clearSource(writeDebounceId)
-    writeDebounceId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 250, () => {
+    writeDebounceId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, getBrightnessWriteDelay(), () => {
       writeDebounceId = 0
       const delayedPercent = pendingWritePercent
       pendingWritePercent = null
