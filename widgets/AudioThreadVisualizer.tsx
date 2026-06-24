@@ -2,6 +2,7 @@ import Gdk from "gi://Gdk?version=4.0"
 import GLib from "gi://GLib"
 import Gtk from "gi://Gtk?version=4.0"
 import AstalCava from "gi://AstalCava"
+import Mpris from "gi://AstalMpris"
 
 import { createComputed, createState } from "ags"
 import { Astal } from "ags/gtk4"
@@ -10,19 +11,23 @@ import { AGS_STATE_DIR, WALLPAPER_SETTINGS_PATH } from "../config"
 const { BOTTOM, LEFT, RIGHT } = Astal.WindowAnchor
 
 const CAVA_BARS = 72
-const VISUALIZER_FPS = 48
+const VISUALIZER_FPS = 60
 const VISUALIZER_FRAME_MS = Math.round(1000 / VISUALIZER_FPS)
 const VISUALIZER_MIN_HEIGHT = 120
 const VISUALIZER_SCREEN_FRACTION = 0.20
-const LEVEL_ATTACK = 0.82
+const LEVEL_ATTACK = 0.74
 const LEVEL_RELEASE = 0.46
 const SPATIAL_SMOOTHING_PASSES = 1
-const INPUT_NOISE_FLOOR = 0.018
-const SILENCE_HIDE_DELAY_MS = 5000
+const INPUT_NOISE_FLOOR = 0.006
+const INPUT_RESPONSE_GAMMA = 0.72
+const INPUT_VISUAL_GAIN = 0.88
+const FROZEN_INPUT_RELEASE_MS = 420
+const VALUE_CHANGE_EPSILON = 0.001
 
 type AudioThreadColor = { red: number; green: number; blue: number; alpha: number }
 
 let cava: any = null
+const mpris = Mpris.get_default()
 
 const [audioThreadVisualizerEnabled, setAudioThreadVisualizerEnabledState] = createState(readAudioThreadVisualizerEnabled())
 const drawingAreas = new Set<Gtk.DrawingArea>()
@@ -34,21 +39,11 @@ let curveY = new Array<number>(CAVA_BARS).fill(0)
 let curveX = new Array<number>(CAVA_BARS).fill(0)
 let curveXWidth = 0
 let frameSourceId = 0
-let silenceReleaseSourceId = 0
-let silenceReleaseInProgress = false
 let cavaNotifyId = 0
+let lastCavaChangeUs = 0
+let lastInputLevels = new Array<number>(CAVA_BARS).fill(0)
 let themeWatchConfigured = false
 let cachedAudioThreadColor: AudioThreadColor | null = null
-
-function clearSource(sourceId: number) {
-  if (sourceId === 0) return 0
-
-  try {
-    GLib.source_remove(sourceId)
-  } catch {}
-
-  return 0
-}
 
 function readSettingsObject() {
   try {
@@ -108,7 +103,14 @@ function asNumberArray(raw: unknown) {
 function normalizeCavaValues(values: number[]) {
   for (let index = 0; index < CAVA_BARS; index += 1) {
     const value = Math.max(0, Math.min(1, values[index] ?? 0))
-    inputLevels[index] = value <= INPUT_NOISE_FLOOR ? 0 : (value - INPUT_NOISE_FLOOR) / (1 - INPUT_NOISE_FLOOR)
+
+    if (value <= INPUT_NOISE_FLOOR) {
+      inputLevels[index] = 0
+      continue
+    }
+
+    const normalized = (value - INPUT_NOISE_FLOOR) / (1 - INPUT_NOISE_FLOOR)
+    inputLevels[index] = Math.min(1, Math.pow(normalized, INPUT_RESPONSE_GAMMA) * INPUT_VISUAL_GAIN)
   }
 
   return inputLevels
@@ -131,7 +133,7 @@ function getCava() {
       framerate: VISUALIZER_FPS,
       autosens: true,
       stereo: false,
-      noise_reduction: 0.42,
+      noise_reduction: 0.36,
       input: getPipewireInput(),
     })
   } catch (error) {
@@ -162,23 +164,56 @@ function clearTargetLevels() {
   }
 }
 
-function cancelSilenceReleaseTimer() {
-  silenceReleaseSourceId = clearSource(silenceReleaseSourceId)
-  silenceReleaseInProgress = false
+function snapAllLevelsToZero() {
+  targetLevels.fill(0)
+  renderLevels.fill(0)
+  smoothedLevels.fill(0)
+  curveY.fill(0)
 }
 
-function scheduleSilenceRelease() {
-  if (silenceReleaseSourceId !== 0) return
+function noteInputChange(levels: number[], nowUs = GLib.get_monotonic_time()) {
+  let changed = false
 
-  frameSourceId = clearSource(frameSourceId)
+  for (let index = 0; index < CAVA_BARS; index += 1) {
+    const value = levels[index] ?? 0
+    if (Math.abs(value - (lastInputLevels[index] ?? 0)) > VALUE_CHANGE_EPSILON) changed = true
+    lastInputLevels[index] = value
+  }
 
-  silenceReleaseSourceId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, SILENCE_HIDE_DELAY_MS, () => {
-    silenceReleaseSourceId = 0
-    silenceReleaseInProgress = true
-    clearTargetLevels()
-    startFrameClock()
-    return GLib.SOURCE_REMOVE
-  })
+  if (changed || lastCavaChangeUs === 0) lastCavaChangeUs = nowUs
+}
+
+function inputFrozen(nowUs = GLib.get_monotonic_time()) {
+  return lastCavaChangeUs !== 0 && (nowUs - lastCavaChangeUs) / 1000 >= FROZEN_INPUT_RELEASE_MS
+}
+
+function isMprisPlayingStatus(status: unknown) {
+  try {
+    if (status === (Mpris as any).PlaybackStatus?.PLAYING) return true
+  } catch {}
+
+  return `${status ?? ""}`.toLowerCase() === "playing"
+}
+
+function anyMprisPlayerPlaying() {
+  try {
+    const players = mpris.get_players?.() ?? []
+    for (const player of players) {
+      try {
+        if (player.get_available?.() === false) continue
+        if (isMprisPlayingStatus(player.get_playback_status?.())) return true
+      } catch {}
+    }
+  } catch {}
+
+  return false
+}
+
+function releaseFrozenInput(nowUs = GLib.get_monotonic_time()) {
+  if (!hasVisibleLevel(targetLevels) || !inputFrozen(nowUs)) return
+  if (anyMprisPlayerPlaying()) return
+
+  clearTargetLevels()
 }
 
 function readCavaValues() {
@@ -187,20 +222,16 @@ function readCavaValues() {
   try {
     const raw = cava.values ?? cava.get_values?.()
     const nextLevels = normalizeCavaValues(asNumberArray(raw))
+    const nowUs = GLib.get_monotonic_time()
+    noteInputChange(nextLevels, nowUs)
 
-    if (hasVisibleLevel(nextLevels)) {
-      cancelSilenceReleaseTimer()
+    if (hasVisibleLevel(nextLevels) && !inputFrozen(nowUs)) {
       setTargetLevels(nextLevels)
       return true
     }
 
-    if (silenceReleaseInProgress) {
-      setTargetLevels(nextLevels)
-    } else if (hasVisibleLevel(renderLevels) || hasVisibleLevel(targetLevels)) {
-      scheduleSilenceRelease()
-    } else {
-      setTargetLevels(nextLevels)
-    }
+      clearTargetLevels()
+    return hasVisibleLevel(renderLevels)
   } catch (error) {
     console.error(error)
   }
@@ -263,6 +294,8 @@ function setAudioThreadSource(cr: any, color: AudioThreadColor, alpha: number) {
 }
 
 function stepLevels() {
+  releaseFrozenInput()
+
   let active = false
 
   for (let index = 0; index < renderLevels.length; index += 1) {
@@ -270,9 +303,12 @@ function stepLevels() {
     const target = targetLevels[index] ?? 0
     const speed = target > current ? LEVEL_ATTACK : LEVEL_RELEASE
     const next = current + (target - current) * speed
-    renderLevels[index] = Math.abs(next) < 0.001 ? 0 : next
-    if (renderLevels[index] > 0.003 || target > 0.003) active = true
+    const snapped = Math.abs(next) < 0.003 ? 0 : next
+    renderLevels[index] = snapped
+    if (snapped > 0.003 || target > 0.003) active = true
   }
+
+  if (!active) snapAllLevelsToZero()
 
   queueVisualizerDraw()
   return active
@@ -286,7 +322,6 @@ function startFrameClock() {
 
     if (!active) {
       frameSourceId = 0
-      silenceReleaseInProgress = false
       return GLib.SOURCE_REMOVE
     }
 
@@ -295,10 +330,17 @@ function startFrameClock() {
 }
 
 function resetLevels() {
-  cancelSilenceReleaseTimer()
-  targetLevels.fill(0)
+  if (frameSourceId !== 0) {
+    try {
+      GLib.source_remove(frameSourceId)
+    } catch {}
+    frameSourceId = 0
+  }
+
+  lastCavaChangeUs = 0
+  snapAllLevelsToZero()
   inputLevels.fill(0)
-  renderLevels.fill(0)
+  lastInputLevels.fill(0)
   queueVisualizerDraw()
 }
 
@@ -443,13 +485,13 @@ function drawAudioThread(area: Gtk.DrawingArea, cr: any, width: number, height: 
   const color = readAudioThreadColor(area)
   const levels = updateSmoothedLevels()
   const count = levels.length
-  const bottom = height - 3
-  const amplitude = Math.max(1, height * 0.86)
+  const bottom = height - 1
+  const amplitude = Math.max(1, height * 0.78)
 
   ensureReusableBuffers()
   for (let index = 0; index < count; index += 1) {
     const level = Math.max(0, Math.min(1, levels[index] ?? 0))
-    curveY[index] = bottom - Math.pow(level, 0.68) * amplitude
+    curveY[index] = bottom - Math.pow(level, 0.82) * amplitude
   }
 
   cr.save()
@@ -543,9 +585,14 @@ export function AudioThreadVisualizerWindow({ monitor }: { monitor: number }) {
               drawingAreas.delete(self)
               if (drawingAreas.size === 0) {
                 stopCava(false)
-                frameSourceId = clearSource(frameSourceId)
-                silenceReleaseSourceId = clearSource(silenceReleaseSourceId)
-                silenceReleaseInProgress = false
+                if (frameSourceId !== 0) {
+                  try {
+                    GLib.source_remove(frameSourceId)
+                  } catch {}
+                  frameSourceId = 0
+                }
+
+                          lastCavaChangeUs = 0
 
                 if (cava && cavaNotifyId !== 0) {
                   try {

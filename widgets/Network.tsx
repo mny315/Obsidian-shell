@@ -590,7 +590,7 @@ function makeRowWithAction(
       halign: Gtk.Align.FILL,
     })
     attachShellTooltip(button, () => title)
-    addClasses(button, "flat")
+    addClasses(button, "flat network-row-main-button")
     button.connect("clicked", onClick)
     main = button
   } else {
