@@ -149,8 +149,6 @@ window.audio-thread-window > contents,
   color: @theme_fg_color;
 }
 
-revealer.bar-revealer,
-revealer.bar-revealer > contents,
 revealer.player-meta-revealer,
 revealer.player-meta-revealer > contents,
 window.bar-window > widget,
@@ -182,6 +180,13 @@ revealer.widget-popup-revealer,
   background-clip: padding-box;
   box-shadow: inset 0 1px 0 alpha(@theme_selected_bg_color,0.22),inset 0 -1px 0 alpha(@theme_selected_bg_color,0.07);
   transition: background-color 180ms ease,border-color 180ms ease,opacity 180ms ease;
+}
+
+.bar-motion-wrap {
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  border: none;
 }
 
 .bar-shell > box {
@@ -387,6 +392,12 @@ button.network-icon-button:hover,
 .player-main-button:hover,
 .player-transport-button:hover {
   background: @hover_bg;
+}
+
+.tray-item.tray-item-hover-reset,
+.tray-item.tray-item-hover-reset:hover {
+  background: transparent;
+  background-image: none;
 }
 
 .controls-shell {
@@ -1589,32 +1600,38 @@ entry.launcher-search {
 }
 
 .launcher-category-bar {
-  min-height: 32px;
-  padding: 2px 2px 0 2px;
+  min-height: 34px;
+  padding: 3px;
+  border-radius: 13px;
+  background: @popup_list_bg;
+  border: 1px solid @soft_overlay_08;
+  box-shadow: inset 0 1px 0 @soft_overlay_08,inset 0 -1px 0 @shadow_06;
 }
 
 .launcher-category-button {
   min-height: 28px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: @theme_card_bg_mid;
-  border: 1px solid @soft_overlay_08;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: transparent;
+  border: 1px solid transparent;
   box-shadow: none;
+  transition: background-color 140ms ease,border-color 140ms ease,box-shadow 140ms ease;
 }
 
 .launcher-category-button:hover {
-  background: @soft_overlay_08;
-  border-color: @glass_border;
+  background: @soft_overlay_06;
+  border-color: transparent;
 }
 
 .launcher-category-button:checked {
-  background: @active_bg;
-  border-color: @accent_overlay_20;
+  background: @glass_toggle_on_bg;
+  border-color: @glass_toggle_on_border;
+  box-shadow: inset 0 1px 0 @soft_overlay_12,inset 0 -1px 0 @shadow_08,0 2px 7px @shadow_10;
 }
 
 .launcher-category-button:active {
-  background: @soft_overlay_12;
-  border-color: @accent_overlay_20;
+  background: @soft_overlay_14;
+  border-color: @glass_toggle_on_border;
 }
 
 .launcher-category-label {
@@ -1622,7 +1639,17 @@ entry.launcher-search {
   margin: 0;
   padding: 0;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
+  opacity: 0.78;
+}
+
+.launcher-category-button:hover .launcher-category-label {
+  opacity: 0.92;
+}
+
+.launcher-category-button:checked .launcher-category-label {
+  font-weight: 500;
+  opacity: 1;
 }
 
 .launcher-app-card {
@@ -1848,6 +1875,17 @@ button.wallpaper-refresh-button {
   background: transparent;
   border: none;
   box-shadow: none;
+}
+
+.refresh-indicator {
+  min-width: 18px;
+  min-height: 18px;
+}
+
+.refresh-spinner {
+  min-width: 16px;
+  min-height: 16px;
+  opacity: 0.88;
 }
 
 .wallpaper-path-actions button.wallpaper-refresh-button,

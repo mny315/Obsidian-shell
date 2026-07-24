@@ -20,6 +20,7 @@ function toNumber(value: unknown, fallback = 0) {
 const TRAY_MENU_TEXT_OVERSCAN_X = 2
 const TRAY_MENU_TEXT_PADDING_Y = 2
 const TRAY_MENU_REVEAL_CLASS = "tray-menu-revealing"
+const TRAY_ITEM_HOVER_RESET_CLASS = "tray-item-hover-reset"
 const TRAY_MENU_REVEAL_MS = 170
 
 const trayMenuPatchedLabels = new WeakSet<Gtk.Widget>()
@@ -486,6 +487,32 @@ function TrayItem({ item }: { item: any }) {
   let trigger: Gtk.Box | null = null
   let menu: Gtk.PopoverMenu | null = null
   let image: Gtk.Image | null = null
+  let hoverResetPending = false
+
+  const resetHoverVisual = () => {
+    hoverResetPending = true
+
+    try {
+      trigger?.add_css_class(TRAY_ITEM_HOVER_RESET_CLASS)
+      ;(trigger as any)?.unset_state_flags?.(Gtk.StateFlags.PRELIGHT)
+      trigger?.queue_draw()
+    } catch {}
+  }
+
+  const restoreHoverOnRealEnter = () => {
+    if (!hoverResetPending) return
+
+    try {
+      if (menu?.get_visible?.()) return
+    } catch {}
+
+    hoverResetPending = false
+
+    try {
+      trigger?.remove_css_class(TRAY_ITEM_HOVER_RESET_CLASS)
+      trigger?.queue_draw()
+    } catch {}
+  }
 
   return (
     <box
@@ -533,6 +560,10 @@ function TrayItem({ item }: { item: any }) {
         })
       }}
     >
+      <Gtk.EventControllerMotion
+        onEnter={() => restoreHoverOnRealEnter()}
+      />
+
       <Gtk.GestureClick
         button={Gdk.BUTTON_PRIMARY}
         onPressed={(_, _nPress, x, y) => {
@@ -550,6 +581,8 @@ function TrayItem({ item }: { item: any }) {
       <Gtk.GestureClick
         button={Gdk.BUTTON_SECONDARY}
         onPressed={() => {
+          resetHoverVisual()
+
           try {
             syncTrayMenuOffset(trigger, menu)
             patchTrayMenuText(menu)

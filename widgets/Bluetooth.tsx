@@ -987,6 +987,20 @@ export function BluetoothControl({
 
             const adapterPowered = createBinding(adapter, "powered")
             const adapterDiscovering = createBinding(adapter, "discovering")
+            let discoveryIcon: Gtk.Label | null = null
+            let discoverySpinner: Gtk.Spinner | null = null
+
+            const setDiscoveryAnimating = (active: boolean) => {
+              discoveryIcon?.set_visible(!active)
+              discoverySpinner?.set_visible(active)
+              if (active) discoverySpinner?.start()
+              else discoverySpinner?.stop()
+            }
+
+            const syncDiscoveryAnimating = () => {
+              setDiscoveryAnimating(Boolean(adapter.powered && adapter.discovering))
+            }
+
             const adapterMeta = createComputed(() => {
               if (!adapterPowered()) return "Off"
               if (adapterDiscovering()) return "Scanning…"
@@ -1006,20 +1020,54 @@ export function BluetoothControl({
                       try {
                         if (!adapter.powered) return
                         if (adapter.discovering) {
+                          setDiscoveryAnimating(false)
                           clearDiscoveryTimeout()
                           adapter.stop_discovery()
                         } else {
+                          setDiscoveryAnimating(true)
                           adapter.start_discovery()
                           scheduleDiscoveryTimeout(adapter)
                         }
                         requestAdapterRefresh(0)
                       } catch (e) {
+                        syncDiscoveryAnimating()
                         presentNotice({ text: formatError(e) })
                         requestAdapterRefresh()
                       }
                     })
                   }}>
-                    <label class="network-icon-button-label" label={"󰑐"} />
+                    <box
+                      class="refresh-indicator"
+                      halign={Gtk.Align.CENTER}
+                      valign={Gtk.Align.CENTER}
+                      $={(self) => {
+                        const discoveryId = adapter.connect("notify::discovering", syncDiscoveryAnimating)
+                        const poweredId = adapter.connect("notify::powered", syncDiscoveryAnimating)
+                        self.connect("destroy", () => {
+                          adapter.disconnect(discoveryId)
+                          adapter.disconnect(poweredId)
+                        })
+                      }}
+                    >
+                      <label
+                        class="network-icon-button-label"
+                        label={"󰑐"}
+                        visible
+                        $={(self) => {
+                          discoveryIcon = self
+                          syncDiscoveryAnimating()
+                        }}
+                      />
+                      <Gtk.Spinner
+                        class="refresh-spinner"
+                        spinning={false}
+                        visible={false}
+                        $={(self) => {
+                          discoverySpinner = self
+                          syncDiscoveryAnimating()
+                        }}
+                      />
+                    </box>
                   </button>
                   <Gtk.Switch class="network-toggle bluetooth-toggle" valign={Gtk.Align.CENTER} halign={Gtk.Align.END} $={(self) => {
                     let pendingPowered: boolean | null = null

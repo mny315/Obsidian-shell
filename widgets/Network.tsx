@@ -714,6 +714,7 @@ export function NetworkControl({
   let passwordEntry: Gtk.Entry | null = null
   let statusLabel: Gtk.Label | null = null
   let rescanButton: Gtk.Button | null = null
+  let setRescanAnimating = (_active: boolean) => {}
   let closeTimeoutId = 0
   let closingPopup = false
   const [windowVisible, setWindowVisible] = createState(false)
@@ -1016,6 +1017,8 @@ export function NetworkControl({
     }
 
     refreshInFlight = true
+    const requestedForcedScan = forceWifiScan || forceWifiScanOnNextRefresh
+    if (requestedForcedScan) setRescanAnimating(true)
 
     try {
       const nmReady = await isNetworkManagerReady()
@@ -1099,6 +1102,7 @@ export function NetworkControl({
       renderWireGuardList(wgProfiles)
     } finally {
       refreshInFlight = false
+      if (requestedForcedScan) setRescanAnimating(false)
       if (refreshAgain) {
         refreshAgain = false
         scheduleRefresh(100)
@@ -1310,14 +1314,45 @@ export function NetworkControl({
     </button>
   )
 
-  const rescanBtn = makeIconButton("󰑐", "wallpaper-refresh-button", "Rescan", () => {
-    if (wifiEnabled) {
-      deferAction(async () => {
-        presentStatus("Scanning networks…", { durationMs: 0 })
-        await refresh(true)
-        presentStatus("")
-      })
-    }
+  const rescanIcon = makeIconLabel("󰑐", "network-icon-button-label")
+  const rescanSpinner = new Gtk.Spinner({
+    spinning: false,
+    visible: false,
+    halign: Gtk.Align.CENTER,
+    valign: Gtk.Align.CENTER,
+  })
+  addClasses(rescanSpinner, "refresh-spinner")
+
+  const rescanIndicator = new Gtk.Box({
+    halign: Gtk.Align.CENTER,
+    valign: Gtk.Align.CENTER,
+  })
+  addClasses(rescanIndicator, "refresh-indicator")
+  rescanIndicator.append(rescanIcon)
+  rescanIndicator.append(rescanSpinner)
+
+  setRescanAnimating = (active: boolean) => {
+    rescanIcon.set_visible(!active)
+    rescanSpinner.set_visible(active)
+    if (active) rescanSpinner.start()
+    else rescanSpinner.stop()
+  }
+
+  const rescanBtn = new Gtk.Button({
+    child: rescanIndicator,
+    valign: Gtk.Align.CENTER,
+  })
+  attachShellTooltip(rescanBtn, () => "Rescan")
+  addClasses(rescanBtn, "flat wallpaper-refresh-button")
+  rescanBtn.connect("clicked", () => {
+    if (!wifiEnabled) return
+
+    setRescanAnimating(true)
+    deferAction(async () => {
+      presentStatus("Scanning networks…", { durationMs: 0 })
+      await refresh(true)
+      presentStatus("")
+    })
   })
 
   const popoverContent = (

@@ -964,6 +964,15 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   const [notice, setNotice] = createState<string | null>(null)
   const [refreshing, setRefreshing] = createState(false)
   const [applying, setApplying] = createState(false)
+  let wallpaperRefreshIcon: Gtk.Label | null = null
+  let wallpaperRefreshSpinner: Gtk.Spinner | null = null
+
+  const setWallpaperRefreshAnimating = (active: boolean) => {
+    wallpaperRefreshIcon?.set_visible(!active)
+    wallpaperRefreshSpinner?.set_visible(active)
+    if (active) wallpaperRefreshSpinner?.start()
+    else wallpaperRefreshSpinner?.stop()
+  }
   const [activePath, setActivePath] = createState(initialSettings.currentWallpaper ?? "")
 
   const countLabel = createComputed(() => `${wallpapers().length}`)
@@ -1143,6 +1152,13 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
 
   const settleUiFrame = () => new Promise<void>((resolve) => {
     GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+      resolve()
+      return GLib.SOURCE_REMOVE
+    })
+  })
+
+  const waitFor = (delayMs: number) => new Promise<void>((resolve) => {
+    GLib.timeout_add(GLib.PRIORITY_DEFAULT, Math.max(0, Math.round(delayMs)), () => {
       resolve()
       return GLib.SOURCE_REMOVE
     })
@@ -1347,9 +1363,11 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
   const refreshWallpapers = async () => {
     if (refreshing() || applying()) return
 
-    await settleUiFrame()
+    const animationStartedAt = GLib.get_monotonic_time()
     setRefreshing(true)
+    setWallpaperRefreshAnimating(true)
     setNotice(null)
+    await settleUiFrame()
 
     try {
       resetWallpaperTexturePipeline()
@@ -1376,7 +1394,10 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
     } catch (error) {
       setNotice(formatError(error))
     } finally {
+      const elapsedMs = (GLib.get_monotonic_time() - animationStartedAt) / 1000
+      if (elapsedMs < 320) await waitFor(320 - elapsedMs)
       setRefreshing(false)
+      setWallpaperRefreshAnimating(false)
     }
   }
 
@@ -1503,7 +1524,26 @@ export function WallpaperWidgetButton({ monitor }: { monitor: number }) {
                 attachShellTooltip(self, reloadTooltip)
               }}
             >
-              <label class="wallpaper-refresh-icon" label={"󰑐"} />
+              <box class="refresh-indicator" halign={Gtk.Align.CENTER} valign={Gtk.Align.CENTER}>
+                <label
+                  class="wallpaper-refresh-icon"
+                  label={"󰑐"}
+                  visible
+                  $={(self) => {
+                    wallpaperRefreshIcon = self
+                    self.set_visible(!refreshing())
+                  }}
+                />
+                <Gtk.Spinner
+                  class="refresh-spinner"
+                  spinning={false}
+                  visible={false}
+                  $={(self) => {
+                    wallpaperRefreshSpinner = self
+                    setWallpaperRefreshAnimating(refreshing())
+                  }}
+                />
+              </box>
             </button>
           </box>
         </box>

@@ -771,7 +771,7 @@ export function AppLauncherControl({
         </box>
       </Gtk.ScrolledWindow>
 
-      <box class="launcher-category-bar" spacing={6} valign={Gtk.Align.CENTER}>
+      <box class="launcher-category-bar" spacing={2} homogeneous hexpand valign={Gtk.Align.CENTER}>
         <For each={() => LAUNCHER_CATEGORIES}>
           {(category) => (
             <Gtk.ToggleButton
